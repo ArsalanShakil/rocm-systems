@@ -20,6 +20,7 @@
 
 #include <hip/hip_runtime.h>
 #include "device.hpp"
+
 #include "hip/driver_types.h"
 #include "hip_internal.hpp"
 #include "hip_platform.hpp"
