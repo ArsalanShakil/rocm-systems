@@ -483,7 +483,7 @@ check_firmware_compatibility(const rocprofiler_agent_t*       agent,
                      << " due to a firmware version mismatch\n"
                      << "Minimum required MEC firmware version is "
                      << MINIMUM_PC_SAMPLING_MEC_FW_VERSION << ", but found "
-                     << agent->firmware_info.mec_fw_version << std::endl;
+                     << agent->firmware_info.mec_fw_version << "\n";
         return ROCPROFILER_STATUS_INCOMPATIBLE_FIRMWARE;
     }
 
@@ -494,7 +494,7 @@ check_firmware_compatibility(const rocprofiler_agent_t*       agent,
                      << " due to a firmware version mismatch\n"
                      << "Minimum required SOS firmware version is "
                      << MINIMUM_PC_SAMPLING_SOS_FW_VERSION << ", but found "
-                     << agent->firmware_info.sos_fw_version << std::endl;
+                     << agent->firmware_info.sos_fw_version << "\n";
         return ROCPROFILER_STATUS_INCOMPATIBLE_FIRMWARE;
     }
     return ROCPROFILER_STATUS_SUCCESS;
@@ -652,7 +652,7 @@ ioctl_pcs_create(const rocprofiler_agent_t*       agent,
 
     args.op              = KFD_IOCTL_PCS_OP_CREATE;
     args.gpu_id          = agent->gpu_id;
-    args.sample_info_ptr = (uint64_t)(&ioctl_cfg);
+    args.sample_info_ptr = (uint64_t) (&ioctl_cfg);
     args.num_sample_info = 1;
     args.trace_id        = INVALID_TRACE_ID;
 
