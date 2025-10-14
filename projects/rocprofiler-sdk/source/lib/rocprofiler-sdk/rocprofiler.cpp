@@ -119,8 +119,8 @@ ROCPROFILER_STATUS_STRING(ROCPROFILER_STATUS_ERROR_AGENT_ARCH_NOT_SUPPORTED,
 ROCPROFILER_STATUS_STRING(ROCPROFILER_STATUS_ERROR_PERMISSION_DENIED,
                           "Required permission (CAP_PERFMON) is not set, permission denied")
 ROCPROFILER_STATUS_STRING(
-    ROCPROFILER_STATUS_INCOMPATIBLE_FIRMWARE,
-    "The selected service is incompatible with the installed firmware version")
+    ROCPROFILER_STATUS_ERROR_INCOMPATIBLE_FIRMWARE,
+    "The requested service is incompatible with the installed firmware version")
 
 template <size_t Idx, size_t... Tail>
 const char*

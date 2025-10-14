@@ -48,8 +48,9 @@ namespace
 
 #define PC_SAMPLING_IOCTL_COMPUTE_VERSION(major, minor) ROCPROFILER_COMPUTE_VERSION(major, minor, 0)
 
-#define MINIMUM_PC_SAMPLING_MEC_FW_VERSION uint32_t(0x0000001a)
-#define MINIMUM_PC_SAMPLING_SOS_FW_VERSION uint32_t(0x00360259)
+constexpr uint32_t INVALID_PC_SAMPLING_FIRMWARE_VERSION = 0xFFFFFFFF;
+constexpr uint32_t MINIMUM_PC_SAMPLING_MEC_FW_VERSION = 0x0000001a;
+constexpr uint32_t MINIMUM_PC_SAMPLING_SOS_FW_VERSION = 0x00360259;
 
 using pcs_ioctl_version_t = uint32_t;
 
@@ -476,26 +477,44 @@ check_firmware_compatibility(const rocprofiler_agent_t*       agent,
     // firmware check is needed only for gfx942 for now
     if(std::string(agent->name) != "gfx942") return ROCPROFILER_STATUS_SUCCESS;
 
-    if(method == ROCPROFILER_PC_SAMPLING_METHOD_STOCHASTIC &&
-       agent->firmware_info.mec_fw_version < MINIMUM_PC_SAMPLING_MEC_FW_VERSION)
+    if(method == ROCPROFILER_PC_SAMPLING_METHOD_STOCHASTIC)
     {
-        ROCP_WARNING << "Stochastic PC sampling is not supported on agent-" << agent->node_id
-                     << " due to a firmware version mismatch\n"
-                     << "Minimum required MEC firmware version is "
-                     << MINIMUM_PC_SAMPLING_MEC_FW_VERSION << ", but found "
-                     << agent->firmware_info.mec_fw_version << "\n";
-        return ROCPROFILER_STATUS_INCOMPATIBLE_FIRMWARE;
+        if(agent->firmware_info.mec_version == INVALID_PC_SAMPLING_FIRMWARE_VERSION)
+        {
+            ROCP_WARNING << "Cannot determine MEC firmware version for agent-" << agent->node_id
+                         << "\nStochastic PC sampling may not work correctly.\n";
+            return ROCPROFILER_STATUS_ERROR_INCOMPATIBLE_FIRMWARE;
+        }
+
+        if(agent->firmware_info.mec_version < MINIMUM_PC_SAMPLING_MEC_FW_VERSION)
+        {
+            ROCP_WARNING << "Stochastic PC sampling is not supported on agent-" << agent->node_id
+                         << " due to a firmware version mismatch\n"
+                         << "Minimum required MEC firmware version is "
+                         << MINIMUM_PC_SAMPLING_MEC_FW_VERSION << ", but found "
+                         << agent->firmware_info.mec_version << "\n";
+            return ROCPROFILER_STATUS_ERROR_INCOMPATIBLE_FIRMWARE;
+        }
     }
 
-    if(method == ROCPROFILER_PC_SAMPLING_METHOD_HOST_TRAP &&
-       agent->firmware_info.sos_fw_version < MINIMUM_PC_SAMPLING_SOS_FW_VERSION)
+    if(method == ROCPROFILER_PC_SAMPLING_METHOD_HOST_TRAP)
     {
-        ROCP_WARNING << "Host-Trap PC sampling is not supported on agent-" << agent->node_id
-                     << " due to a firmware version mismatch\n"
-                     << "Minimum required SOS firmware version is "
-                     << MINIMUM_PC_SAMPLING_SOS_FW_VERSION << ", but found "
-                     << agent->firmware_info.sos_fw_version << "\n";
-        return ROCPROFILER_STATUS_INCOMPATIBLE_FIRMWARE;
+        if(agent->firmware_info.sos_version == INVALID_PC_SAMPLING_FIRMWARE_VERSION)
+        {
+            ROCP_WARNING << "Cannot determine SOS firmware version for agent-" << agent->node_id
+                         << "\nHost-Trap PC sampling may not work correctly.\n";
+            return ROCPROFILER_STATUS_ERROR_INCOMPATIBLE_FIRMWARE;
+        }
+
+        if(agent->firmware_info.sos_version < MINIMUM_PC_SAMPLING_SOS_FW_VERSION)
+        {
+            ROCP_WARNING << "Host-Trap PC sampling is not supported on agent-" << agent->node_id
+                         << " due to a firmware version mismatch\n"
+                         << "Minimum required SOS firmware version is "
+                         << MINIMUM_PC_SAMPLING_SOS_FW_VERSION << ", but found "
+                         << agent->firmware_info.sos_version << "\n";
+            return ROCPROFILER_STATUS_ERROR_INCOMPATIBLE_FIRMWARE;
+        }
     }
     return ROCPROFILER_STATUS_SUCCESS;
 }
@@ -624,11 +643,12 @@ ioctl_pcs_create(const rocprofiler_agent_t*       agent,
                  uint64_t                         interval,
                  uint32_t*                        ioctl_pcs_id)
 {
-    auto status = check_firmware_compatibility(agent, method);
-    if(status != ROCPROFILER_STATUS_SUCCESS) return status;
+    if(auto status = check_firmware_compatibility(agent, method);
+       status != ROCPROFILER_STATUS_SUCCESS)
+        return status;
 
     pcs_ioctl_version_t pcs_ioctl_version = 0;
-    status = get_pcs_ioctl_version_if_kfd_supports(agent->gpu_id, &pcs_ioctl_version);
+    auto status = get_pcs_ioctl_version_if_kfd_supports(agent->gpu_id, &pcs_ioctl_version);
     if(status != ROCPROFILER_STATUS_SUCCESS) return status;
 
     // Strict check: whether the driver version (safely) supports the sampling method for
