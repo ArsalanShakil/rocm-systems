@@ -48,7 +48,7 @@ namespace
 
 #define PC_SAMPLING_IOCTL_COMPUTE_VERSION(major, minor) ROCPROFILER_COMPUTE_VERSION(major, minor, 0)
 
-constexpr uint32_t INVALID_PC_SAMPLING_FIRMWARE_VERSION = 0xFFFFFFFF;
+constexpr uint32_t INVALID_PC_SAMPLING_FIRMWARE_VERSION     = ROCPROFILER_FIRMWARE_VERSION_NONE;
 constexpr uint32_t MINIMUM_PC_SAMPLING_MI300_MEC_FW_VERSION = 0x000000b9;
 constexpr uint32_t MINIMUM_PC_SAMPLING_MI300_SOS_FW_VERSION = 0x00360259;
 
@@ -580,9 +580,10 @@ ioctl_query_pcs_configs(const rocprofiler_agent_t* agent, rocp_pcs_cfgs_vec_t& r
             // This should never happened, unless the KFD is broken.
             continue;
         }
-        if(check_firmware_compatibility(agent, get_rocp_pcs_method_from_kfd(ioctl_cfg.method)) ==
+        if(check_firmware_compatibility(agent, get_rocp_pcs_method_from_kfd(ioctl_cfg.method)) !=
            ROCPROFILER_STATUS_SUCCESS)
-            rocp_configs.emplace_back(rocp_cfg);
+            continue;
+        rocp_configs.emplace_back(rocp_cfg);
     }
 
     return ROCPROFILER_STATUS_SUCCESS;

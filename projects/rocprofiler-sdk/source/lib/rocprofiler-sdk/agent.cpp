@@ -64,7 +64,7 @@ namespace
 {
 namespace fs = ::rocprofiler::common::filesystem;
 
-constexpr uint32_t kInvalidFirmwareVersion = 0xFFFFFFFF;
+constexpr uint32_t kInvalidFirmwareVersion = ROCPROFILER_FIRMWARE_VERSION_NONE;
 
 constexpr rocprofiler_agent_firmware_info_v0_t
 make_default_firmware_info(uint32_t default_value = kInvalidFirmwareVersion)
