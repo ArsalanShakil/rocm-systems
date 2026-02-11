@@ -26,8 +26,59 @@
 #include "device/rocm/rocsched.hpp"
 #include "utils/debug.hpp"
 #include <algorithm>
+#if IS_LINUX
+#include <simde/x86/sse2.h>
+#include <simde/x86/avx.h>
+#endif
 
 namespace amd::roc {
+
+// ================================================================================================
+// Write-combining copy for H2D transfers through PCIe BAR aperture.
+#if IS_LINUX
+__attribute__((optimize("unroll-all-loops"), always_inline))
+static inline void wcMemcpy(void* __restrict dst, const void* __restrict src, size_t size) {
+#if defined(__AVX__)
+  // 32-byte nontemporal stores (AVX)
+  for (auto i = 0u; i != size / sizeof(simde__m256i); ++i) {
+    simde_mm256_stream_si256(reinterpret_cast<simde__m256i* __restrict&>(dst)++,
+                             *reinterpret_cast<const simde__m256i* __restrict&>(src)++);
+  }
+  size = size % sizeof(simde__m256i);
+#endif
+  // 16-byte nontemporal stores (SSE2)
+  for (auto i = 0u; i != size / sizeof(simde__m128i); ++i) {
+    simde_mm_stream_si128(reinterpret_cast<simde__m128i* __restrict&>(dst)++,
+                          *(reinterpret_cast<const simde__m128i* __restrict&>(src)++));
+  }
+  size = size % sizeof(simde__m128i);
+
+  // 8-byte nontemporal stores
+  for (auto i = 0u; i != size / sizeof(int64_t); ++i) {
+    simde_mm_stream_si64(reinterpret_cast<int64_t* __restrict&>(dst)++,
+                         *reinterpret_cast<const int64_t* __restrict&>(src)++);
+  }
+  size = size % sizeof(int64_t);
+
+  // 4-byte nontemporal stores
+  for (auto i = 0u; i != size / sizeof(int32_t); ++i) {
+    simde_mm_stream_si32(reinterpret_cast<int32_t* __restrict&>(dst)++,
+                         *reinterpret_cast<const int32_t* __restrict&>(src)++);
+  }
+  size = size % sizeof(int32_t);
+
+  // Remaining tail bytes (< 4 bytes)
+  std::memcpy(dst, src, size);
+
+  // Fence: flush WC buffers to PCIe
+  simde_mm_sfence();
+}
+#else
+static inline void wcMemcpy(void* __restrict dst, const void* __restrict src, size_t size) {
+  std::memcpy(dst, src, size);
+}
+#endif
+
 DmaBlitManager::DmaBlitManager(VirtualGPU& gpu, Setup setup)
     : HostBlitManager(gpu, setup),
       MinSizeForPinnedXfer(dev().settings().pinnedMinXferSize_),
@@ -143,6 +194,25 @@ bool DmaBlitManager::writeBuffer(const void* srcHost, device::Memory& dstMemory,
     return HostBlitManager::writeBuffer(srcHost, dstMemory, origin, size, entire, copyMetadata);
   }
   size_t copySize = size[0];
+
+  // Fast path: nontemporal write through PCIe BAR for small H2D on large BAR systems.
+  if (dev().info().largeBar_ &&
+      dev().settings().h2dWcCopyThreshold_ > 0 &&
+      copySize > 0 && copySize <= dev().settings().h2dWcCopyThreshold_ &&
+      !dstMemory.isHostMemDirectAccess() &&
+      !dstMemory.isCpuUncached()) {
+    gpu().releaseGpuMemoryFence();
+
+    address dstAddr = gpuMem(dstMemory).getDeviceMemory() + origin[0];
+    wcMemcpy(dstAddr, srcHost, copySize);
+
+    // HDP flush: invalidate GPU-side HDP read cache so subsequent GPU reads see the new data
+    if (dev().info().hdpMemFlushCntl != nullptr) {
+      *dev().info().hdpMemFlushCntl = 1u;
+    }
+    return true;
+  }
+
   if (copySize > 0) {
     address dstAddr = gpuMem(dstMemory).getDeviceMemory() + origin[0];
     const_address srcAddr = reinterpret_cast<const_address>(srcHost);
@@ -1906,8 +1976,34 @@ bool KernelBlitManager::writeBuffer(const void* srcHost, device::Memory& dstMemo
     result = HostBlitManager::writeBuffer(srcHost, dstMemory, origin, size, entire, copyMetadata);
     synchronize();
     return result;
-  } else {
-    size_t totalSize = size[0];
+  }
+
+  size_t totalSize = size[0];
+
+  // Fast path: nontemporal write through PCIe BAR for small H2D on large BAR systems.
+  if (dev().info().largeBar_ &&
+      dev().settings().h2dWcCopyThreshold_ > 0 &&
+      totalSize <= dev().settings().h2dWcCopyThreshold_ &&
+      !dstMemory.isHostMemDirectAccess() &&
+      !dstMemory.isCpuUncached()) {
+    // Ensure pending GPU writes to this memory are visible
+    gpu().releaseGpuMemoryFence();
+
+    // Get CPU-visible address of device memory (valid on large BAR)
+    address dstAddr = gpuMem(dstMemory).getDeviceMemory() + origin[0];
+
+    wcMemcpy(dstAddr, srcHost, totalSize);
+
+    // HDP flush: invalidate GPU-side HDP read cache so subsequent GPU reads see the new data
+    if (dev().info().hdpMemFlushCntl != nullptr) {
+      *dev().info().hdpMemFlushCntl = 1u;
+    }
+
+    synchronize();
+    return true;
+  }
+
+  {
     // Do a staging copy
     bool useShaderCopyPath =
         setup_.disableHwlCopyBuffer_ || (totalSize <= dev().settings().sdmaCopyThreshold_) ||

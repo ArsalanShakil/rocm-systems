@@ -192,6 +192,8 @@ release(uint, ROC_ACTIVE_WAIT_TIMEOUT, 0,                                     \
         "Forces active wait of GPU interrup for the timeout(us)")             \
 release(bool, ROC_ENABLE_LARGE_BAR, true,                                     \
         "Enable Large Bar if supported by the device")                        \
+release(size_t, GPU_H2D_WC_COPY_SIZE, 256,                                    \
+        "Max H2D size(in KB) for CPU write-combining via PCIe BAR (0=off)")  \
 release(bool, ROC_CPU_WAIT_FOR_SIGNAL, true,                                  \
         "Enable CPU wait for dependent HSA signals.")                         \
 release(bool, ROC_SYSTEM_SCOPE_SIGNAL, true,                                  \

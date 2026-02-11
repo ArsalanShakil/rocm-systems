@@ -62,6 +62,8 @@ Settings::Settings() {
 
   sdmaCopyThreshold_ = GPU_FORCE_BLIT_COPY_SIZE * Ki;
 
+  h2dWcCopyThreshold_ = GPU_H2D_WC_COPY_SIZE * Ki;
+
   // Don't support Denormals for single precision by default
   singleFpDenorm_ = false;
 

@@ -72,6 +72,7 @@ class Settings : public device::Settings {
 
   size_t sdmaCopyThreshold_;   //!< Use SDMA to copy above this size
   size_t sdma_p2p_threshold_;  //!< Use SDMA in P2P above this size
+  size_t h2dWcCopyThreshold_;  //!< Max H2D size for CPU write-combining via PCIe BAR
 
   uint32_t hmmFlags_;       //!< HMM functionality control flags
   uint32_t limit_blit_wg_;  //!< The number of workgroups for blit execution
