@@ -41,6 +41,15 @@ rcclTestsGetAlgoInfo_t rcclTestsGetAlgoInfo = NULL;
 rcclTestsGetProtocolName_t rcclTestsGetProtocolName = NULL;
 rcclTestsGetAlgoName_t rcclTestsGetAlgoName= NULL;
 static void loadRcclSyms() {
+  // Try RTLD_DEFAULT first — librccl.so.1 is already loaded by the dynamic
+  // linker, so its symbols are reachable without a second dlopen.  This avoids
+  // failures when only the versioned .so.1 is on the library path.
+  rcclTestsGetAlgoInfo      = (rcclTestsGetAlgoInfo_t)     dlsym(RTLD_DEFAULT, "rcclGetAlgoInfo");
+  rcclTestsGetAlgoName      = (rcclTestsGetAlgoName_t)     dlsym(RTLD_DEFAULT, "rcclGetAlgoName");
+  rcclTestsGetProtocolName  = (rcclTestsGetProtocolName_t) dlsym(RTLD_DEFAULT, "rcclGetProtocolName");
+  if (rcclTestsGetAlgoInfo && rcclTestsGetAlgoName && rcclTestsGetProtocolName)
+    return;
+
   static void* handle = NULL;
   const char* libname = "librccl.so";
   if (!handle) {
@@ -269,7 +278,7 @@ void Reporter::writeFile() {
     _out << "numCycle,";
     _out << "collective,";
 #ifdef MPI_SUPPORT
-    _out << "ranks,rankspernode,gpusperrank,";
+    _out << "nodes,ranks,rankspernode,gpusperrank,";
 #else
     _out << "gpus,";
 #endif
