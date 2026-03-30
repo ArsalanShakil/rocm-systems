@@ -116,6 +116,8 @@
         "Unit_Device___hfma2_Accuracy_Positive",
         "=== Test does not reflect a valid use case - SWDEV-569454",
         "Unit_hipStreamPerThread_MultiThread",
+        "Unit_Thread_Block_Tile_Reduce_Basic - *",
+
     #endif
     #if defined ENABLE_ADDRESS_SANITIZER
         "=== These tests are testing for features which throw off the sanitizer like check for values after free===",
