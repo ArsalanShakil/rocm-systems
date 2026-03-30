@@ -12,5 +12,5 @@ if [[ ${full} -eq 1 ]]; then
   cmake .. -DCMAKE_BUILD_TYPE=Release -DCLR_BUILD_HIP=ON -DHIP_COMMON_DIR=$HIP_DIR -D__HIP_ENABLE_PCH=OFF
 fi
 
-make -j
+make -j VERBOSE=1
 popd

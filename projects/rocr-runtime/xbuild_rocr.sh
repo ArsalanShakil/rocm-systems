@@ -13,5 +13,5 @@ if [[ ${full} -eq 1 ]]; then
   cmake -DCMAKE_INSTALL_PREFIX=/tf/rocr-runtime-install  -DCMAKE_BUILD_TYPE=Release ..
 fi
 
-make install -j
+make install -j VERBOSE=1
 popd
