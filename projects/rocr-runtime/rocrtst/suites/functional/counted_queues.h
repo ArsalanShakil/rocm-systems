@@ -63,6 +63,14 @@ class CountedQueuesTest : public TestBase {
   /// @brief Test to verify ring buffer wrap around when more than queue_size number of 
   // AQL packets are enqueued
   void CountedQueuesOverflowWrapAroundTest();
+
+  /// @brief Test to create at least twice the amount of CP queues to force over-subscription
+  // AQL packets and signals are enqueued
+  void CPQueueOverSubscriptionTest();
+private:
+  void FreeResources();
+  bool resources_free = false;
+
 };
 
 #endif  // ROCRTST_SUITES_FUNCTIONAL_COUNTED_QUEUES_H

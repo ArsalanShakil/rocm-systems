@@ -968,6 +968,11 @@ typedef enum hsa_amd_agent_info_s {
    * Returns uint32_t. Zero if the device does not support dynamic data prefetch.
    */
   HSA_AMD_AGENT_INFO_MAX_DATA_PREFETCH_REGIONS = 0xA123,
+  /**
+   * Queries for number of CP Queues within the agent.
+   * The type of this attribute is uint32_t.
+   */
+  HSA_AMD_AGENT_INFO_NUM_CP_QUEUES = 0xA124,
 } hsa_amd_agent_info_t;
 
 /**
