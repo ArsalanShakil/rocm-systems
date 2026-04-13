@@ -2,6 +2,18 @@
 
 Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projects/rocprofiler-sdk](https://rocm.docs.amd.com/projects/rocprofiler-sdk/en/latest/index.html)
 
+## Unreleased
+
+### Added
+
+### Changed
+  - Improved `rocpd` capability to convert sampling data from `rocprofiler-systems` database to Perfetto trace.
+
+### Removed
+
+### Resolved issues
+
+
 ## ROCprofiler-SDK 1.3.0 for ROCm release 7.2.4
 
 ### Optimized
