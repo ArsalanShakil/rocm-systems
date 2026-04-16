@@ -35,6 +35,7 @@
 #   --cull                 Cull groups stuck in GPU barriers / gridsync (built-in patterns)
 #   --cull=p1,p2,...       Cull groups whose backtrace contains any of the given substrings
 #   --check-lanes          Enable per-lane register divergence check inside each group
+#   --stats                Print per-group wavefront statistics
 #   --color                Force ANSI color output (default when stdout is a tty)
 #   --no-color             Disable ANSI color output
 #
@@ -46,7 +47,7 @@
 #   ./attach_deadlock_analysis.sh rocshmem_functional_tests
 #   ./attach_deadlock_analysis.sh rocshmem_functional_tests --directory /tmp/my_analysis
 #   ./attach_deadlock_analysis.sh rocshmem_functional_tests --cull
-#   ./attach_deadlock_analysis.sh rocshmem_functional_tests --check-lanes
+#   ./attach_deadlock_analysis.sh rocshmem_functional_tests --check-lanes --stats
 #   ./attach_deadlock_analysis.sh rocshmem_functional_tests --directory /tmp/my_analysis --cull=__syncthreads,cooperative_groups
 #   ROCSHMEM_GDB_TIMEOUT=60 ./attach_deadlock_analysis.sh my_app
 ###############################################################################
@@ -62,7 +63,7 @@ GDB_SCRIPT="${SCRIPT_DIR}/rocgdb_deadlock_analysis.py"
 
 EXECUTABLE="${1:-}"
 if [[ -z "${EXECUTABLE}" ]]; then
-    echo "Usage: $0 <executable_name> [--directory <dir>] [--cull[=p1,p2,...]] [--check-lanes] [--color|--no-color]" >&2
+    echo "Usage: $0 <executable_name> [--directory <dir>] [--cull[=p1,p2,...]] [--check-lanes] [--stats] [--color|--no-color]" >&2
     echo "  Attaches rocgdb to all running <executable_name> processes on this host," >&2
     echo "  runs the rocSHMEM deadlock analysis, and saves output to the output dir." >&2
     exit 1
@@ -72,6 +73,7 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT_DIR=""
 CULL_ENV=""
 CHECK_LANES_ENV="0"
+STATS_ENV="0"
 COLOR_ENV=""
 
 # Parse options from remaining arguments
@@ -94,6 +96,8 @@ while [[ ${_i} -lt ${#_args[@]} ]]; do
         CULL_ENV="${_arg#--cull=}"
     elif [[ "${_arg}" == "--check-lanes" ]]; then
         CHECK_LANES_ENV="1"
+    elif [[ "${_arg}" == "--stats" ]]; then
+        STATS_ENV="1"
     elif [[ "${_arg}" == "--color" ]]; then
         COLOR_ENV="always"
     elif [[ "${_arg}" == "--no-color" ]]; then
@@ -194,6 +198,7 @@ for PID in "${PIDS[@]}"; do
         env ROCSHMEM_DEADLOCK_AUTO_ANALYZE=1 \
             ROCSHMEM_DEADLOCK_CULL="${CULL_ENV}" \
             ROCSHMEM_DEADLOCK_CHECK_LANES="${CHECK_LANES_ENV}" \
+            ROCSHMEM_DEADLOCK_STATS="${STATS_ENV}" \
             ${COLOR_ENV:+ROCSHMEM_DEADLOCK_COLOR="${COLOR_ENV}"} \
         "${ROCGDB}" -batch \
             -p "${PID}" \
