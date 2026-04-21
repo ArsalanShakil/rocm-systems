@@ -2,7 +2,7 @@ name: Build RDC
 
 on:
   pull_request:
-    branches: [ 'dgalants/ci', 'amd-staging', 'amd-mainline' ]
+    branches: [ 'develop', 'dgalants/ci', 'amd-staging', 'amd-mainline' ]
   workflow_dispatch:
 
 env:
