@@ -139,33 +139,46 @@ jobs:
         if-no-files-found: error
         retention-days: 5
 
+  # =================================================================
+  #  Test job — non-GPU tests (installation, CLI, Python, parsers)
+  # =================================================================
   test:
     needs: build
     runs-on: lstt
     container: rocm/rocm-build-ubuntu-22.04:6.3
 
     steps:
+    - uses: actions/checkout@v3
+
     - name: Set up apt repos
       run: |
         cat /etc/os-release
         apt update -y
-        # provides add-apt-repository and support for caching actions
         apt install -y software-properties-common jq curl
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
         apt install -y nodejs
 
-    - name: Package RDC
+    - name: Install test dependencies
+      run: |
+        apt install -y python3 python3-pip
+        pip3 install pytest
+
+    - name: Download RDC package
       uses: actions/download-artifact@v4
       with:
         name: rdc
         path: /opt/
 
-    - name: Test RDC installation
+    - name: Install RDC package
       shell: bash
       run: |
         COUNT=$(find /opt/ -iname 'rdc*.deb' | wc -l)
         test "$COUNT" -eq '2'
         dpkg --force-all -i /opt/rdc*.deb
+
+    - name: Verify RDC installation
+      shell: bash
+      run: |
         # confirm binaries are installed
         find $ROCM_DIR/bin -maxdepth 1 -iname rdcd
         find $ROCM_DIR/bin -maxdepth 1 -iname rdci
@@ -178,7 +191,6 @@ jobs:
         for lib in librdc_rocr.so librdc_rocp.so; do
           test -e "$ROCM_DIR/lib/rdc/$lib" || MISSING_LIBS+=("$lib")
         done
-
         if test "${#MISSING_LIBS[@]}" != "0"; then
           echo "Missing libs found!"
           for lib in "${MISSING_LIBS[@]}"; do
@@ -188,3 +200,163 @@ jobs:
         else
           echo "No missing libs found!"
         fi
+
+    # ---------------------------------------------------------------
+    # RDC CI Test Suite
+    # Mapped to test plan sections:
+    #   4.1 Core/CLI       - test_rdc_core.py
+    #   4.2 Python API     - test_python_api.py
+    #   4.3 Integration    - test_integration.py
+    #   4.4 Negative/Error - test_negative_resilience.py
+    #   4.5 Performance    - test_performance.py  (GPU-only)
+    #   4.6 Unit/Parser    - test_unit_parser.py
+    #   GTest runner       - test_gtest_runner.py
+    # ---------------------------------------------------------------
+
+    - name: "Test 4.1: RDC Core / CLI (no GPU)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_rdc_core.py \
+          -k "TestInstallation or TestCLIUsage or TestNegativeCLI" \
+          -v --tb=short \
+          --junitxml=build/test-results-core-nogpu.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.2: Python API / Bindings"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_python_api.py \
+          -v --tb=short \
+          --junitxml=build/test-results-python-api.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.3: Integration (Prometheus, Grafana, RAS)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_integration.py \
+          -v --tb=short \
+          --junitxml=build/test-results-integration.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.4: Negative / Error Handling (no GPU)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_negative_resilience.py \
+          -k "TestAuthErrors or TestClientBeforeDaemon" \
+          -v --tb=short \
+          --junitxml=build/test-results-negative-nogpu.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.6: Unit / Parser Tests"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_unit_parser.py \
+          -v --tb=short \
+          --junitxml=build/test-results-unit-parser.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test GTest: rdctst --gtest_list_tests"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_gtest_runner.py \
+          -k "test_rdctst_list_tests" \
+          -v --tb=short \
+          --junitxml=build/test-results-gtest-list.xml
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rdc-test-results
+        path: build/test-results-*.xml
+        retention-days: 30
+
+  # =================================================================
+  #  GPU test job — requires AMD GPU hardware
+  #  Enable by setting repo variable: RDC_GPU_TESTS_ENABLED=true
+  # =================================================================
+  test-gpu:
+    needs: build
+    runs-on: lstt-gpu
+    if: ${{ vars.RDC_GPU_TESTS_ENABLED == 'true' }}
+    container:
+      image: rocm/rocm-build-ubuntu-22.04:6.3
+      options: --device=/dev/kfd --device=/dev/dri --group-add video
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up environment
+      run: |
+        apt update -y
+        apt install -y software-properties-common python3 python3-pip
+        pip3 install pytest
+
+    - name: Download RDC package
+      uses: actions/download-artifact@v4
+      with:
+        name: rdc
+        path: /opt/
+
+    - name: Install RDC package
+      shell: bash
+      run: |
+        dpkg --force-all -i /opt/rdc*.deb
+
+    - name: "Test 4.1: RDC Core / CLI (with GPU + daemon)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_rdc_core.py \
+          -v --tb=short \
+          --junitxml=build/test-results-core-gpu.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.4: Negative / Resilience (with GPU)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_negative_resilience.py \
+          -v --tb=short \
+          --junitxml=build/test-results-negative-gpu.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test 4.5: Performance / Scalability (with GPU)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_performance.py \
+          -v --tb=short \
+          --junitxml=build/test-results-performance.xml
+      env:
+        RDC_SRC_DIR: ${{ github.workspace }}/python_binding
+
+    - name: "Test GTest: rdctst embedded batch (with GPU)"
+      shell: bash
+      run: |
+        cd $GITHUB_WORKSPACE
+        python3 -m pytest tests/ci/test_gtest_runner.py \
+          -k "test_rdctst_embedded_batch" \
+          -v --tb=short \
+          --junitxml=build/test-results-gtest-batch.xml
+
+    - name: Upload GPU test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rdc-test-results-gpu
+        path: build/test-results-*.xml
+        retention-days: 30
