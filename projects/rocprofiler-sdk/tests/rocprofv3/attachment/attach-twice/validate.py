@@ -44,7 +44,7 @@ def test_attachment_kernel_trace(kernel_input_data):
     kernel_threads = set()
     kernel_streams = set()
     NUM_KERNEL_THREADS = 8
-    expected_stream_ids = set([i for i in range(1, 9)])
+    # expected_stream_ids = set([i for i in range(1, 9)])
 
     # Verify basic kernel properties
     for row in kernel_input_data:

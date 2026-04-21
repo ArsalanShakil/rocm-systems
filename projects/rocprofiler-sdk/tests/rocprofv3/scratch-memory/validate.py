@@ -24,9 +24,6 @@
 
 import sys
 import pytest
-import json
-
-from collections import defaultdict
 
 
 # helper function
@@ -203,7 +200,7 @@ def verify_scratch_memory_alternating_pattern(scratch_memory_data, bf_op_names):
                 )
 
                 raise AssertionError(
-                    f"Thread {thread_id}, Flags {flags}: Operation #{i+1} should be {expected_name} (code {expected}), found {op_name} (code {sorted_ops[i]})"
+                    f"Thread {thread_id}, Flags {flags}: Operation #{i + 1} should be {expected_name} (code {expected}), found {op_name} (code {sorted_ops[i]})"
                 )
 
 
