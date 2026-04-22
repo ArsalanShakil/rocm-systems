@@ -28,7 +28,9 @@ defaults:
 
 jobs:
   build:
-    runs-on: lstt
+    runs-on:
+      - self-hosted
+      - ${{ vars.RUNNER_TYPE }}
     container: rocm/rocm-build-ubuntu-22.04:6.3
     outputs:
       BUILD_NUM: ${{ steps.build_number.outputs.BUILD_NUM }}
@@ -153,7 +155,9 @@ jobs:
   # =================================================================
   test:
     needs: build
-    runs-on: lstt
+    runs-on:
+      - self-hosted
+      - ${{ vars.RUNNER_TYPE }}
     container: rocm/rocm-build-ubuntu-22.04:6.3
 
     steps:
@@ -295,7 +299,9 @@ jobs:
   # =================================================================
   test-gpu:
     needs: build
-    runs-on: lstt-gpu
+    runs-on:
+      - self-hosted
+      - ${{ vars.RUNNER_TYPE }}
     if: ${{ vars.RDC_GPU_TESTS_ENABLED == 'true' }}
     container:
       image: rocm/rocm-build-ubuntu-22.04:6.3
