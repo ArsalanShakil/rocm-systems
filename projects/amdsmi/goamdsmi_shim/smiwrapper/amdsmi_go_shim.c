@@ -676,14 +676,14 @@ uint64_t goamdsmi_gpu_dev_power_get(uint32_t dv_ind) {
 uint64_t goamdsmi_gpu_dev_temp_metric_get(uint32_t dv_ind, uint32_t sensor, uint32_t metric) {
   bool readSuccess = false;
   uint64_t gpu_temperature = GOAMDSMI_UINT64_MAX;
-  uint64_t gpu_temperature_temp = GOAMDSMI_UINT64_MAX;
+  int64_t gpu_temperature_temp = (int64_t)GOAMDSMI_UINT64_MAX;
 
   if ((dv_ind < num_gpu_devices_inAllSocket) &&
       (AMDSMI_STATUS_SUCCESS ==
        amdsmi_get_temp_metric(amdsmi_processor_handle_all_gpu_device_across_socket[dv_ind], sensor,
                               metric, &gpu_temperature_temp))) {
     readSuccess = true;
-    gpu_temperature = gpu_temperature_temp;
+    gpu_temperature = (uint64_t)gpu_temperature_temp;
     gpu_temperature =
         (gpu_temperature) * 1000;  // to maintain backward compatibility with old ROCM SMI
     if (enable_debug_level(GOAMDSMI_DEBUG_LEVEL_1)) {
