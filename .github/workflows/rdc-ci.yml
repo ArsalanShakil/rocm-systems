@@ -11,14 +11,8 @@ on:
 env:
   DEBIAN_FRONTEND: noninteractive
   DEBCONF_NONINTERACTIVE_SEEN: true
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: RelWithDebInfo
   ROCM_DIR: /opt/rocm
-  # Use vars for internal URLs
-  JOB_NAME: ${{ vars.RDC_JOB_NAME }}
-  AMDGPU_REPO_DEB: ${{ vars.RDC_AMDGPU_REPO_DEB }}
-  AMDGPU_REPO_URL: ${{ vars.RDC_AMDGPU_REPO_URL }}
-  ROCM_CI_URL: ${{ vars.RDC_ROCM_CI_URL }}
 
 defaults:
   run:
@@ -29,63 +23,26 @@ jobs:
     runs-on:
       - self-hosted
       - ${{ vars.RUNNER_TYPE }}
-    container: rocm/rocm-build-ubuntu-22.04:6.3
+    container: rocm/dev-ubuntu-22.04:6.3
     outputs:
-      BUILD_NUM: ${{ steps.build_number.outputs.BUILD_NUM }}
-      TODAY: ${{ steps.build_number.outputs.TODAY }}
+      TODAY: ${{ steps.metadata.outputs.TODAY }}
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up apt repos
+    - name: Build metadata
+      id: metadata
       working-directory: .
       run: |
-        test "$AMDGPU_REPO_URL" = "" && echo "Error! AMDGPU_REPO_URL is EMPTY!" && exit 1
-        cat /etc/os-release
-        apt update -y
-        # provides add-apt-repository and support for caching actions
-        apt install -y software-properties-common jq curl
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt install -y nodejs
-        add-apt-repository -y ppa:apt-fast/stable
-        apt update -y
-        apt install -y apt-fast
-        # provides amdgpu-repo
-        wget "$AMDGPU_REPO_URL/$AMDGPU_REPO_DEB"
-        apt-fast install -y "./$AMDGPU_REPO_DEB"
-
-    - name: Get latest build number
-      id: build_number
-      working-directory: .
-      run: |
-        curl -Ls "${ROCM_CI_URL}/${JOB_NAME}/lastStableBuild/api/json?depth=1" -o /tmp/build_info.json
-        cat /tmp/build_info.json | jq '.actions[] | .buildsByBranchName."refs/remotes/origin/amd-mainline".buildNumber | select(. != null)' > /tmp/build_num.txt
-        BUILD_NUM="$(cat /tmp/build_num.txt)"
-        echo "BUILD_NUM=$BUILD_NUM" >> "$GITHUB_ENV"
-        echo "BUILD_NUM=$BUILD_NUM" >> "$GITHUB_OUTPUT"
-        amdgpu-repo --rocm-build="$JOB_NAME"/"$BUILD_NUM"
-        apt-fast update -y
-        # useful for date-based caches
         TODAY="$(date +%Y_%m_%d)"
         echo "TODAY=$TODAY" >> "$GITHUB_ENV"
         echo "TODAY=$TODAY" >> "$GITHUB_OUTPUT"
 
-    - name: Get apt packages
+    - name: Install build tools
       working-directory: .
       run: |
+        apt update -y
         apt install -y \
-          rocm-core \
-          amd-smi-lib \
-          rocm-developer-tools \
-          rocm-device-libs \
-          rocm-smi-lib \
-          rocprofiler-dev \
-          rocprofiler-plugins \
-          rocprofiler-register \
-          rocprofiler-sdk \
-          hip-dev \
-          hip-runtime-amd \
-          hipcc \
           build-essential \
           ccache \
           cmake \
@@ -104,7 +61,6 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/ccache
-        # only create one cache per day to save time during upload
         key: ${{ runner.os }}-rdc-ccache-${{ github.ref_name }}-${{ env.TODAY }}
         restore-keys: |
           ${{ runner.os }}-rdc-ccache-${{ github.ref_name }}-
@@ -138,8 +94,6 @@ jobs:
         echo "post: "
         ls -lah /opt
 
-    # important to use v3 because v4 doesn't work with act:
-    # https://github.com/nektos/act/issues/329
     - name: Package RDC
       uses: actions/upload-artifact@v4
       with:
@@ -156,23 +110,15 @@ jobs:
     runs-on:
       - self-hosted
       - ${{ vars.RUNNER_TYPE }}
-    container: rocm/rocm-build-ubuntu-22.04:6.3
+    container: rocm/dev-ubuntu-22.04:6.3
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up apt repos
-      working-directory: .
-      run: |
-        cat /etc/os-release
-        apt update -y
-        apt install -y software-properties-common jq curl
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt install -y nodejs
-
     - name: Install test dependencies
       working-directory: .
       run: |
+        apt update -y
         apt install -y python3 python3-pip
         pip3 install pytest
 
@@ -302,7 +248,7 @@ jobs:
       - ${{ vars.RUNNER_TYPE }}
     if: ${{ vars.RDC_GPU_TESTS_ENABLED == 'true' }}
     container:
-      image: rocm/rocm-build-ubuntu-22.04:6.3
+      image: rocm/dev-ubuntu-22.04:6.3
       options: --device=/dev/kfd --device=/dev/dri --group-add video
 
     steps:
@@ -312,7 +258,7 @@ jobs:
       working-directory: .
       run: |
         apt update -y
-        apt install -y software-properties-common python3 python3-pip
+        apt install -y python3 python3-pip
         pip3 install pytest
 
     - name: Download RDC package
