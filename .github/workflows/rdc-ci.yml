@@ -15,12 +15,10 @@ env:
   BUILD_TYPE: RelWithDebInfo
   ROCM_DIR: /opt/rocm
   # Use vars for internal URLs
-  JOB_NAME: ${{ vars.JOB_NAME }}
-  AMDGPU_REPO_DEB: ${{ vars.AMDGPU_REPO_DEB }}
-  AMDGPU_REPO_URL: ${{ vars.AMDGPU_REPO_URL }}
-  ROCM_CI_URL: ${{ vars.ROCM_CI_URL }}
-  # Set env vars to values of config vars
-  env_var: ${{ vars.ENV_CONTEXT_VAR }}
+  JOB_NAME: ${{ vars.RDC_JOB_NAME }}
+  AMDGPU_REPO_DEB: ${{ vars.RDC_AMDGPU_REPO_DEB }}
+  AMDGPU_REPO_URL: ${{ vars.RDC_AMDGPU_REPO_URL }}
+  ROCM_CI_URL: ${{ vars.RDC_ROCM_CI_URL }}
 
 defaults:
   run:
@@ -37,7 +35,7 @@ jobs:
       TODAY: ${{ steps.build_number.outputs.TODAY }}
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up apt repos
       working-directory: .
@@ -161,7 +159,7 @@ jobs:
     container: rocm/rocm-build-ubuntu-22.04:6.3
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up apt repos
       working-directory: .
@@ -308,7 +306,7 @@ jobs:
       options: --device=/dev/kfd --device=/dev/dri --group-add video
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set up environment
       working-directory: .
