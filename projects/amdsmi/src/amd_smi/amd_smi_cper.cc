@@ -99,7 +99,7 @@ static auto amdsmi_read_cper_file(const std::string& filepath) -> CperFileCtx {
   }
 
   ctx.file_size = file_stats.st_size;
-  ctx.buffer = std::make_unique<char[]>(ctx.file_size);
+  ctx.buffer = std::make_unique<char[]>(static_cast<size_t>(ctx.file_size));
 
   std::ifstream file(filepath, std::ios::binary);
   if (!file) {
@@ -191,7 +191,7 @@ static void* cper_get_sec_desc_offset(const amdsmi_cper_hdr_t* hdr, int idx) {
   if (idx >= hdr->sec_cnt) return 0;
 
   offset = (char*)hdr + sizeof(amdsmi_cper_hdr_t);
-  offset += sizeof(struct cper_sec_desc) * idx;
+  offset += sizeof(struct cper_sec_desc) * static_cast<size_t>(idx);
 
   return offset;
 }
@@ -202,7 +202,8 @@ static void* cper_get_sec_offset(const amdsmi_cper_hdr_t* hdr, int idx) {
   if (idx >= hdr->sec_cnt) return 0;
 
   tmp_desc = reinterpret_cast<struct cper_sec_desc*>((char*)hdr + sizeof(amdsmi_cper_hdr_t) +
-                                                     sizeof(struct cper_sec_desc) * idx);
+                                                     sizeof(struct cper_sec_desc) *
+                                                         static_cast<size_t>(idx));
 
   return (char*)hdr + tmp_desc->sec_offset;
 }
@@ -419,7 +420,7 @@ amdsmi_status_t amdsmi_get_gpu_cper_entries_by_path(const char* amdgpu_ring_cper
     return ctx.status;
   }
 
-  auto headers = amdsmi_get_gpu_cper_headers(ctx.buffer.get(), ctx.file_size);
+  auto headers = amdsmi_get_gpu_cper_headers(ctx.buffer.get(), static_cast<size_t>(ctx.file_size));
   ss << __PRETTY_FUNCTION__ << "\n:" << __LINE__ << "[CPER] num headers: " << headers.size();
   LOG_DEBUG(ss);
 
