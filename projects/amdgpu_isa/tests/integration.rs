@@ -8,7 +8,7 @@
 //! - Trait implementations
 //! - Visitor pattern
 
-use amdgpu_isa::{format_src, DecodeError, Instruction, Isa};
+use amdgpu_isa::{format_src, DecodeError, EncodingFormat, Instruction, Isa};
 
 #[cfg(feature = "rdna4")]
 use amdgpu_isa::rdna4::*;
@@ -69,6 +69,31 @@ fn test_format_src_vgpr() {
     assert_eq!(format_src(256), "v0");
     assert_eq!(format_src(257), "v1");
     assert_eq!(format_src(511), "v255");
+}
+
+// ─── EncodingFormat tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_encoding_format_as_str() {
+    assert_eq!(EncodingFormat::EncVop2.as_str(), "ENC_VOP2");
+    assert_eq!(EncodingFormat::EncSopp.as_str(), "ENC_SOPP");
+    assert_eq!(EncodingFormat::EncSmem.as_str(), "ENC_SMEM");
+    assert_eq!(EncodingFormat::Vop3SdstEnc.as_str(), "VOP3_SDST_ENC");
+    assert_eq!(EncodingFormat::Sop1InstLiteral.as_str(), "SOP1_INST_LITERAL");
+}
+
+#[test]
+fn test_encoding_format_display() {
+    assert_eq!(format!("{}", EncodingFormat::EncVop2), "ENC_VOP2");
+    assert_eq!(format!("{}", EncodingFormat::EncDs), "ENC_DS");
+}
+
+#[test]
+fn test_encoding_format_eq_and_clone() {
+    let a = EncodingFormat::EncVop3;
+    let b = a;
+    assert_eq!(a, b);
+    assert_ne!(EncodingFormat::EncVop1, EncodingFormat::EncVop2);
 }
 
 // ─── Schema parsing tests ──────────────────────────────────────────────────────
@@ -260,6 +285,15 @@ mod rdna4_tests {
     }
 
     #[test]
+    fn test_inner_encoding_format() {
+        let vop2 = VAddF32::EncVop2 { vdst: 0, src0: 0, vsrc1: 0 };
+        assert_eq!(vop2.encoding_format(), EncodingFormat::EncVop2);
+
+        let sopp = SEndpgm::EncSopp;
+        assert_eq!(sopp.encoding_format(), EncodingFormat::EncSopp);
+    }
+
+    #[test]
     fn test_s_endpgm_known_encoding() {
         // S_ENDPGM encoding:
         // ENCODING = 0b10111111_1 (9 bits at 23..31) = 0xBF800000
@@ -282,9 +316,9 @@ mod rdna4_tests {
     }
 
     #[test]
-    fn test_instruction_trait_encoding_name() {
+    fn test_instruction_trait_encoding_format() {
         let inst = RDNA4Instruction::SEndpgm(SEndpgm::EncSopp);
-        assert_eq!(inst.encoding_name(), "ENC_SOPP");
+        assert_eq!(inst.encoding_format(), EncodingFormat::EncSopp);
     }
 
     #[test]

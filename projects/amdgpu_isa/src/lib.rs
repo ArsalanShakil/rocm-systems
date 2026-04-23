@@ -14,6 +14,163 @@
 
 pub mod schema;
 
+// ─── Encoding format enum ──────────────────────────────────────────────────────
+
+/// All known GPU instruction encoding formats across RDNA and CDNA architectures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EncodingFormat {
+    EncDs,
+    EncExp,
+    EncFlat,
+    EncFlatGlbl,
+    EncFlatGlobal,
+    EncFlatScratch,
+    EncLdsdir,
+    EncMimg,
+    EncMtbuf,
+    EncMubuf,
+    EncSmem,
+    EncSop1,
+    EncSop2,
+    EncSopc,
+    EncSopk,
+    EncSopp,
+    EncVbuffer,
+    EncVds,
+    EncVdsdir,
+    EncVexport,
+    EncVflat,
+    EncVglobal,
+    EncVimage,
+    EncVinterp,
+    EncVintrp,
+    EncVop1,
+    EncVop2,
+    EncVop3,
+    EncVop3p,
+    EncVop3px2,
+    EncVopc,
+    EncVsample,
+    EncVscratch,
+    MimgNsa1,
+    MimgNsa2,
+    MimgNsa3,
+    Sop1InstLiteral,
+    Sop2InstLiteral,
+    SopcInstLiteral,
+    SopkInstLiteral,
+    Vop1InstLiteral,
+    Vop1VopDpp,
+    Vop1VopDpp16,
+    Vop1VopDpp8,
+    Vop1VopSdwa,
+    Vop2InstLiteral,
+    Vop2VopDpp,
+    Vop2VopDpp16,
+    Vop2VopDpp8,
+    Vop2VopSdwa,
+    Vop2VopSdwaSdstEnc,
+    Vop3InstLiteral,
+    Vop3SdstEnc,
+    Vop3SdstEncInstLiteral,
+    Vop3SdstEncVopDpp16,
+    Vop3SdstEncVopDpp8,
+    Vop3VopDpp16,
+    Vop3VopDpp8,
+    Vop3pInstLiteral,
+    Vop3pMfma,
+    Vop3pVopDpp16,
+    Vop3pVopDpp8,
+    VopcInstLiteral,
+    VopcVopDpp16,
+    VopcVopDpp8,
+    VopcVopSdwaSdstEnc,
+    Vopdxy,
+    VopdxyInstLiteral,
+}
+
+impl EncodingFormat {
+    /// Returns the canonical encoding name string (e.g., `"ENC_VOP2"`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::EncDs => "ENC_DS",
+            Self::EncExp => "ENC_EXP",
+            Self::EncFlat => "ENC_FLAT",
+            Self::EncFlatGlbl => "ENC_FLAT_GLBL",
+            Self::EncFlatGlobal => "ENC_FLAT_GLOBAL",
+            Self::EncFlatScratch => "ENC_FLAT_SCRATCH",
+            Self::EncLdsdir => "ENC_LDSDIR",
+            Self::EncMimg => "ENC_MIMG",
+            Self::EncMtbuf => "ENC_MTBUF",
+            Self::EncMubuf => "ENC_MUBUF",
+            Self::EncSmem => "ENC_SMEM",
+            Self::EncSop1 => "ENC_SOP1",
+            Self::EncSop2 => "ENC_SOP2",
+            Self::EncSopc => "ENC_SOPC",
+            Self::EncSopk => "ENC_SOPK",
+            Self::EncSopp => "ENC_SOPP",
+            Self::EncVbuffer => "ENC_VBUFFER",
+            Self::EncVds => "ENC_VDS",
+            Self::EncVdsdir => "ENC_VDSDIR",
+            Self::EncVexport => "ENC_VEXPORT",
+            Self::EncVflat => "ENC_VFLAT",
+            Self::EncVglobal => "ENC_VGLOBAL",
+            Self::EncVimage => "ENC_VIMAGE",
+            Self::EncVinterp => "ENC_VINTERP",
+            Self::EncVintrp => "ENC_VINTRP",
+            Self::EncVop1 => "ENC_VOP1",
+            Self::EncVop2 => "ENC_VOP2",
+            Self::EncVop3 => "ENC_VOP3",
+            Self::EncVop3p => "ENC_VOP3P",
+            Self::EncVop3px2 => "ENC_VOP3PX2",
+            Self::EncVopc => "ENC_VOPC",
+            Self::EncVsample => "ENC_VSAMPLE",
+            Self::EncVscratch => "ENC_VSCRATCH",
+            Self::MimgNsa1 => "MIMG_NSA1",
+            Self::MimgNsa2 => "MIMG_NSA2",
+            Self::MimgNsa3 => "MIMG_NSA3",
+            Self::Sop1InstLiteral => "SOP1_INST_LITERAL",
+            Self::Sop2InstLiteral => "SOP2_INST_LITERAL",
+            Self::SopcInstLiteral => "SOPC_INST_LITERAL",
+            Self::SopkInstLiteral => "SOPK_INST_LITERAL",
+            Self::Vop1InstLiteral => "VOP1_INST_LITERAL",
+            Self::Vop1VopDpp => "VOP1_VOP_DPP",
+            Self::Vop1VopDpp16 => "VOP1_VOP_DPP16",
+            Self::Vop1VopDpp8 => "VOP1_VOP_DPP8",
+            Self::Vop1VopSdwa => "VOP1_VOP_SDWA",
+            Self::Vop2InstLiteral => "VOP2_INST_LITERAL",
+            Self::Vop2VopDpp => "VOP2_VOP_DPP",
+            Self::Vop2VopDpp16 => "VOP2_VOP_DPP16",
+            Self::Vop2VopDpp8 => "VOP2_VOP_DPP8",
+            Self::Vop2VopSdwa => "VOP2_VOP_SDWA",
+            Self::Vop2VopSdwaSdstEnc => "VOP2_VOP_SDWA_SDST_ENC",
+            Self::Vop3InstLiteral => "VOP3_INST_LITERAL",
+            Self::Vop3SdstEnc => "VOP3_SDST_ENC",
+            Self::Vop3SdstEncInstLiteral => "VOP3_SDST_ENC_INST_LITERAL",
+            Self::Vop3SdstEncVopDpp16 => "VOP3_SDST_ENC_VOP_DPP16",
+            Self::Vop3SdstEncVopDpp8 => "VOP3_SDST_ENC_VOP_DPP8",
+            Self::Vop3VopDpp16 => "VOP3_VOP_DPP16",
+            Self::Vop3VopDpp8 => "VOP3_VOP_DPP8",
+            Self::Vop3pInstLiteral => "VOP3P_INST_LITERAL",
+            Self::Vop3pMfma => "VOP3P_MFMA",
+            Self::Vop3pVopDpp16 => "VOP3P_VOP_DPP16",
+            Self::Vop3pVopDpp8 => "VOP3P_VOP_DPP8",
+            Self::VopcInstLiteral => "VOPC_INST_LITERAL",
+            Self::VopcVopDpp16 => "VOPC_VOP_DPP16",
+            Self::VopcVopDpp8 => "VOPC_VOP_DPP8",
+            Self::VopcVopSdwaSdstEnc => "VOPC_VOP_SDWA_SDST_ENC",
+            Self::Vopdxy => "VOPDXY",
+            Self::VopdxyInstLiteral => "VOPDXY_INST_LITERAL",
+        }
+    }
+}
+
+impl core::fmt::Display for EncodingFormat {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 // ─── Core traits ───────────────────────────────────────────────────────────────
 
 /// Trait implemented by all generated instruction enums.
@@ -21,8 +178,8 @@ pub trait Instruction: core::fmt::Display + core::fmt::Debug + Clone {
     /// The SP3 assembly mnemonic (e.g., `"v_add_f32"`).
     fn mnemonic(&self) -> &'static str;
 
-    /// The encoding format name (e.g., `"ENC_VOP2"`).
-    fn encoding_name(&self) -> &'static str;
+    /// The encoding format for this instruction.
+    fn encoding_format(&self) -> EncodingFormat;
 
     /// Whether this instruction is a branch.
     fn is_branch(&self) -> bool;

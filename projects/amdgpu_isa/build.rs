@@ -413,9 +413,9 @@ fn generate_instruction_encode(
         "    pub fn mnemonic(&self) -> &'static str {{ \"{mnemonic}\" }}"
     );
 
-    // Encoding name method
-    let _ = writeln!(out, "    /// Encoding format name.");
-    let _ = writeln!(out, "    pub fn encoding_name(&self) -> &'static str {{");
+    // Encoding format method
+    let _ = writeln!(out, "    /// Encoding format.");
+    let _ = writeln!(out, "    pub fn encoding_format(&self) -> crate::EncodingFormat {{");
     let _ = writeln!(out, "        match self {{");
     let mut used_variants2: HashMap<String, usize> = HashMap::new();
     for enc in &inst.encodings {
@@ -424,18 +424,17 @@ fn generate_instruction_encode(
             &enc.encoding_condition,
             &mut used_variants2,
         );
+        let format_variant = encoding_format_variant(&enc.encoding_name);
         let fields = collect_fields(enc, encoding_map);
         if fields.is_empty() {
             let _ = writeln!(
                 out,
-                "            Self::{variant_name} => \"{}\",",
-                enc.encoding_name
+                "            Self::{variant_name} => crate::EncodingFormat::{format_variant},"
             );
         } else {
             let _ = writeln!(
                 out,
-                "            Self::{variant_name} {{ .. }} => \"{}\",",
-                enc.encoding_name
+                "            Self::{variant_name} {{ .. }} => crate::EncodingFormat::{format_variant},"
             );
         }
     }
@@ -509,14 +508,14 @@ fn generate_instruction_trait_impl(
     let _ = writeln!(out, "        }}");
     let _ = writeln!(out, "    }}");
 
-    // encoding_name()
-    let _ = writeln!(out, "    fn encoding_name(&self) -> &'static str {{");
+    // encoding_format()
+    let _ = writeln!(out, "    fn encoding_format(&self) -> crate::EncodingFormat {{");
     let _ = writeln!(out, "        match self {{");
     for inst in instructions {
         let type_name = to_pascal_case(&inst.name);
         let _ = writeln!(
             out,
-            "            Self::{type_name}(inner) => inner.encoding_name(),"
+            "            Self::{type_name}(inner) => inner.encoding_format(),"
         );
     }
     let _ = writeln!(out, "        }}");
@@ -1013,6 +1012,81 @@ fn unique_variant_name(
     };
     *used.get_mut(&base).unwrap() += 1;
     name
+}
+
+/// Map an encoding name string to its `EncodingFormat` variant name.
+fn encoding_format_variant(name: &str) -> &'static str {
+    match name {
+        "ENC_DS" => "EncDs",
+        "ENC_EXP" => "EncExp",
+        "ENC_FLAT" => "EncFlat",
+        "ENC_FLAT_GLBL" => "EncFlatGlbl",
+        "ENC_FLAT_GLOBAL" => "EncFlatGlobal",
+        "ENC_FLAT_SCRATCH" => "EncFlatScratch",
+        "ENC_LDSDIR" => "EncLdsdir",
+        "ENC_MIMG" => "EncMimg",
+        "ENC_MTBUF" => "EncMtbuf",
+        "ENC_MUBUF" => "EncMubuf",
+        "ENC_SMEM" => "EncSmem",
+        "ENC_SOP1" => "EncSop1",
+        "ENC_SOP2" => "EncSop2",
+        "ENC_SOPC" => "EncSopc",
+        "ENC_SOPK" => "EncSopk",
+        "ENC_SOPP" => "EncSopp",
+        "ENC_VBUFFER" => "EncVbuffer",
+        "ENC_VDS" => "EncVds",
+        "ENC_VDSDIR" => "EncVdsdir",
+        "ENC_VEXPORT" => "EncVexport",
+        "ENC_VFLAT" => "EncVflat",
+        "ENC_VGLOBAL" => "EncVglobal",
+        "ENC_VIMAGE" => "EncVimage",
+        "ENC_VINTERP" => "EncVinterp",
+        "ENC_VINTRP" => "EncVintrp",
+        "ENC_VOP1" => "EncVop1",
+        "ENC_VOP2" => "EncVop2",
+        "ENC_VOP3" => "EncVop3",
+        "ENC_VOP3P" => "EncVop3p",
+        "ENC_VOP3PX2" => "EncVop3px2",
+        "ENC_VOPC" => "EncVopc",
+        "ENC_VSAMPLE" => "EncVsample",
+        "ENC_VSCRATCH" => "EncVscratch",
+        "MIMG_NSA1" => "MimgNsa1",
+        "MIMG_NSA2" => "MimgNsa2",
+        "MIMG_NSA3" => "MimgNsa3",
+        "SOP1_INST_LITERAL" => "Sop1InstLiteral",
+        "SOP2_INST_LITERAL" => "Sop2InstLiteral",
+        "SOPC_INST_LITERAL" => "SopcInstLiteral",
+        "SOPK_INST_LITERAL" => "SopkInstLiteral",
+        "VOP1_INST_LITERAL" => "Vop1InstLiteral",
+        "VOP1_VOP_DPP" => "Vop1VopDpp",
+        "VOP1_VOP_DPP16" => "Vop1VopDpp16",
+        "VOP1_VOP_DPP8" => "Vop1VopDpp8",
+        "VOP1_VOP_SDWA" => "Vop1VopSdwa",
+        "VOP2_INST_LITERAL" => "Vop2InstLiteral",
+        "VOP2_VOP_DPP" => "Vop2VopDpp",
+        "VOP2_VOP_DPP16" => "Vop2VopDpp16",
+        "VOP2_VOP_DPP8" => "Vop2VopDpp8",
+        "VOP2_VOP_SDWA" => "Vop2VopSdwa",
+        "VOP2_VOP_SDWA_SDST_ENC" => "Vop2VopSdwaSdstEnc",
+        "VOP3_INST_LITERAL" => "Vop3InstLiteral",
+        "VOP3_SDST_ENC" => "Vop3SdstEnc",
+        "VOP3_SDST_ENC_INST_LITERAL" => "Vop3SdstEncInstLiteral",
+        "VOP3_SDST_ENC_VOP_DPP16" => "Vop3SdstEncVopDpp16",
+        "VOP3_SDST_ENC_VOP_DPP8" => "Vop3SdstEncVopDpp8",
+        "VOP3_VOP_DPP16" => "Vop3VopDpp16",
+        "VOP3_VOP_DPP8" => "Vop3VopDpp8",
+        "VOP3P_INST_LITERAL" => "Vop3pInstLiteral",
+        "VOP3P_MFMA" => "Vop3pMfma",
+        "VOP3P_VOP_DPP16" => "Vop3pVopDpp16",
+        "VOP3P_VOP_DPP8" => "Vop3pVopDpp8",
+        "VOPC_INST_LITERAL" => "VopcInstLiteral",
+        "VOPC_VOP_DPP16" => "VopcVopDpp16",
+        "VOPC_VOP_DPP8" => "VopcVopDpp8",
+        "VOPC_VOP_SDWA_SDST_ENC" => "VopcVopSdwaSdstEnc",
+        "VOPDXY" => "Vopdxy",
+        "VOPDXY_INST_LITERAL" => "VopdxyInstLiteral",
+        other => panic!("unknown encoding format: {other}"),
+    }
 }
 
 /// Generate a base variant name from encoding name + condition.
