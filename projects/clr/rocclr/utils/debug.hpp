@@ -203,7 +203,7 @@ inline void warning(const char* msg) { amd::report_warning(msg); }
 #endif
 
 // You may define CL_LOG to enable following log functions even for release build
-//#define CL_LOG
+#define CL_LOG
 
 #ifdef CL_LOG
 #define ClPrint(level, mask, format, ...)                                                          \
