@@ -1427,7 +1427,7 @@ class GraphKernelNode : public GraphNode {
     }
     else {
       // label = std::to_string(GetID()) + "\n" + function->name() + "\n";
-      label = function->name();
+      label = kernel->name();
     }
     return label;
   }
