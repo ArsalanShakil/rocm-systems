@@ -258,21 +258,14 @@ fn opt_child_elem<'a, 'b>(parent: &Node<'a, 'b>, tag: &str) -> Option<Node<'a, '
 
 fn child_text(parent: &Node<'_, '_>, tag: &'static str) -> Result<String, ParseError> {
     let node = child_elem(parent, tag)?;
-    Ok(node
-        .text()
-        .unwrap_or_default()
-        .trim()
-        .to_string())
+    Ok(node.text().unwrap_or_default().trim().to_string())
 }
 
 fn opt_child_text(parent: &Node<'_, '_>, tag: &str) -> Option<String> {
     opt_child_elem(parent, tag).and_then(|n| n.text().map(|t| t.trim().to_string()))
 }
 
-fn children_with_tag<'a, 'b>(
-    parent: &Node<'a, 'b>,
-    tag: &str,
-) -> Vec<Node<'a, 'b>> {
+fn children_with_tag<'a, 'b>(parent: &Node<'a, 'b>, tag: &str) -> Vec<Node<'a, 'b>> {
     parent
         .children()
         .filter(|n| n.is_element() && n.tag_name().name() == tag)
@@ -289,11 +282,7 @@ fn parse_radix_u64(text: &str, radix_attr: Option<&str>) -> Result<u64, ParseErr
         Some("2") => 2,
         Some("16") => 16,
         Some("10") | None => 10,
-        Some(other) => {
-            return Err(ParseError::InvalidValue(format!(
-                "unknown radix: {other}"
-            )))
-        }
+        Some(other) => return Err(ParseError::InvalidValue(format!("unknown radix: {other}"))),
     };
     u64::from_str_radix(text, radix)
         .map_err(|e| ParseError::InvalidValue(format!("{e}: '{text}' radix={radix}")))
@@ -320,8 +309,7 @@ fn parse_isa(node: &Node<'_, '_>) -> Result<IsaSpec, ParseError> {
     let arch_node = child_elem(node, "Architecture")?;
     let architecture = Architecture {
         name: child_text(&arch_node, "ArchitectureName")?,
-        id: opt_child_text(&arch_node, "ArchitectureId")
-            .and_then(|s| s.parse().ok()),
+        id: opt_child_text(&arch_node, "ArchitectureId").and_then(|s| s.parse().ok()),
     };
 
     let encodings_node = child_elem(node, "Encodings")?;
@@ -362,19 +350,18 @@ fn parse_isa(node: &Node<'_, '_>) -> Result<IsaSpec, ParseError> {
         vec![]
     };
 
-    let functional_subgroups =
-        if let Some(fsg_node) = opt_child_elem(node, "FunctionalSubgroups") {
-            children_with_tag(&fsg_node, "FunctionalSubgroup")
-                .iter()
-                .map(|n| {
-                    Ok(FunctionalSubgroupDef {
-                        name: child_text(n, "Name")?,
-                    })
+    let functional_subgroups = if let Some(fsg_node) = opt_child_elem(node, "FunctionalSubgroups") {
+        children_with_tag(&fsg_node, "FunctionalSubgroup")
+            .iter()
+            .map(|n| {
+                Ok(FunctionalSubgroupDef {
+                    name: child_text(n, "Name")?,
                 })
-                .collect::<Result<Vec<_>, ParseError>>()?
-        } else {
-            vec![]
-        };
+            })
+            .collect::<Result<Vec<_>, ParseError>>()?
+    } else {
+        vec![]
+    };
 
     Ok(IsaSpec {
         architecture,
@@ -400,8 +387,10 @@ fn parse_encoding(node: &Node<'_, '_>) -> Result<Encoding, ParseError> {
         .map_err(|e| ParseError::InvalidValue(format!("BitCount: {e}")))?;
 
     let mask_node = child_elem(node, "EncodingIdentifierMask")?;
-    let identifier_mask =
-        parse_radix_u64(mask_node.text().unwrap_or("0"), mask_node.attribute("Radix"))?;
+    let identifier_mask = parse_radix_u64(
+        mask_node.text().unwrap_or("0"),
+        mask_node.attribute("Radix"),
+    )?;
 
     let ids_node = child_elem(node, "EncodingIdentifiers")?;
     let identifiers = children_with_tag(&ids_node, "EncodingIdentifier")
@@ -492,10 +481,7 @@ fn parse_bit_range(node: &Node<'_, '_>) -> Result<BitRange, ParseError> {
             .parse()
             .map_err(|e| ParseError::InvalidValue(format!("Padding BitCount: {e}")))?;
         let val_node = child_elem(&pad_node, "Value")?;
-        let pad_val = parse_radix_u64(
-            val_node.text().unwrap_or("0"),
-            val_node.attribute("Radix"),
-        )?;
+        let pad_val = parse_radix_u64(val_node.text().unwrap_or("0"), val_node.attribute("Radix"))?;
         Some(Padding {
             bit_count: pad_bits,
             value: pad_val,
@@ -553,15 +539,15 @@ fn parse_instruction(node: &Node<'_, '_>) -> Result<InstructionDef, ParseError> 
     let functional_group: Option<FunctionalGroup> = opt_child_elem(node, "FunctionalGroup")
         .map(|fg_node| -> Result<FunctionalGroup, ParseError> {
             let fg_name = child_text(&fg_node, "Name")?;
-            let subgroups =
-                if let Some(sgs_node) = opt_child_elem(&fg_node, "FunctionalSubgroups") {
-                    children_with_tag(&sgs_node, "Subgroup")
-                        .iter()
-                        .filter_map(|n| n.text().map(|t| t.trim().to_string()))
-                        .collect()
-                } else {
-                    vec![]
-                };
+            let subgroups = if let Some(sgs_node) = opt_child_elem(&fg_node, "FunctionalSubgroups")
+            {
+                children_with_tag(&sgs_node, "Subgroup")
+                    .iter()
+                    .filter_map(|n| n.text().map(|t| t.trim().to_string()))
+                    .collect()
+            } else {
+                vec![]
+            };
             Ok(FunctionalGroup {
                 name: fg_name,
                 subgroups,
@@ -679,23 +665,22 @@ fn parse_operand_type(node: &Node<'_, '_>) -> Result<OperandTypeDef, ParseError>
         vec![]
     };
 
-    let predefined_values =
-        if let Some(pv_node) = opt_child_elem(node, "OperandPredefinedValues") {
-            children_with_tag(&pv_node, "PredefinedValue")
-                .iter()
-                .map(|n| {
-                    Ok(PredefinedValue {
-                        name: child_text(n, "Name")?,
-                        description: opt_child_text(n, "Description"),
-                        value: child_text(n, "Value")?
-                            .parse()
-                            .map_err(|e| ParseError::InvalidValue(format!("PV Value: {e}")))?,
-                    })
+    let predefined_values = if let Some(pv_node) = opt_child_elem(node, "OperandPredefinedValues") {
+        children_with_tag(&pv_node, "PredefinedValue")
+            .iter()
+            .map(|n| {
+                Ok(PredefinedValue {
+                    name: child_text(n, "Name")?,
+                    description: opt_child_text(n, "Description"),
+                    value: child_text(n, "Value")?
+                        .parse()
+                        .map_err(|e| ParseError::InvalidValue(format!("PV Value: {e}")))?,
                 })
-                .collect::<Result<Vec<_>, ParseError>>()?
-        } else {
-            vec![]
-        };
+            })
+            .collect::<Result<Vec<_>, ParseError>>()?
+    } else {
+        vec![]
+    };
 
     Ok(OperandTypeDef {
         name,

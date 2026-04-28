@@ -32,12 +32,7 @@ fn main() {
         let xml_path = data_dir.join(filename);
         println!("cargo:rerun-if-changed={}", xml_path.display());
 
-        if env::var(format!(
-            "CARGO_FEATURE_{}",
-            feature.to_uppercase()
-        ))
-        .is_ok()
-        {
+        if env::var(format!("CARGO_FEATURE_{}", feature.to_uppercase())).is_ok() {
             if !xml_path.exists() {
                 println!(
                     "cargo:warning=ISA XML file not found: {}",
@@ -101,13 +96,7 @@ fn generate_isa_module(spec: &Spec, isa_name: &str) -> String {
     generate_instruction_trait_impl(&mut out, &spec.isa.instructions, isa_name);
 
     // Generate Isa struct + impl
-    generate_isa_struct(
-        &mut out,
-        &spec.isa,
-        isa_name,
-        &encoding_map,
-        &enc_op_map,
-    );
+    generate_isa_struct(&mut out, &spec.isa, isa_name, &encoding_map, &enc_op_map);
 
     // Generate visitor trait
     generate_visitor_trait(&mut out, &spec.isa.instructions, isa_name);
@@ -125,7 +114,12 @@ fn generate_instruction_enum(
     let type_name = to_pascal_case(&inst.name);
 
     // Doc comment
-    let _ = writeln!(out, "/// `{}`: {}", inst.name, escape_doc(&inst.description));
+    let _ = writeln!(
+        out,
+        "/// `{}`: {}",
+        inst.name,
+        escape_doc(&inst.description)
+    );
     let _ = writeln!(out, "#[derive(Debug, Clone, PartialEq)]");
     let _ = writeln!(out, "pub enum {type_name} {{");
 
@@ -136,7 +130,11 @@ fn generate_instruction_enum(
             &enc.encoding_condition,
             &mut used_variants,
         );
-        let _ = writeln!(out, "    /// Encoding: `{}`, condition: `{}`", enc.encoding_name, enc.encoding_condition);
+        let _ = writeln!(
+            out,
+            "    /// Encoding: `{}`, condition: `{}`",
+            enc.encoding_name, enc.encoding_condition
+        );
 
         // Collect non-implicit operands that have field names (i.e. present in binary)
         let fields = collect_fields(enc, encoding_map);
@@ -203,7 +201,8 @@ fn generate_instruction_display(
             // Build format string and args using positional args only
             let mut fmt_str = mnemonic.clone();
             let mut fmt_args: Vec<String> = Vec::new();
-            let mut used_fields: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut used_fields: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
 
             for (i, op) in visible_ops.iter().enumerate() {
                 let fname = op.field_name.as_ref().unwrap();
@@ -285,8 +284,14 @@ fn generate_instruction_encode(
     let type_name = to_pascal_case(&inst.name);
 
     let _ = writeln!(out, "impl {type_name} {{");
-    let _ = writeln!(out, "    /// Encode this instruction to bytes (little-endian).");
-    let _ = writeln!(out, "    pub fn encode(&self) -> Vec<u8> {{");
+    let _ = writeln!(
+        out,
+        "    /// Encode this instruction to `writer` (little-endian)."
+    );
+    let _ = writeln!(
+        out,
+        "    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {{"
+    );
     let _ = writeln!(out, "        match self {{");
 
     let mut used_variants: HashMap<String, usize> = HashMap::new();
@@ -340,9 +345,11 @@ fn generate_instruction_encode(
                 }
                 for (field_name, _rust_type) in &fields {
                     let orig_name = field_name.to_uppercase();
-                    if let Some(mc_field) = enc_def.fields.iter().find(|f| {
-                        f.name == orig_name || to_snake_case(&f.name) == *field_name
-                    }) {
+                    if let Some(mc_field) = enc_def
+                        .fields
+                        .iter()
+                        .find(|f| f.name == orig_name || to_snake_case(&f.name) == *field_name)
+                    {
                         for range in &mc_field.ranges {
                             let mask = (1u64 << range.bit_count) - 1;
                             let _ = writeln!(
@@ -353,7 +360,7 @@ fn generate_instruction_encode(
                         }
                     }
                 }
-                let _ = writeln!(out, "                word.to_le_bytes().to_vec()");
+                let _ = writeln!(out, "                writer.write_all(&word.to_le_bytes())");
             } else {
                 let byte_count = bit_count / 8;
                 let _ = writeln!(out, "                let mut word: u128 = 0;");
@@ -380,9 +387,11 @@ fn generate_instruction_encode(
                 }
                 for (field_name, _rust_type) in &fields {
                     let orig_name = field_name.to_uppercase();
-                    if let Some(mc_field) = enc_def.fields.iter().find(|f| {
-                        f.name == orig_name || to_snake_case(&f.name) == *field_name
-                    }) {
+                    if let Some(mc_field) = enc_def
+                        .fields
+                        .iter()
+                        .find(|f| f.name == orig_name || to_snake_case(&f.name) == *field_name)
+                    {
                         for range in &mc_field.ranges {
                             let mask = (1u128 << range.bit_count) - 1;
                             let _ = writeln!(
@@ -393,10 +402,13 @@ fn generate_instruction_encode(
                         }
                     }
                 }
-                let _ = writeln!(out, "                word.to_le_bytes()[..{byte_count}].to_vec()");
+                let _ = writeln!(
+                    out,
+                    "                writer.write_all(&word.to_le_bytes()[..{byte_count}])"
+                );
             }
         } else {
-            let _ = writeln!(out, "                Vec::new()");
+            let _ = writeln!(out, "                Ok(())");
         }
 
         let _ = writeln!(out, "            }}");
@@ -415,7 +427,10 @@ fn generate_instruction_encode(
 
     // Encoding format method
     let _ = writeln!(out, "    /// Encoding format.");
-    let _ = writeln!(out, "    pub fn encoding_format(&self) -> crate::EncodingFormat {{");
+    let _ = writeln!(
+        out,
+        "    pub fn encoding_format(&self) -> crate::EncodingFormat {{"
+    );
     let _ = writeln!(out, "        match self {{");
     let mut used_variants2: HashMap<String, usize> = HashMap::new();
     for enc in &inst.encodings {
@@ -509,7 +524,10 @@ fn generate_instruction_trait_impl(
     let _ = writeln!(out, "    }}");
 
     // encoding_format()
-    let _ = writeln!(out, "    fn encoding_format(&self) -> crate::EncodingFormat {{");
+    let _ = writeln!(
+        out,
+        "    fn encoding_format(&self) -> crate::EncodingFormat {{"
+    );
     let _ = writeln!(out, "        match self {{");
     for inst in instructions {
         let type_name = to_pascal_case(&inst.name);
@@ -550,13 +568,16 @@ fn generate_instruction_trait_impl(
     let _ = writeln!(out, "    }}");
 
     // encode()
-    let _ = writeln!(out, "    fn encode(&self) -> Vec<u8> {{");
+    let _ = writeln!(
+        out,
+        "    fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {{"
+    );
     let _ = writeln!(out, "        match self {{");
     for inst in instructions {
         let type_name = to_pascal_case(&inst.name);
         let _ = writeln!(
             out,
-            "            Self::{type_name}(inner) => inner.encode(),"
+            "            Self::{type_name}(inner) => inner.encode(writer),"
         );
     }
     let _ = writeln!(out, "        }}");
@@ -585,19 +606,13 @@ fn generate_isa_struct(
     let _ = writeln!(out, "impl crate::Isa for {struct_name} {{");
     let _ = writeln!(out, "    type Instruction = {enum_name};");
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "    fn name() -> &'static str {{ \"{arch_name}\" }}"
-    );
+    let _ = writeln!(out, "    fn name() -> &'static str {{ \"{arch_name}\" }}");
     let _ = writeln!(out);
     let _ = writeln!(
         out,
-        "    fn decode(bytes: &[u8]) -> Result<(Self::Instruction, usize), crate::DecodeError> {{"
+        "    fn decode<R: std::io::Read>(reader: &mut R) -> Result<Self::Instruction, crate::DecodeError> {{"
     );
-    let _ = writeln!(
-        out,
-        "        {struct_name}::decode(bytes)"
-    );
+    let _ = writeln!(out, "        {struct_name}::decode(reader)");
     let _ = writeln!(out, "    }}");
     let _ = writeln!(out, "}}");
     let _ = writeln!(out);
@@ -606,19 +621,15 @@ fn generate_isa_struct(
     let _ = writeln!(out, "impl {struct_name} {{");
     let _ = writeln!(
         out,
-        "    /// Decode an instruction from bytes (little-endian)."
+        "    /// Decode an instruction from `reader` (little-endian)."
     );
     let _ = writeln!(
         out,
-        "    pub fn decode(bytes: &[u8]) -> Result<({enum_name}, usize), crate::DecodeError> {{"
+        "    pub fn decode<R: std::io::Read>(reader: &mut R) -> Result<{enum_name}, crate::DecodeError> {{"
     );
-    let _ = writeln!(out, "        if bytes.len() < 4 {{");
-    let _ = writeln!(out, "            return Err(crate::DecodeError::InsufficientBytes {{ needed: 4, available: bytes.len() }});");
-    let _ = writeln!(out, "        }}");
-    let _ = writeln!(
-        out,
-        "        let w0 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);"
-    );
+    let _ = writeln!(out, "        let mut buf0 = [0u8; 4];");
+    let _ = writeln!(out, "        reader.read_exact(&mut buf0)?;");
+    let _ = writeln!(out, "        let w0 = u32::from_le_bytes(buf0);");
     let _ = writeln!(out);
 
     // Sort encodings: handle only base encodings (default condition) for decode.
@@ -708,17 +719,18 @@ fn generate_isa_struct(
                 if fields.is_empty() {
                     let _ = writeln!(
                         out,
-                        "                {opcode} => return Ok(({enum_name}::{type_name}({type_name}::{variant_name}), {})),",
-                        bit_count / 8
+                        "                {opcode} => return Ok({enum_name}::{type_name}({type_name}::{variant_name})),"
                     );
                 } else {
                     let _ = writeln!(out, "                {opcode} => {{");
                     // Extract each field from w0
                     for (field_name, rust_type) in &fields {
                         let orig_name = field_name.to_uppercase();
-                        if let Some(mc_field) = enc_def.fields.iter().find(|f| {
-                            f.name == orig_name || to_snake_case(&f.name) == *field_name
-                        }) {
+                        if let Some(mc_field) = enc_def
+                            .fields
+                            .iter()
+                            .find(|f| f.name == orig_name || to_snake_case(&f.name) == *field_name)
+                        {
                             let _total_bits: u32 =
                                 mc_field.ranges.iter().map(|r| r.bit_count).sum();
                             if mc_field.ranges.len() == 1 {
@@ -731,12 +743,11 @@ fn generate_isa_struct(
                                 );
                             } else {
                                 // Multi-range field
-                                let _ = writeln!(
-                                    out,
-                                    "                    let {field_name} = {{"
-                                );
-                                let _ = writeln!(out, "                        let mut val: u32 = 0;");
-                                let _ = writeln!(out, "                        let mut shift = 0u32;");
+                                let _ = writeln!(out, "                    let {field_name} = {{");
+                                let _ =
+                                    writeln!(out, "                        let mut val: u32 = 0;");
+                                let _ =
+                                    writeln!(out, "                        let mut shift = 0u32;");
                                 let mut sorted_ranges = mc_field.ranges.clone();
                                 sorted_ranges.sort_by_key(|r| r.order);
                                 for r in &sorted_ranges {
@@ -752,21 +763,16 @@ fn generate_isa_struct(
                                         r.bit_count
                                     );
                                 }
-                                let _ = writeln!(
-                                    out,
-                                    "                        val as {rust_type}"
-                                );
+                                let _ = writeln!(out, "                        val as {rust_type}");
                                 let _ = writeln!(out, "                    }};");
                             }
                         }
                     }
-                    let field_names: Vec<_> =
-                        fields.iter().map(|(n, _)| n.as_str()).collect();
+                    let field_names: Vec<_> = fields.iter().map(|(n, _)| n.as_str()).collect();
                     let _ = writeln!(
                         out,
-                        "                    return Ok(({enum_name}::{type_name}({type_name}::{variant_name} {{ {} }}), {}));",
-                        field_names.join(", "),
-                        bit_count / 8
+                        "                    return Ok({enum_name}::{type_name}({type_name}::{variant_name} {{ {} }}));",
+                        field_names.join(", ")
                     );
                     let _ = writeln!(out, "                }}");
                 }
@@ -777,46 +783,39 @@ fn generate_isa_struct(
             let _ = writeln!(out, "        }}");
             let _ = writeln!(out);
         } else {
-            // >32-bit encoding (64, 96, 128 bits): use u128
+            // >32-bit encoding (64, 96, 128 bits): progressive read
+            if enc_offset >= 32 {
+                panic!(
+                    "encoding {} has ENCODING field at offset {} >= 32; not supported for Read-based decode",
+                    enc_def.name, enc_offset
+                );
+            }
             let total_bytes = bit_count / 8;
-            let _ = writeln!(out, "        if bytes.len() >= {total_bytes} {{");
             let _ = writeln!(
                 out,
-                "            let w1 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);"
+                "        if ((w0 >> {enc_offset}) & {enc_mask:#x}u32) == {enc_prefix}u32 {{"
             );
+            let _ = writeln!(out, "            let mut buf1 = [0u8; 4];");
+            let _ = writeln!(out, "            reader.read_exact(&mut buf1)?;");
+            let _ = writeln!(out, "            let w1 = u32::from_le_bytes(buf1);");
             let dw_mut = if bit_count >= 96 { "mut " } else { "" };
             let _ = writeln!(
                 out,
                 "            let {dw_mut}dw: u128 = (w1 as u128) << 32 | (w0 as u128);"
             );
             if bit_count >= 96 {
-                let _ = writeln!(
-                    out,
-                    "            let w2 = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);"
-                );
+                let _ = writeln!(out, "            let mut buf2 = [0u8; 4];");
+                let _ = writeln!(out, "            reader.read_exact(&mut buf2)?;");
+                let _ = writeln!(out, "            let w2 = u32::from_le_bytes(buf2);");
                 let _ = writeln!(out, "            dw |= (w2 as u128) << 64;");
             }
             if bit_count >= 128 {
-                let _ = writeln!(
-                    out,
-                    "            let w3 = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]);"
-                );
+                let _ = writeln!(out, "            let mut buf3 = [0u8; 4];");
+                let _ = writeln!(out, "            reader.read_exact(&mut buf3)?;");
+                let _ = writeln!(out, "            let w3 = u32::from_le_bytes(buf3);");
                 let _ = writeln!(out, "            dw |= (w3 as u128) << 96;");
             }
-
-            // For >32-bit encodings, the ENCODING field is typically in the lower 32 bits
-            if enc_offset < 32 {
-                let _ = writeln!(
-                    out,
-                    "            if ((w0 >> {enc_offset}) & {enc_mask:#x}u32) == {enc_prefix}u32 {{"
-                );
-            } else {
-                let off = enc_offset;
-                let _ = writeln!(
-                    out,
-                    "            if ((dw >> {off}) & {enc_mask:#x}u128) == {enc_prefix}u128 {{"
-                );
-            }
+            let _ = total_bytes;
 
             if op_offset < 32 {
                 let _ = writeln!(
@@ -844,15 +843,17 @@ fn generate_isa_struct(
                 if fields.is_empty() {
                     let _ = writeln!(
                         out,
-                        "                    {opcode} => return Ok(({enum_name}::{type_name}({type_name}::{variant_name}), {total_bytes})),"
+                        "                    {opcode} => return Ok({enum_name}::{type_name}({type_name}::{variant_name})),"
                     );
                 } else {
                     let _ = writeln!(out, "                    {opcode} => {{");
                     for (field_name, rust_type) in &fields {
                         let orig_name = field_name.to_uppercase();
-                        if let Some(mc_field) = enc_def.fields.iter().find(|f| {
-                            f.name == orig_name || to_snake_case(&f.name) == *field_name
-                        }) {
+                        if let Some(mc_field) = enc_def
+                            .fields
+                            .iter()
+                            .find(|f| f.name == orig_name || to_snake_case(&f.name) == *field_name)
+                        {
                             if mc_field.ranges.len() == 1 {
                                 let r = &mc_field.ranges[0];
                                 let fmask = (1u128 << r.bit_count) - 1;
@@ -862,9 +863,16 @@ fn generate_isa_struct(
                                     r.bit_offset
                                 );
                             } else {
-                                let _ = writeln!(out, "                        let {field_name} = {{");
-                                let _ = writeln!(out, "                            let mut val: u128 = 0;");
-                                let _ = writeln!(out, "                            let mut shift = 0u32;");
+                                let _ =
+                                    writeln!(out, "                        let {field_name} = {{");
+                                let _ = writeln!(
+                                    out,
+                                    "                            let mut val: u128 = 0;"
+                                );
+                                let _ = writeln!(
+                                    out,
+                                    "                            let mut shift = 0u32;"
+                                );
                                 let mut sorted_ranges = mc_field.ranges.clone();
                                 sorted_ranges.sort_by_key(|r| r.order);
                                 for r in &sorted_ranges {
@@ -880,16 +888,16 @@ fn generate_isa_struct(
                                         r.bit_count
                                     );
                                 }
-                                let _ = writeln!(out, "                            val as {rust_type}");
+                                let _ =
+                                    writeln!(out, "                            val as {rust_type}");
                                 let _ = writeln!(out, "                        }};");
                             }
                         }
                     }
-                    let field_names: Vec<_> =
-                        fields.iter().map(|(n, _)| n.as_str()).collect();
+                    let field_names: Vec<_> = fields.iter().map(|(n, _)| n.as_str()).collect();
                     let _ = writeln!(
                         out,
-                        "                        return Ok(({enum_name}::{type_name}({type_name}::{variant_name} {{ {} }}), {total_bytes}));",
+                        "                        return Ok({enum_name}::{type_name}({type_name}::{variant_name} {{ {} }}));",
                         field_names.join(", ")
                     );
                     let _ = writeln!(out, "                    }}");
@@ -898,7 +906,6 @@ fn generate_isa_struct(
 
             let _ = writeln!(out, "                    _ => {{}}");
             let _ = writeln!(out, "                }}");
-            let _ = writeln!(out, "            }}");
             let _ = writeln!(out, "        }}");
             let _ = writeln!(out);
         }
@@ -938,10 +945,7 @@ fn generate_visitor_trait(out: &mut String, instructions: &[InstructionDef], isa
 
     // dispatch method on the instruction enum
     let _ = writeln!(out, "impl {enum_name} {{");
-    let _ = writeln!(
-        out,
-        "    /// Dispatch to the appropriate visitor method."
-    );
+    let _ = writeln!(out, "    /// Dispatch to the appropriate visitor method.");
     let _ = writeln!(
         out,
         "    pub fn accept<V: {trait_name}>(&self, visitor: &mut V) {{"

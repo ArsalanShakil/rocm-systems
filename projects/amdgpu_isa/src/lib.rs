@@ -187,8 +187,8 @@ pub trait Instruction: core::fmt::Display + core::fmt::Debug + Clone {
     /// Whether this instruction terminates the program.
     fn is_program_terminator(&self) -> bool;
 
-    /// Encode this instruction to little-endian bytes.
-    fn encode(&self) -> Vec<u8>;
+    /// Encode this instruction into `writer` as little-endian bytes.
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()>;
 }
 
 /// Trait implemented by each ISA architecture.
@@ -199,19 +199,18 @@ pub trait Isa {
     /// Architecture name (e.g., `"AMD RDNA 4"`).
     fn name() -> &'static str;
 
-    /// Decode an instruction from little-endian bytes.
-    ///
-    /// Returns the decoded instruction and the number of bytes consumed.
-    fn decode(bytes: &[u8]) -> Result<(Self::Instruction, usize), DecodeError>;
+    /// Decode an instruction from `reader` (little-endian bytes).
+    fn decode<R: std::io::Read>(reader: &mut R) -> Result<Self::Instruction, DecodeError>;
 }
 
 // ─── Error types ───────────────────────────────────────────────────────────────
 
 /// Errors that can occur during instruction decoding.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum DecodeError {
-    /// Not enough bytes to decode an instruction.
-    InsufficientBytes { needed: usize, available: usize },
+    /// An I/O error occurred while reading from the input. Wraps the underlying
+    /// `std::io::Error`. A `kind() == UnexpectedEof` indicates insufficient bytes.
+    Io(std::io::Error),
     /// The instruction word doesn't match any known encoding.
     UnknownInstruction(u32),
 }
@@ -219,9 +218,7 @@ pub enum DecodeError {
 impl core::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            DecodeError::InsufficientBytes { needed, available } => {
-                write!(f, "insufficient bytes: need {needed}, have {available}")
-            }
+            DecodeError::Io(e) => write!(f, "io error: {e}"),
             DecodeError::UnknownInstruction(word) => {
                 write!(f, "unknown instruction: {word:#010x}")
             }
@@ -229,7 +226,20 @@ impl core::fmt::Display for DecodeError {
     }
 }
 
-impl std::error::Error for DecodeError {}
+impl From<std::io::Error> for DecodeError {
+    fn from(e: std::io::Error) -> Self {
+        DecodeError::Io(e)
+    }
+}
+
+impl std::error::Error for DecodeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            DecodeError::Io(e) => Some(e),
+            DecodeError::UnknownInstruction(_) => None,
+        }
+    }
+}
 
 // ─── Operand formatting helpers ────────────────────────────────────────────────
 
