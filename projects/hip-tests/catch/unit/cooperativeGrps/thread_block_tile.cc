@@ -715,6 +715,7 @@ void reduceForTypeAndOp()
   distribution distInput(a, b);
   int numReduce = 0;
   void* kernelPtr;
+  T output[64];
 
   genRandomBuffers(d_input, h_input, distInput, gen, kNumReduces * wavefrontSize);
 
@@ -768,7 +769,7 @@ void reduceForTypeAndOp()
 
       if ((1ull << laneId) & mask) {
         Op op {};
-        expected = calculateExpected(input, op, mask);
+        expected = calculateExpected(output, input, op, mask, AggregationType::Reduce);
       }
 
       if constexpr (std::is_integral<T>::value) {
