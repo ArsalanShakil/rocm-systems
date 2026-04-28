@@ -24,6 +24,7 @@ set(HIPFILE_SOURCES
     hipfile-stats.cpp
     io.cpp
     mountinfo.cpp
+    pinned-host-memory-pool.cpp
     state.cpp
     stats.cpp
     stream.cpp

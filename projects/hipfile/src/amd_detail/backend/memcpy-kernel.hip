@@ -60,6 +60,12 @@ hipFileMemcpyKernel(AsyncOpFallback *op)
     size_t *const gpu_buffer_region = reinterpret_cast<size_t *>(reinterpret_cast<uintptr_t>(op->gpu_buffer) +
                                                                  static_cast<uintptr_t>(buffer_offset));
     const size_t  num_chunks        = size / sizeof(size_t);
+    if (start_idx == 0) {
+        printf("hipFileMemcpyKernel bytes_transferred_internal: %zd size:%zu buffer_offset:%ld cpu_buffer:%p "
+               "gpu_buffer:%p "
+               "gpu_buffer_region:%p\n",
+               bytes_transferred_internal, size, buffer_offset, cpu_buffer, gpu_buffer, gpu_buffer_region);
+    }
 
     switch (io_type) {
         case IoType::Read:
@@ -82,15 +88,22 @@ hipFileMemcpyKernel(AsyncOpFallback *op)
         uint8_t *const cpu_buffer_bytes        = reinterpret_cast<uint8_t *>(cpu_buffer);
         uint8_t *const gpu_buffer_region_bytes = reinterpret_cast<uint8_t *>(gpu_buffer_region);
         const size_t   remaining_start         = num_chunks * sizeof(size_t);
+        printf("hipFileMemcpyKernel cpu_buffer_bytes:%p gpu_buffer_region_bytes:%p remaining_start:%zu "
+               "size:%zu\n",
+               cpu_buffer_bytes, gpu_buffer_region_bytes, remaining_start, size);
 
         switch (io_type) {
             case IoType::Read:
                 for (size_t idx = remaining_start; idx < size; idx++) {
+                    printf("hipFileMemcpyKernel copying byte: cpu:%p gpu:%p\n", cpu_buffer_bytes + idx,
+                           gpu_buffer_region_bytes + idx);
                     gpu_buffer_region_bytes[idx] = cpu_buffer_bytes[idx];
                 }
                 break;
             case IoType::Write:
                 for (size_t idx = remaining_start; idx < size; idx++) {
+                    printf("hipFileMemcpyKernel copying byte: cpu:%p gpu:%p\n", cpu_buffer_bytes + idx,
+                           gpu_buffer_region_bytes + idx);
                     cpu_buffer_bytes[idx] = gpu_buffer_region_bytes[idx];
                 }
                 break;

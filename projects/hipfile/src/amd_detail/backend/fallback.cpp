@@ -212,7 +212,7 @@ Fallback::async_io(IoType type, std::shared_ptr<IFile> file, std::shared_ptr<IBu
 extern "C" {
 void
 async_io_bind_params(void *userargs)
-{
+try {
     auto op = static_cast<AsyncOpFallback *>(userargs);
     // Bind params. Will maintain same value if already bound.
     const hoff_t *buffer_offset = get_variant_ptr(op->buffer_offset);
@@ -231,10 +231,15 @@ async_io_bind_params(void *userargs)
         op->bytes_transferred_internal = -hipFileInvalidValue;
     }
 }
+catch (...) {
+    fprintf(stderr, "async_io_bind_params threw\n");
+    auto op                        = static_cast<AsyncOpFallback *>(userargs);
+    op->bytes_transferred_internal = -hipFileIOMaxError;
+}
 
 void
 async_io_cleanup(void *userargs)
-{
+try {
     auto     op                         = static_cast<AsyncOpFallback *>(userargs);
     ssize_t *bytes_transferred          = op->bytes_transferred;
     ssize_t  bytes_transferred_internal = op->bytes_transferred_internal;
@@ -247,10 +252,15 @@ async_io_cleanup(void *userargs)
     }
     *bytes_transferred = bytes_transferred_internal;
 }
+catch (...) {
+    fprintf(stderr, "async_io_cleanup threw\n");
+    auto op                        = static_cast<AsyncOpFallback *>(userargs);
+    op->bytes_transferred_internal = -hipFileIOMaxError;
+}
 
 void
 async_io_cpu_copy(void *userargs)
-{
+try {
     auto         op                = static_cast<AsyncOpFallback *>(userargs);
     size_t       bytes_transferred = 0;
     const size_t size              = std::get<size_t>(op->size);
@@ -293,5 +303,10 @@ async_io_cpu_copy(void *userargs)
         bytes_transferred += static_cast<size_t>(ret);
     }
     op->bytes_transferred_internal = static_cast<ssize_t>(bytes_transferred);
+}
+catch (...) {
+    fprintf(stderr, "async_io_cpu_copy threw\n");
+    auto op                        = static_cast<AsyncOpFallback *>(userargs);
+    op->bytes_transferred_internal = -hipFileIOMaxError;
 }
 }

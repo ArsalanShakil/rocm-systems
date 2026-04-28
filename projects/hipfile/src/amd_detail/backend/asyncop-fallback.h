@@ -7,6 +7,7 @@
 #include "async.h"
 #include "hipfile.h"
 
+#include <cstddef>
 #include <memory>
 #include <sys/types.h>
 
@@ -25,6 +26,11 @@ enum class IoType;
 
 namespace hipFile {
 
+struct PinnedHostBufferDeleter {
+    size_t size;
+    void   operator()(void *ptr) const noexcept;
+};
+
 struct AsyncOpFallback : AsyncOp {
     size_t      submitted_size;
     ssize_t     bytes_transferred_internal;
@@ -32,7 +38,7 @@ struct AsyncOpFallback : AsyncOp {
     void       *bounce_buffer_dev_ptr;
 
 private:
-    std::unique_ptr<void, void (*)(void *)> bounce_buffer;
+    std::unique_ptr<void, PinnedHostBufferDeleter> bounce_buffer;
 
 public:
     AsyncOpFallback(IoType ioType, std::shared_ptr<IFile> file, std::shared_ptr<IBuffer> buffer,

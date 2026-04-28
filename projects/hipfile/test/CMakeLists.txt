@@ -4,6 +4,7 @@
 
 include(AISAddExecutable)
 include(AISUseGTest)
+include(AISUseLibAssert)
 
 find_package(Boost COMPONENTS program_options REQUIRED)
 
@@ -64,6 +65,7 @@ ais_add_test_executable(
 )
 target_link_libraries(hipfile_system_tests PRIVATE GTest::gtest)
 target_link_libraries(hipfile_system_tests PRIVATE Boost::program_options)
+target_link_libraries(hipfile_system_tests PRIVATE libassert::assert)
 
 ais_gtest_discover_tests(
     hipfile_system_tests

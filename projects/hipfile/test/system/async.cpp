@@ -22,12 +22,15 @@
 
 #include <array>
 #include <cassert>
+#include <cstdarg>
 #include <cstdint>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <hip/hip_runtime_api.h>
+#include <libassert/assert.hpp>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -60,11 +63,11 @@ HIPFILE_WARN_NO_EXIT_DTOR_ON
 struct HipStream {
     HipStream()
     {
-        assert(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking) == hipSuccess);
+        ASSERT(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking) == hipSuccess);
     }
     ~HipStream()
     {
-        assert(hipStreamDestroy(stream_) == hipSuccess);
+        ASSERT(hipStreamDestroy(stream_) == hipSuccess);
     }
     hipStream_t stream() const
     {
@@ -76,8 +79,19 @@ private:
 };
 
 struct HipFileDataOps {
+    static void logCall(const char *fn, const char *fmt, ...)
+    {
+        std::fprintf(stderr, "HipFileDataOps::%s ", fn);
+        va_list args;
+        va_start(args, fmt);
+        std::vfprintf(stderr, fmt, args);
+        va_end(args);
+        std::fprintf(stderr, "\n");
+    }
+
     static bool isGpuMemory(void *mem)
     {
+        logCall("isGpuMemory", "mem=%p", mem);
         hipPointerAttribute_t attrs;
         hipError_t            err = hipPointerGetAttributes(&attrs, mem);
 
@@ -87,24 +101,30 @@ struct HipFileDataOps {
             return false;
         }
 #endif
-        assert(err == hipSuccess);
+        ASSERT(err == hipSuccess);
         return attrs.type == hipMemoryTypeDevice;
     }
 
     static std::vector<uint8_t> copyGpuMemory(void *gpu_mem, hoff_t gpu_mem_offset, size_t region_size)
     {
+        logCall("copyGpuMemory", "gpu_mem=%p gpu_mem_offset=%lld region_size=%zu", gpu_mem,
+                static_cast<long long>(gpu_mem_offset), region_size);
         std::vector<uint8_t> mem_region(region_size);
-        assert(hipMemcpyAsync(mem_region.data(),
+        ASSERT(hipMemcpyAsync(mem_region.data(),
                               reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(gpu_mem) +
                                                        static_cast<size_t>(gpu_mem_offset)),
                               region_size, hipMemcpyDeviceToHost, staticHipStream()) == hipSuccess);
-        assert(hipStreamSynchronize(staticHipStream()) == hipSuccess);
+        ASSERT(hipStreamSynchronize(staticHipStream()) == hipSuccess);
         return mem_region;
     }
 
     static void assertMemoryRegionsMatch(void *mem1, hoff_t mem1_offset, void *mem2, hoff_t mem2_offset,
                                          size_t region_size)
     {
+        logCall("assertMemoryRegionsMatch",
+                "mem1=%p mem1_offset=%lld mem2=%p mem2_offset=%lld region_size=%zu", mem1,
+                static_cast<long long>(mem1_offset), mem2, static_cast<long long>(mem2_offset),
+                region_size);
         std::vector<uint8_t> mem1_v;
         std::vector<uint8_t> mem2_v;
         if (isGpuMemory(mem1)) {
@@ -115,76 +135,88 @@ struct HipFileDataOps {
             mem2_v = copyGpuMemory(mem2, mem2_offset, region_size);
             mem2   = mem2_v.data();
         }
-        assert(std::memcmp(mem1, mem2, region_size) == 0);
+        ASSERT(std::memcmp(mem1, mem2, region_size) == 0);
     }
 
     static void assertFileAndMemoryRegionsMatch(void *mem, hoff_t mem_offset, int fd, hoff_t fd_offset,
                                                 size_t region_size)
     {
-        assert(fd_offset >= 0);
+        logCall("assertFileAndMemoryRegionsMatch",
+                "mem=%p mem_offset=%lld fd=%d fd_offset=%lld region_size=%zu", mem,
+                static_cast<long long>(mem_offset), fd, static_cast<long long>(fd_offset),
+                region_size);
+        ASSERT(fd_offset >= 0);
         auto file_region = std::vector<uint8_t>(region_size);
 
         ssize_t rv = pread(fd, file_region.data(), region_size, fd_offset);
-        assert(rv > 0 && static_cast<size_t>(rv) == region_size);
+        ASSERT(rv > 0 && static_cast<size_t>(rv) == region_size);
 
         assertMemoryRegionsMatch(file_region.data(), 0, mem, mem_offset, region_size);
     }
 
     static void assertZeroedMemRegion(void *mem, hoff_t mem_offset, size_t region_size)
     {
+        logCall("assertZeroedMemRegion", "mem=%p mem_offset=%lld region_size=%zu", mem,
+                static_cast<long long>(mem_offset), region_size);
         std::vector<uint8_t> mem_v;
         if (isGpuMemory(mem)) {
             mem_v = copyGpuMemory(mem, mem_offset, region_size);
             mem   = mem_v.data();
         }
         for (size_t i = 0; i < region_size; ++i) {
-            assert(reinterpret_cast<uint8_t *>(mem)[i] == 0);
+            ASSERT(reinterpret_cast<uint8_t *>(mem)[i] == 0);
         }
     }
 
     static void assertZeroedFileRegion(int fd, hoff_t fd_offset, size_t region_size)
     {
-        assert(fd_offset >= 0);
+        logCall("assertZeroedFileRegion", "fd=%d fd_offset=%lld region_size=%zu", fd,
+                static_cast<long long>(fd_offset), region_size);
+        ASSERT(fd_offset >= 0);
         auto    file_region = std::vector<uint8_t>(region_size);
         ssize_t rv          = pread(fd, file_region.data(), region_size, fd_offset);
-        assert(rv > 0 && static_cast<size_t>(rv) == region_size);
+        ASSERT(rv > 0 && static_cast<size_t>(rv) == region_size);
         for (size_t i = 0; i < region_size; ++i) {
-            assert(file_region.data()[i] == 0);
+            ASSERT(file_region.data()[i] == 0);
         }
     }
 
     static void randomizeMemoryRegion(void *mem, hoff_t offset, size_t region_size)
     {
+        logCall("randomizeMemoryRegion", "mem=%p offset=%lld region_size=%zu", mem,
+                static_cast<long long>(offset), region_size);
         ssize_t rv;
         int     rand_fd = open("/dev/urandom", O_RDONLY);
-        assert(rand_fd != -1);
+        ASSERT(rand_fd != -1);
         if (isGpuMemory(mem)) {
             std::vector<uint8_t> mem_v(region_size);
             rv = read(rand_fd, mem_v.data(), region_size);
-            assert(rv > 0 && static_cast<size_t>(rv) == region_size);
-            assert(
+            ASSERT(rv > 0 && static_cast<size_t>(rv) == region_size);
+            ASSERT(
                 hipMemcpyAsync(
                     reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(mem) + static_cast<size_t>(offset)),
                     mem_v.data(), region_size, hipMemcpyHostToDevice, staticHipStream()) == hipSuccess);
-            assert(hipStreamSynchronize(staticHipStream()) == hipSuccess);
+            ASSERT(hipStreamSynchronize(staticHipStream()) == hipSuccess);
         }
         else {
             rv =
                 read(rand_fd,
                      reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(mem) + static_cast<size_t>(offset)),
                      region_size);
-            assert(rv > 0 && static_cast<size_t>(rv) == region_size);
+            ASSERT(rv > 0 && static_cast<size_t>(rv) == region_size);
         }
-        assert(close(rand_fd) == 0);
+        ASSERT(close(rand_fd) == 0);
     }
 
     static void zeroMemoryRegion(void *mem, hoff_t offset, size_t region_size)
     {
+        logCall("zeroMemoryRegion", "mem=%p offset=%lld region_size=%zu", mem,
+                static_cast<long long>(offset), region_size);
         if (isGpuMemory(mem)) {
-            assert(hipMemsetAsync(reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(mem) +
+            ASSERT(hipMemsetAsync(reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(mem) +
                                                            static_cast<size_t>(offset)),
                                   0, region_size, staticHipStream()) == hipSuccess);
-            assert(hipStreamSynchronize(staticHipStream()) == hipSuccess);
+            ASSERT(hipStreamSynchronize(staticHipStream()) == hipSuccess);
         }
         else {
             memset(reinterpret_cast<void *>(reinterpret_cast<uintptr_t>(mem) + static_cast<size_t>(offset)),
@@ -194,21 +226,26 @@ struct HipFileDataOps {
 
     static void zeroFileRegion(int fd, size_t size, hoff_t offset = 0)
     {
+        logCall("zeroFileRegion", "fd=%d size=%zu offset=%lld", fd, size,
+                static_cast<long long>(offset));
         auto    vec = std::vector<uint8_t>(size, 0);
         ssize_t rv  = pwrite(fd, vec.data(), size, offset);
-        assert(rv > 0 && static_cast<size_t>(rv) == size);
+        ASSERT(rv > 0 && static_cast<size_t>(rv) == size);
     }
 
     static void randomizeFileRegion(int fd, size_t size, hoff_t offset = 0)
     {
+        logCall("randomizeFileRegion", "fd=%d size=%zu offset=%lld", fd, size,
+                static_cast<long long>(offset));
         auto vec = std::vector<uint8_t>(size, 0);
         randomizeMemoryRegion(vec.data(), 0, size);
         ssize_t rv = pwrite(fd, vec.data(), size, offset);
-        assert(rv > 0 && static_cast<size_t>(rv) == size);
+        ASSERT(rv > 0 && static_cast<size_t>(rv) == size);
     }
 
     static hipStream_t staticHipStream()
     {
+        logCall("staticHipStream", "no-args");
         HIPFILE_WARN_NO_EXIT_DTOR_OFF
         static HipStream s;
         HIPFILE_WARN_NO_EXIT_DTOR_ON
@@ -364,11 +401,12 @@ TEST_P(HipAsyncMemcpyKernelWithParams, verifyIoRegions)
             HipFileDataOps::assertZeroedMemRegion(op->gpu_buffer, 0, static_cast<size_t>(buffer_offset));
         }
         HipFileDataOps::assertMemoryRegionsMatch(op->bounceBufferHostPtr(), 0, op->gpu_buffer, buffer_offset,
-                                 static_cast<size_t>(op->bytes_transferred_internal));
+                                                 static_cast<size_t>(op->bytes_transferred_internal));
         if (io_type == IoType::Read) {
             size_t end_length = buffer_size - (static_cast<size_t>(buffer_offset) +
                                                static_cast<size_t>(op->bytes_transferred_internal));
-            HipFileDataOps::assertZeroedMemRegion(op->gpu_buffer, buffer_offset + op->bytes_transferred_internal, end_length);
+            HipFileDataOps::assertZeroedMemRegion(op->gpu_buffer,
+                                                  buffer_offset + op->bytes_transferred_internal, end_length);
         }
     }
 }
@@ -463,7 +501,8 @@ TEST_F(HipAsyncStreamFixed, readRegionPastEndOfFile)
         hipFileReadAsync(fh, dev_ptr, &io_size, &file_offset, &buffer_offset, &bytes_transferred, stream),
         HIPFILE_SUCCESS);
     ASSERT_EQ(hipStreamSynchronize(stream), hipSuccess);
-    HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, buffer_offset, tf.fd, file_offset, file_size - 4_KiB);
+    HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, buffer_offset, tf.fd, file_offset,
+                                                    file_size - 4_KiB);
     ASSERT_EQ(bytes_transferred, file_size - 4_KiB);
 }
 
@@ -713,7 +752,8 @@ TEST_P(HipAsyncReadWriteParamsUnchanged, multipleOpsOnSameStreamAreSequential)
             if (i == num_ios - 1) {
                 region_size = 16_KiB;
             }
-            HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, static_cast<hoff_t>(i * 8_KiB), tf.fd, 0, region_size);
+            HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, static_cast<hoff_t>(i * 8_KiB), tf.fd, 0,
+                                                            region_size);
         }
     }
     else {
@@ -731,7 +771,8 @@ TEST_P(HipAsyncReadWriteParamsUnchanged, multipleOpsOnSameStreamAreSequential)
             if (i == num_ios - 1) {
                 region_size = 16_KiB;
             }
-            HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, 0, tf.fd, static_cast<hoff_t>(i * 8_KiB), region_size);
+            HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, 0, tf.fd, static_cast<hoff_t>(i * 8_KiB),
+                                                            region_size);
         }
     }
 }
