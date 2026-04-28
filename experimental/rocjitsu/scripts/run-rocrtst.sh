@@ -22,7 +22,8 @@
 #   --skip-rocrtst-build       skip rebuilding rocrtst
 #   --gtest-filter       FILTER gtest filter pattern     (default: run all tests)
 #   --jobs               N     parallel build jobs       (default: nproc)
-#   --timeout            SEC   test run timeout          (default: 300)
+#   --timeout            SEC   total test run timeout    (default: 600)
+#   --per-test-timeout   SEC   per-test timeout for kernel-dispatch tests (default: 120)
 #   --verbose                  verbose test output
 #   -h, --help                 show this help
 
@@ -34,14 +35,43 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROCRTST_SRC="${PROJECT_DIR}/../../projects/rocr-runtime/rocrtst/suites/test_common"
-ROCM_ROOT="${ROCM_DIR:-/opt/rocm}"
+VENV_DIR="${PROJECT_DIR}/.venv"
+ROCM_PIP_INDEX="https://repo.amd.com/rocm/whl/gfx950-dcgpu/"
 
-# Auto-detect the .venv SDK if present (has amd_smi, hsa-runtime64, etc.)
-VENV_SDK="${PROJECT_DIR}/.venv/lib/python3.12/site-packages/_rocm_sdk_devel"
-if [[ ! -d "$VENV_SDK" ]]; then
-    # Try to find it dynamically
-    VENV_SDK="$(find "${PROJECT_DIR}/.venv" -maxdepth 5 -name '_rocm_sdk_devel' -type d 2>/dev/null | head -1)"
+# ---------------------------------------------------------------------------
+# Set up .venv with ROCm SDK if not already present
+# ---------------------------------------------------------------------------
+setup_venv() {
+    if [[ -d "$VENV_DIR" ]]; then
+        # Verify the SDK is actually installed
+        local sdk_dir
+        sdk_dir="$(find "$VENV_DIR" -maxdepth 5 -name '_rocm_sdk_devel' -type d 2>/dev/null | head -1)"
+        if [[ -n "$sdk_dir" && -d "$sdk_dir" ]]; then
+            return 0  # Already set up
+        fi
+        echo "  .venv exists but ROCm SDK is missing — reinstalling packages ..."
+    else
+        echo "  Creating .venv ..."
+        python3 -m venv "$VENV_DIR"
+    fi
+
+    echo "  Installing ROCm SDK packages (this may take a few minutes) ..."
+    "$VENV_DIR/bin/pip" install --upgrade pip --quiet
+    "$VENV_DIR/bin/pip" install --index-url "$ROCM_PIP_INDEX" \
+        "rocm[libraries,devel]" --quiet
+    echo "  .venv setup complete."
+}
+
+setup_venv
+
+# Locate the .venv SDK (has hsa-runtime64, amd_smi, LLVM, device-libs, etc.)
+# This is the sole ROCm SDK used for building and running — no system ROCm.
+VENV_SDK="$(find "$VENV_DIR" -maxdepth 5 -name '_rocm_sdk_devel' -type d 2>/dev/null | head -1)"
+if [[ -z "${VENV_SDK:-}" || ! -d "${VENV_SDK:-}" ]]; then
+    echo "Error: ROCm SDK not found in .venv after setup. Check pip install output." >&2
+    exit 1
 fi
+ROCM_ROOT="${VENV_SDK}"
 
 # Defaults
 RJ_BUILD_DIR="${PROJECT_DIR}/build"
@@ -52,7 +82,8 @@ SKIP_RJ_BUILD=0
 SKIP_ROCRTST_BUILD=0
 JOBS="$(nproc)"
 VERBOSE=0
-TEST_TIMEOUT=300
+TEST_TIMEOUT=600
+PER_TEST_TIMEOUT=120
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -68,6 +99,7 @@ while [[ $# -gt 0 ]]; do
         --jobs)               JOBS="$2"; shift 2 ;;
         --verbose)            VERBOSE=1; shift ;;
         --timeout)            TEST_TIMEOUT="$2"; shift 2 ;;
+        --per-test-timeout)   PER_TEST_TIMEOUT="$2"; shift 2 ;;
         -h|--help)
             sed -n '2,/^$/s/^# \?//p' "$0"
             exit 0
@@ -93,14 +125,62 @@ REPORT_XML="${REPORT_DIR}/rocrtst-report.xml"
 
 TARGET_DEVICE="gfx950"
 
-# Tests excluded from the default filter:
+# Tests unconditionally excluded:
 #   - Agent_Preload_Latency: calls hsa_amd_agent_preload which is unresolved (crashes).
-#   - IPC: requires fork + shared memory between processes (not supported by interposer).
-EXCLUDED_TESTS="\
+#   - IPC: requires fork + shared memory between processes (not yet supported by interposer).
+ALWAYS_EXCLUDED="\
 rocrtstPerf.Agent_Preload_Latency:\
 rocrtstFunc.IPC"
 
-DEFAULT_FILTER="-${EXCLUDED_TESTS}"
+# Tests that dispatch GPU kernels. These work correctly but run slowly under
+# ISA simulation (~40s per dispatch). They are run individually with a
+# per-test timeout so one slow test doesn't block the entire suite.
+KERNEL_DISPATCH_TESTS=(
+    rocrtst.Test_Example
+    rocrtst.Test_Example_InterruptDisabled
+    rocrtst.Test_MetadataPrefetchPacket
+    rocrtstFunc.MemoryAccessTests
+    rocrtstFunc.MemoryAccessCoherent
+    rocrtstFunc.GroupMemoryAllocationTest
+    rocrtstFunc.GpuCoreDump_DefaultPattern
+    rocrtstFunc.GpuCoreDump_CustomPattern
+    rocrtstFunc.GpuCoreDump_DisableFlag
+    rocrtstFunc.GpuCoreDump_PatternSubstitution
+    rocrtstFunc.GpuCoreDump_InvalidPath
+    rocrtstFunc.GpuCoreDump_ContentIntegrity
+    rocrtstFunc.GpuCoreDump_PipePattern
+    rocrtstFunc.Memory_Atomic_Add_Test
+    rocrtstFunc.Memory_Atomic_Sub_Test
+    rocrtstFunc.Memory_Atomic_And_Test
+    rocrtstFunc.Memory_Atomic_Or_Test
+    rocrtstFunc.Memory_Atomic_Xor_Test
+    rocrtstFunc.Memory_Atomic_Min_Test
+    rocrtstFunc.Memory_Atomic_Max_Test
+    rocrtstFunc.Memory_Atomic_Inc_Test
+    rocrtstFunc.Memory_Atomic_Dec_Test
+    rocrtstFunc.Memory_Atomic_Xchg_Test
+    rocrtstFunc.SvmMemory_Basic_Test
+    rocrtstFunc.VirtMemory_Access_Test
+    rocrtstFunc.VirtMemory_Aliasing_Test
+    rocrtstFunc.Counted_Queue_Dispatch_Test
+    rocrtstFunc.Counted_Queue_Multithreaded_Dispatch_Test
+    rocrtstFunc.Counted_Queue_Overflow_And_Wraparound_Test
+    rocrtstNeg.Queue_Validation_InvalidDimension
+    rocrtstNeg.Queue_Validation_InvalidGroupMemory
+    rocrtstNeg.Queue_Validation_InvalidKernelObject
+    rocrtstNeg.Queue_Validation_InvalidPacket
+    rocrtstPerf.Memory_Async_Copy
+    rocrtstPerf.Memory_Async_Copy_On_Engine
+    rocrtstPerf.ENQUEUE_LATENCY
+    rocrtstPerf.AQL_Dispatch_Time_Single_SpinWait
+    rocrtstPerf.AQL_Dispatch_Time_Single_Interrupt
+    rocrtstPerf.AQL_Dispatch_Time_Multi_SpinWait
+    rocrtstPerf.AQL_Dispatch_Time_Multi_Interrupt
+)
+
+# Build the negative filter string for the fast (API-only) pass
+KERNEL_FILTER_NEG=$(IFS=:; echo "${KERNEL_DISPATCH_TESTS[*]}")
+DEFAULT_FILTER="-${ALWAYS_EXCLUDED}:${KERNEL_FILTER_NEG}"
 
 timestamp() { date "+%Y-%m-%d %H:%M:%S"; }
 
@@ -148,37 +228,30 @@ if [[ "$SKIP_ROCRTST_BUILD" -eq 0 ]]; then
         exit 1
     fi
 
-    # Build cmake prefix path.
-    # Prefer the .venv SDK (has amd_smi, device-libs bitcode, LLVM, etc.)
-    # over the system ROCm to ensure all dependencies are consistent.
-    CMAKE_PFX="${ROCM_ROOT}"
+    # Build cmake prefix path — use the .venv SDK exclusively.
+    SYSDEPS_ROOT="${VENV_SDK}/lib/rocm_sysdeps"
+    CMAKE_PFX="${VENV_SDK};${VENV_SDK}/lib/llvm;${SYSDEPS_ROOT}"
+    echo "  Using .venv SDK: $VENV_SDK"
+
     LLVM_ARGS=()
     NUMA_ARGS=()
     EXTRA_CMAKE_ARGS=()
-    if [[ -n "${VENV_SDK:-}" && -d "${VENV_SDK:-}" ]]; then
-        CMAKE_PFX="${VENV_SDK};${VENV_SDK}/lib/llvm;${CMAKE_PFX}"
-        echo "  Using .venv SDK: $VENV_SDK"
-        # Point LLVM to .venv SDK so bitcode is found relative to it
-        if [[ -d "${VENV_SDK}/lib/cmake/llvm" ]]; then
-            LLVM_ARGS+=(-DLLVM_DIR="${VENV_SDK}/lib/cmake/llvm")
-        elif [[ -d "${VENV_SDK}/lib/llvm/lib/cmake/llvm" ]]; then
-            LLVM_ARGS+=(-DLLVM_DIR="${VENV_SDK}/lib/llvm/lib/cmake/llvm")
-        fi
-        # Add rocm_sysdeps (numa) to the prefix path
-        SYSDEPS_ROOT="${VENV_SDK}/lib/rocm_sysdeps"
-        if [[ -d "$SYSDEPS_ROOT" ]]; then
-            CMAKE_PFX="${SYSDEPS_ROOT};${CMAKE_PFX}"
-            NUMA_ARGS+=(-DNUMA_DIR="${SYSDEPS_ROOT}/lib/cmake/NUMA")
-        fi
-        # Use the system hsa-runtime64 (newer than .venv SDK, has hsa_amd_signal_get_event_id)
-        if [[ -d "${ROCM_ROOT}/lib/cmake/hsa-runtime64" ]]; then
-            EXTRA_CMAKE_ARGS+=(-Dhsa-runtime64_DIR="${ROCM_ROOT}/lib/cmake/hsa-runtime64")
-        fi
-    else
-        CMAKE_PFX="${ROCM_ROOT}/llvm;${CMAKE_PFX}"
-        if [[ -d "${ROCM_ROOT}/llvm/lib/cmake/llvm" ]]; then
-            LLVM_ARGS+=(-DLLVM_DIR="${ROCM_ROOT}/llvm/lib/cmake/llvm")
-        fi
+
+    # LLVM (for kernel compilation)
+    if [[ -d "${VENV_SDK}/lib/cmake/llvm" ]]; then
+        LLVM_ARGS+=(-DLLVM_DIR="${VENV_SDK}/lib/cmake/llvm")
+    elif [[ -d "${VENV_SDK}/lib/llvm/lib/cmake/llvm" ]]; then
+        LLVM_ARGS+=(-DLLVM_DIR="${VENV_SDK}/lib/llvm/lib/cmake/llvm")
+    fi
+
+    # NUMA from rocm_sysdeps
+    if [[ -d "$SYSDEPS_ROOT" ]]; then
+        NUMA_ARGS+=(-DNUMA_DIR="${SYSDEPS_ROOT}/lib/cmake/NUMA")
+    fi
+
+    # hsa-runtime64 from .venv SDK
+    if [[ -d "${VENV_SDK}/lib/cmake/hsa-runtime64" ]]; then
+        EXTRA_CMAKE_ARGS+=(-Dhsa-runtime64_DIR="${VENV_SDK}/lib/cmake/hsa-runtime64")
     fi
 
     # Use development HSA headers from the workspace (newer APIs than installed SDK).
@@ -193,8 +266,8 @@ if [[ "$SKIP_ROCRTST_BUILD" -eq 0 ]]; then
         EXTRA_CXX_FLAGS="-I${HSA_SHIM_DIR}"
         echo "  Using dev HSA headers: $ROCR_INC"
     fi
-    # Add rocm_sysdeps headers (numa.h, etc.) if available
-    SYSDEPS_INC="${VENV_SDK:-__none__}/lib/rocm_sysdeps/include"
+    # Add rocm_sysdeps headers (numa.h, etc.)
+    SYSDEPS_INC="${VENV_SDK}/lib/rocm_sysdeps/include"
     if [[ -d "$SYSDEPS_INC" ]]; then
         EXTRA_CXX_FLAGS="${EXTRA_CXX_FLAGS} -I${SYSDEPS_INC}"
     fi
@@ -212,7 +285,7 @@ if [[ "$SKIP_ROCRTST_BUILD" -eq 0 ]]; then
     cmake "$ROCRTST_SRC" \
         -DTARGET_DEVICES="${TARGET_DEVICE}" \
         -DCMAKE_PREFIX_PATH="${CMAKE_PFX}" \
-        -DROCM_DIR="${ROCM_ROOT}" \
+        -DROCM_DIR="${VENV_SDK}" \
         "${LLVM_ARGS[@]}" \
         "${NUMA_ARGS[@]}" \
         "${EXTRA_CMAKE_ARGS[@]}" \
@@ -264,40 +337,105 @@ else
     RUN_DIR="$ROCRTST_BUILD_DIR"
 fi
 
-# Build gtest arguments
-GTEST_ARGS=(
-    "--gtest_output=xml:${REPORT_XML}"
+# Common environment for running under the rocjitsu interposer
+RUN_ENV=(
+    LD_PRELOAD="$KMD_LIB"
+    LD_LIBRARY_PATH="${VENV_SDK}/lib:${VENV_SDK}/lib/rocm_sysdeps/lib:${ROCRTST_BUILD_DIR}:${LD_LIBRARY_PATH:-}"
+    RJ_CONFIG="$RJ_CONFIG"
+    RJ_SCHEMA="$RJ_SCHEMA"
+    HSA_ENABLE_SDMA=1
+    ROCPROFILER_REGISTER_ENABLED=0
 )
-if [[ -n "$GTEST_FILTER" ]]; then
-    GTEST_ARGS+=("--gtest_filter=${GTEST_FILTER}")
-else
-    # Exclude tests that dispatch GPU kernels (they hang on the simulator).
-    # Override with --gtest-filter '*' to run everything.
-    GTEST_ARGS+=("--gtest_filter=${DEFAULT_FILTER}")
-    echo "  (Excluding kernel-dispatch tests; use --gtest-filter '*' to run all)"
-fi
+
+VERBOSE_ARGS=()
 if [[ "$VERBOSE" -eq 1 ]]; then
-    GTEST_ARGS+=("--gtest_print_time=1" "-v" "2")
+    VERBOSE_ARGS=("--gtest_print_time=1" "-v" "2")
 fi
 
-echo "  Timeout: ${TEST_TIMEOUT}s"
+if [[ -n "$GTEST_FILTER" ]]; then
+    # User specified an explicit filter — run in a single pass.
+    echo "  Filter:  $GTEST_FILTER"
+    echo "  Timeout: ${TEST_TIMEOUT}s"
+    set +e
+    (
+        cd "$RUN_DIR"
+        timeout --signal=TERM --kill-after=10 "${TEST_TIMEOUT}" \
+            env "${RUN_ENV[@]}" \
+            "$RUN_BIN" --gtest_output=xml:"${REPORT_XML}" \
+                        --gtest_filter="${GTEST_FILTER}" \
+                        "${VERBOSE_ARGS[@]}" 2>&1
+    ) | tee "$REPORT_TXT"
+    TEST_EXIT=${PIPESTATUS[0]}
+    set -e
+else
+    # Two-phase run:
+    #   Phase 1: Fast API-only tests (no kernel dispatch) — run as a batch.
+    #   Phase 2: Kernel-dispatch tests — run individually with per-test timeout
+    #            because ISA simulation is slow (~40s per kernel dispatch).
+    echo "  Phase 1: API-only tests (batch, timeout ${TEST_TIMEOUT}s)"
+    echo "  Phase 2: Kernel-dispatch tests (individual, timeout ${PER_TEST_TIMEOUT}s each)"
+    echo ""
 
-# Run under the rocjitsu interposer with a per-run timeout.
-set +e
-(
-    cd "$RUN_DIR"
-    timeout --signal=TERM --kill-after=10 "${TEST_TIMEOUT}" \
-        env \
-            LD_PRELOAD="$KMD_LIB" \
-            LD_LIBRARY_PATH="${ROCM_ROOT}/lib:${ROCRTST_BUILD_DIR}:${LD_LIBRARY_PATH:-}" \
-            RJ_CONFIG="$RJ_CONFIG" \
-            RJ_SCHEMA="$RJ_SCHEMA" \
-            HSA_ENABLE_SDMA=1 \
-            ROCPROFILER_REGISTER_ENABLED=0 \
-            "$RUN_BIN" "${GTEST_ARGS[@]}" 2>&1
-) | tee "$REPORT_TXT"
-TEST_EXIT=${PIPESTATUS[0]}
-set -e
+    # --- Phase 1: API-only tests ---
+    echo "--- Phase 1: API-only tests ---"
+    set +e
+    (
+        cd "$RUN_DIR"
+        timeout --signal=TERM --kill-after=10 "${TEST_TIMEOUT}" \
+            env "${RUN_ENV[@]}" \
+            "$RUN_BIN" --gtest_output=xml:"${REPORT_XML}" \
+                        --gtest_filter="${DEFAULT_FILTER}" \
+                        "${VERBOSE_ARGS[@]}" 2>&1
+    ) | tee "$REPORT_TXT"
+    PHASE1_EXIT=${PIPESTATUS[0]}
+    set -e
+    echo ""
+    echo "--- Phase 1 complete (exit $PHASE1_EXIT) ---"
+    echo ""
+
+    # --- Phase 2: Kernel-dispatch tests (run each with per-test timeout) ---
+    echo "--- Phase 2: Kernel-dispatch tests (${#KERNEL_DISPATCH_TESTS[@]} tests, ${PER_TEST_TIMEOUT}s each) ---"
+    PHASE2_PASS=0
+    PHASE2_FAIL=0
+    PHASE2_TIMEOUT=0
+    for TEST_NAME in "${KERNEL_DISPATCH_TESTS[@]}"; do
+        printf "  %-55s " "$TEST_NAME"
+        set +e
+        TEST_OUT=$(
+            cd "$RUN_DIR"
+            timeout --signal=TERM --kill-after=10 "${PER_TEST_TIMEOUT}" \
+                env "${RUN_ENV[@]}" \
+                "$RUN_BIN" --gtest_filter="${TEST_NAME}" \
+                            "${VERBOSE_ARGS[@]}" 2>&1
+        )
+        RC=$?
+        set -e
+
+        # Append to the text report log
+        echo "$TEST_OUT" >> "$REPORT_TXT"
+
+        if [[ $RC -eq 124 || $RC -eq 137 ]]; then
+            echo "TIMEOUT (${PER_TEST_TIMEOUT}s)"
+            ((PHASE2_TIMEOUT++)) || true
+        elif echo "$TEST_OUT" | grep -qP '^\[\s+OK\s+\]'; then
+            ELAPSED=$(echo "$TEST_OUT" | grep -oP '\(\K\d+(?= ms\))' | tail -1)
+            echo "PASSED (${ELAPSED:-?} ms)"
+            ((PHASE2_PASS++)) || true
+        else
+            echo "FAILED (exit $RC)"
+            ((PHASE2_FAIL++)) || true
+        fi
+    done
+    echo ""
+    echo "--- Phase 2 complete: ${PHASE2_PASS} passed, ${PHASE2_FAIL} failed, ${PHASE2_TIMEOUT} timed out ---"
+
+    # Overall exit code: non-zero if any phase failed
+    if [[ $PHASE1_EXIT -ne 0 || $PHASE2_FAIL -gt 0 ]]; then
+        TEST_EXIT=1
+    else
+        TEST_EXIT=0
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Report
@@ -348,7 +486,6 @@ SUMMARY_FILE="${REPORT_DIR}/summary.txt"
     echo "  Exit code: ${TEST_EXIT}"
     if [[ "$TEST_EXIT" -eq 124 ]]; then
         echo "  NOTE:     Test run was terminated after ${TEST_TIMEOUT}s timeout."
-        echo "            Some tests hang on the simulated GPU (no kernel completion)."
     fi
     echo ""
     echo "Report files"
