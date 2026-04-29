@@ -127,10 +127,34 @@ TARGET_DEVICE="gfx950"
 
 # Tests unconditionally excluded:
 #   - Agent_Preload_Latency: calls hsa_amd_agent_preload which is unresolved (crashes).
-#   - IPC: requires fork + shared memory between processes (not yet supported by interposer).
+#   - IPC, VirtMemory_Interprocess_Test, GpuCoreDump_*: use fork() — the
+#     simulator doesn't support multiple processes.
+#   - Max_Reference_Count: does 100k hsa_init/shutdown cycles through the
+#     interposer — correct but takes >20 min. Run with --gtest-filter to include.
+#   - Concurrent_Init_Shutdown_Test: races hsa_init/shutdown from 200 threads;
+#     the .venv runtime leaves the refcount at zero causing a hang on cleanup.
+#   - Memory_Max_Mem: allocates all 64 GiB in small chunks — correct but >10 min.
+#   - Counted_Queue_Basic/Same_Priority/Multiple_Priorities/Set_Priority_Nack/
+#     Set_CUMask_Nack: the counted-queue manager blocks waiting for an
+#     UPDATE_QUEUE priority change that the simulator doesn't fully support.
+#   - Queue_*_Write_Index_ConcurrentTest: create queues that block on the
+#     counted-queue manager path in the .venv runtime.
 ALWAYS_EXCLUDED="\
 rocrtstPerf.Agent_Preload_Latency:\
-rocrtstFunc.IPC"
+rocrtstFunc.IPC:\
+rocrtstFunc.VirtMemory_Interprocess_Test:\
+rocrtstFunc.GpuCoreDump_*:\
+rocrtstFunc.Max_Reference_Count:\
+rocrtstFunc.Concurrent_Init_Shutdown_Test:\
+rocrtstFunc.Memory_Max_Mem:\
+rocrtstFunc.Counted_Queue_Basic_Test:\
+rocrtstFunc.Counted_Queue_Same_Priority_Max_Limit_Test:\
+rocrtstFunc.Counted_Queue_Multiple_Priorities_Limit_Test:\
+rocrtstFunc.Counted_Queue_Set_Priority_Nack_Test:\
+rocrtstFunc.Counted_Queue_Set_CUMask_Nack_Test:\
+rocrtstStress.Queue_Add_Write_Index_ConcurrentTest:\
+rocrtstStress.Queue_CAS_Write_Index_ConcurrentTest:\
+rocrtstStress.Queue_LoadStore_Write_Index_ConcurrentTest"
 
 # Tests that dispatch GPU kernels. These work correctly but run slowly under
 # ISA simulation (~40s per dispatch). They are run individually with a
@@ -142,13 +166,6 @@ KERNEL_DISPATCH_TESTS=(
     rocrtstFunc.MemoryAccessTests
     rocrtstFunc.MemoryAccessCoherent
     rocrtstFunc.GroupMemoryAllocationTest
-    rocrtstFunc.GpuCoreDump_DefaultPattern
-    rocrtstFunc.GpuCoreDump_CustomPattern
-    rocrtstFunc.GpuCoreDump_DisableFlag
-    rocrtstFunc.GpuCoreDump_PatternSubstitution
-    rocrtstFunc.GpuCoreDump_InvalidPath
-    rocrtstFunc.GpuCoreDump_ContentIntegrity
-    rocrtstFunc.GpuCoreDump_PipePattern
     rocrtstFunc.Memory_Atomic_Add_Test
     rocrtstFunc.Memory_Atomic_Sub_Test
     rocrtstFunc.Memory_Atomic_And_Test

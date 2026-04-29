@@ -451,6 +451,27 @@ int SimulatedDriver::ioctl(unsigned long request, void *arg) {
   case AMDKFD_IOC_SVM:
     return svm_ioctl(arg);
   default:
+    // Some ioctls encode the full payload size (e.g. SVM with flex arrays),
+    // which differs from sizeof(struct) used in the #define constants.
+    // Fall back to matching on type + number only.
+    if (_IOC_TYPE(request) == AMDKFD_IOCTL_BASE) {
+      switch (_IOC_NR(request)) {
+      case _IOC_NR(AMDKFD_IOC_SVM):
+        return svm_ioctl(arg);
+      case _IOC_NR(AMDKFD_IOC_SET_MEMORY_POLICY):
+        return set_memory_policy_ioctl(arg);
+      case _IOC_NR(AMDKFD_IOC_CREATE_QUEUE):
+        return create_queue_ioctl(arg);
+      case _IOC_NR(AMDKFD_IOC_UPDATE_QUEUE):
+        return update_queue_ioctl(arg);
+      case _IOC_NR(AMDKFD_IOC_MAP_MEMORY_TO_GPU):
+        return map_memory_ioctl(arg);
+      case _IOC_NR(AMDKFD_IOC_UNMAP_MEMORY_FROM_GPU):
+        return unmap_memory_ioctl(arg);
+      default:
+        break;
+      }
+    }
     util::Logger::debug_print("rocjitsu: unhandled ioctl 0x", std::hex, request);
     return 0;
   }
@@ -994,6 +1015,14 @@ int SimulatedDriver::export_dmabuf_ioctl(void *arg) {
     ::close(memfd);
     return -errno;
   }
+  // Track the exported fd so get_dmabuf_info can find self-exports.
+  ExportedDmabuf exp{};
+  exp.handle = args->handle;
+  exp.fd = memfd;
+  exp.size = alloc.size;
+  exp.flags = alloc.flags;
+  exp.gpu_id = gpu_id_;
+  exported_dmabufs_[memfd] = exp;
   args->dmabuf_fd = memfd;
   return 0;
 }
@@ -1002,15 +1031,30 @@ int SimulatedDriver::get_dmabuf_info_ioctl(void *arg) {
   auto *args = static_cast<kfd_ioctl_get_dmabuf_info_args *>(arg);
   uint64_t size = 0;
   uint32_t gpu_id = gpu_id_;
+  uint32_t flags = KFD_IOC_ALLOC_MEM_FLAGS_GTT;
 
   bool found = false;
-  for (const auto &[handle, info] : imported_dmabufs_) {
-    (void)handle;
-    if (info.fd >= 0 && static_cast<uint32_t>(info.fd) == args->dmabuf_fd) {
-      size = info.size;
-      gpu_id = info.gpu_id;
+
+  // Check self-exported dmabufs first (same-process export/import).
+  {
+    auto eit = exported_dmabufs_.find(static_cast<int>(args->dmabuf_fd));
+    if (eit != exported_dmabufs_.end()) {
+      size = eit->second.size;
+      gpu_id = eit->second.gpu_id;
+      flags = eit->second.flags;
       found = true;
-      break;
+    }
+  }
+
+  if (!found) {
+    for (const auto &[handle, info] : imported_dmabufs_) {
+      (void)handle;
+      if (info.fd >= 0 && static_cast<uint32_t>(info.fd) == args->dmabuf_fd) {
+        size = info.size;
+        gpu_id = info.gpu_id;
+        found = true;
+        break;
+      }
     }
   }
 
@@ -1023,7 +1067,7 @@ int SimulatedDriver::get_dmabuf_info_ioctl(void *arg) {
 
   args->size = size;
   args->gpu_id = gpu_id;
-  args->flags = KFD_IOC_ALLOC_MEM_FLAGS_GTT;
+  args->flags = flags;
   if (args->metadata_ptr && args->metadata_size) {
     std::memset(reinterpret_cast<void *>(args->metadata_ptr), 0,
                 static_cast<size_t>(args->metadata_size));

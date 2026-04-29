@@ -193,6 +193,14 @@ private:
     uint32_t gpu_id = 0;
   };
 
+  struct ExportedDmabuf {
+    uint64_t handle = 0;
+    int fd = -1;
+    uint64_t size = 0;
+    uint32_t flags = 0;
+    uint32_t gpu_id = 0;
+  };
+
   struct SvmRange {
     uint64_t size = 0;
     std::unordered_map<uint32_t, uint32_t> attributes;
@@ -208,6 +216,7 @@ private:
 
   std::unordered_map<uint32_t, MemoryPolicy> memory_policies_;
   std::unordered_map<uint64_t, ImportedDmabuf> imported_dmabufs_;
+  std::unordered_map<int, ExportedDmabuf> exported_dmabufs_;
   std::unordered_map<int, uint64_t> fd_to_import_handle_;
   std::unordered_map<uint64_t, SvmRange> svm_ranges_;
   std::mutex runtime_mutex_;
