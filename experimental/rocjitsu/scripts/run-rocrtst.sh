@@ -62,6 +62,83 @@ setup_venv() {
     echo "  .venv setup complete."
 }
 
+# ---------------------------------------------------------------------------
+# Build hsa-runtime64 from workspace source and install into .venv SDK.
+# This ensures the runtime binary and headers are in sync (the pip-installed
+# runtime is typically older than the workspace headers).
+# ---------------------------------------------------------------------------
+build_hsa_runtime() {
+    local rocr_src="${PROJECT_DIR}/../../projects/rocr-runtime"
+    local build_dir="${PROJECT_DIR}/build/hsa-runtime-build"
+    local sdk_dir="$1"
+    local sysdeps="${sdk_dir}/lib/rocm_sysdeps"
+
+    if [[ ! -d "$rocr_src" ]]; then
+        echo "  Warning: rocr-runtime source not found at $rocr_src — using pip runtime."
+        return 0
+    fi
+
+    # Skip if already built and installed
+    if [[ -f "$build_dir/.installed" ]]; then
+        return 0
+    fi
+
+    echo "  Building hsa-runtime64 from source ..."
+    mkdir -p "$build_dir"
+    pushd "$build_dir" > /dev/null
+    cmake "$rocr_src" \
+        -DCMAKE_C_COMPILER="${sdk_dir}/lib/llvm/bin/clang" \
+        -DCMAKE_CXX_COMPILER="${sdk_dir}/lib/llvm/bin/clang++" \
+        -DCMAKE_PREFIX_PATH="${sysdeps}" \
+        -DNUMA_DIR="${sysdeps}/lib/cmake/NUMA" \
+        -DLibElf_DIR="${sysdeps}/lib/cmake/LibElf" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=ON \
+        -DCMAKE_INSTALL_PREFIX="${build_dir}/install" \
+        > /dev/null 2>&1
+
+    cmake --build . -j"$(nproc)" --target hsa-runtime64 > /dev/null 2>&1
+    popd > /dev/null
+
+    local built_lib="${build_dir}/rocr/lib/libhsa-runtime64.so.1"
+    if [[ ! -f "$built_lib" ]]; then
+        echo "  Warning: hsa-runtime64 build failed — using pip runtime."
+        return 0
+    fi
+
+    # Get the exact versioned filename
+    local versioned
+    versioned="$(readlink -f "$built_lib")"
+    local basename
+    basename="$(basename "$versioned")"
+
+    # Install library
+    cp "$versioned" "${sdk_dir}/lib/"
+    ln -sf "$basename" "${sdk_dir}/lib/libhsa-runtime64.so.1"
+    ln -sf libhsa-runtime64.so.1 "${sdk_dir}/lib/libhsa-runtime64.so"
+
+    # Install matching headers
+    local src_headers="${rocr_src}/runtime/hsa-runtime/inc"
+    cp "$src_headers/"*.h "${sdk_dir}/include/hsa/"
+
+    # Update cmake configs to reference the new versioned library
+    local cmake_dir="${sdk_dir}/lib/cmake/hsa-runtime64"
+    if [[ -d "$cmake_dir" ]]; then
+        # Extract version from soname (e.g. 1.21.0 from libhsa-runtime64.so.1.21.0)
+        local ver="${basename#libhsa-runtime64.so.}"
+        sed -i "s|libhsa-runtime64\\.so\\.[0-9]\\+\\.[0-9]\\+\\.[0-9]\\+|${basename}|g" \
+            "$cmake_dir/hsa-runtime64Targets-release.cmake"
+        sed -i "s|set(PACKAGE_VERSION \"[^\"]*\")|set(PACKAGE_VERSION \"${ver}\")|" \
+            "$cmake_dir/hsa-runtime64-config-version.cmake"
+        # Drop rocprofiler-register dep (not available in .venv-only builds)
+        sed -i 's|IMPORTED_LINK_DEPENDENT_LIBRARIES_RELEASE "rocprofiler-register::rocprofiler-register"|IMPORTED_LINK_DEPENDENT_LIBRARIES_RELEASE ""|' \
+            "$cmake_dir/hsa-runtime64Targets-release.cmake" 2>/dev/null || true
+    fi
+
+    touch "$build_dir/.installed"
+    echo "  hsa-runtime64 installed ($basename)."
+}
+
 setup_venv
 
 # Locate the .venv SDK (has hsa-runtime64, amd_smi, LLVM, device-libs, etc.)
@@ -72,6 +149,9 @@ if [[ -z "${VENV_SDK:-}" || ! -d "${VENV_SDK:-}" ]]; then
     exit 1
 fi
 ROCM_ROOT="${VENV_SDK}"
+
+# Build hsa-runtime64 from source (ensures headers + runtime match)
+build_hsa_runtime "${VENV_SDK}"
 
 # Defaults
 RJ_BUILD_DIR="${PROJECT_DIR}/build"
@@ -271,18 +351,10 @@ if [[ "$SKIP_ROCRTST_BUILD" -eq 0 ]]; then
         EXTRA_CMAKE_ARGS+=(-Dhsa-runtime64_DIR="${VENV_SDK}/lib/cmake/hsa-runtime64")
     fi
 
-    # Use development HSA headers from the workspace (newer APIs than installed SDK).
-    # rocrtst includes headers as "hsa/hsa_ext_amd.h" but the dev headers live
-    # flat in inc/. Create a temporary shim directory with a "hsa" symlink.
-    ROCR_INC="${PROJECT_DIR}/../../projects/rocr-runtime/runtime/hsa-runtime/inc"
+    # The .venv SDK headers and runtime are kept in sync by building
+    # hsa-runtime64 from projects/rocr-runtime and installing into the .venv.
+    # No header patching is needed when the runtime is source-built.
     EXTRA_CXX_FLAGS=""
-    if [[ -d "$ROCR_INC" ]]; then
-        HSA_SHIM_DIR="${ROCRTST_BUILD_DIR}/_hsa_dev_headers"
-        mkdir -p "$HSA_SHIM_DIR"
-        ln -sfn "$(cd "$ROCR_INC" && pwd)" "$HSA_SHIM_DIR/hsa"
-        EXTRA_CXX_FLAGS="-I${HSA_SHIM_DIR}"
-        echo "  Using dev HSA headers: $ROCR_INC"
-    fi
     # Add rocm_sysdeps headers (numa.h, etc.)
     SYSDEPS_INC="${VENV_SDK}/lib/rocm_sysdeps/include"
     if [[ -d "$SYSDEPS_INC" ]]; then
@@ -293,10 +365,8 @@ if [[ "$SKIP_ROCRTST_BUILD" -eq 0 ]]; then
     # -fpermissive works around type-mismatch bugs in old rocrtst assertions.
     EXTRA_CXX_FLAGS="${EXTRA_CXX_FLAGS} -DGTEST_ELLIPSIS_NEEDS_POD_=1 -fpermissive"
 
-    # Allow unresolved symbols at link time for dev-only APIs not yet in the
-    # installed runtime (e.g. hsa_amd_agent_preload, hsa_amd_svm_discard_batch_async).
-    # Tests calling these will segfault and be reported as failures in the report.
-    EXTRA_LINK_FLAGS="-Wl,--unresolved-symbols=ignore-in-object-files -Wl,--allow-shlib-undefined"
+    # With the source-built runtime, all APIs are available; no linker workarounds needed.
+    EXTRA_LINK_FLAGS=""
 
     pushd "$ROCRTST_BUILD_DIR" > /dev/null
     cmake "$ROCRTST_SRC" \

@@ -228,6 +228,7 @@ SimulatedDriver::~SimulatedDriver() {
 
 void SimulatedDriver::setup_topology(const Sysfs::GpuInfo &gpu) {
   gpu_id_ = gpu.gpu_id;
+  vram_bytes_ = gpu.local_mem_size;
   topology_.generate(gpu);
   topology_.setup_environment();
 }
@@ -418,9 +419,9 @@ int SimulatedDriver::ioctl(unsigned long request, void *arg) {
       for (auto &[handle, alloc] : allocations_)
         allocated += alloc.size;
     }
-    // Report 64 GiB total VRAM minus current allocations (matches sysfs local_mem_size).
-    constexpr uint64_t kVramBytes = 64ULL << 30;
-    args->available = kVramBytes - std::min(allocated, kVramBytes);
+    // Report total VRAM (from config local_mem_size) minus current allocations.
+    const uint64_t total = vram_bytes_;
+    args->available = total - std::min(allocated, total);
     return 0;
   }
   case AMDKFD_IOC_RUNTIME_ENABLE: {

@@ -116,6 +116,7 @@ private:
                 ///< close/reopen.
 
   uint32_t gpu_id_ = 0; ///< KFD gpu_id reported to userspace (set by setup_topology).
+  uint64_t vram_bytes_ = 0; ///< Total VRAM size from config (local_mem_size); used by AVAILABLE_MEMORY.
   /// CommandProcessor for this KFD device. Set once in open() from the SoC
   /// topology. All queue operations (create, flush, destroy) go through this
   /// pointer so no other code needs to know about the underlying XCD index.
