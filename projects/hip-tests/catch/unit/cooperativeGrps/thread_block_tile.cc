@@ -643,7 +643,7 @@ TEST_CASE(Unit_Thread_Block_Tile_Reduce_Non_Participating_Threads)
                       h_result.size_bytes(), hipMemcpyDeviceToHost));
   // because a thread did not participate; we get a partial sum
   REQUIRE(*h_result.host_ptr() == getWarpSize() - 1);
-}*/
+}
 
 // @extraMasks  when testing coalesced_threads, this can be use to simulate
 //              divergence
@@ -691,7 +691,7 @@ void __global__ reduceKernelCoalesced(T* output, const T* input, unsigned long l
 
 // @TileSize the tile size or 0 when testing coalesced groups
 template <size_t TileSize, class Op, class T>
-void reduceForTypeAndOp()
+void aggregateForTypeAndOp(AggregationType aggType)
 {
   using distribution = typename DistributionType<T>::type;
   int wavefrontSize = getWarpSize();
@@ -715,7 +715,7 @@ void reduceForTypeAndOp()
   distribution distInput(a, b);
   int numReduce = 0;
   void* kernelPtr;
-  T output[64];
+  T expected[64];
 
   genRandomBuffers(d_input, h_input, distInput, gen, kNumReduces * wavefrontSize);
 
@@ -757,7 +757,7 @@ void reduceForTypeAndOp()
   while (numReduce < kNumReduces) {
     for (int laneId = 0; laneId < wavefrontSize; laneId++) {
       unsigned long long mask = ~0ull;
-      T result = h_result.host_ptr()[numReduce * wavefrontSize + laneId], expected = 0;
+      T result = h_result.host_ptr()[numReduce * wavefrontSize + laneId];
       const T* input = &h_input.host_ptr()[numReduce * wavefrontSize];
 
       if constexpr (TileSize > 0) {
@@ -769,19 +769,19 @@ void reduceForTypeAndOp()
 
       if ((1ull << laneId) & mask) {
         Op op {};
-        expected = calculateExpected(output, input, op, mask, AggregationType::Reduce);
+        calculateExpected(expected, input, op, mask, aggType);
       }
 
       if constexpr (std::is_integral<T>::value) {
         // for integral types the result should match exactly
-        if (result != expected) {
+        if (result != expected[laneId]) {
           std::string opName = opToString<T, Op>();
-          printMismatch(result, expected, input, mask);
+          printMismatch(result, expected[laneId], input, mask);
           INFO("Operator: " << opName);
-          REQUIRE(result == expected);
+          REQUIRE(result == expected[laneId]);
         }
       } else {
-        compareFloatingPoint(result, expected, mask, h_input.host_ptr());
+        compareFloatingPoint(result, expected[laneId], mask, h_input.host_ptr());
       }
     }
 
@@ -790,49 +790,49 @@ void reduceForTypeAndOp()
 }
 
 template <class Op, class T>
-void reduceCoopTiles(const std::index_sequence<>)
+void aggregateCoopTiles(AggregationType, const std::index_sequence<>)
 {
 }
 
 template <class Op, class T, size_t TileSize, size_t... TileSizes>
-void reduceCoopTiles(const std::index_sequence<TileSize, TileSizes...>)
+void aggregateCoopTiles(AggregationType aggType, const std::index_sequence<TileSize, TileSizes...>)
 {
   const std::index_sequence<TileSizes...> remainingTiles;
 
-  reduceForTypeAndOp<TileSize, Op, T>();
-  reduceCoopTiles<Op, T>(remainingTiles);
+  aggregateForTypeAndOp<TileSize, Op, T>(aggType);
+  aggregateCoopTiles<Op, T>(aggType, remainingTiles);
 }
 
 template <bool Coalesced, class Op, class T, int WarpSize>
-void runReduceRandomForType()
+void runAggregationRandomForType(AggregationType aggType)
 {
   if constexpr (Coalesced) {
-    reduceForTypeAndOp<0, Op, T>();
+    aggregateForTypeAndOp<0, Op, T>(aggType);
   } else if constexpr (WarpSize <= 32) {
     std::index_sequence<1, 2, 4, 8, 16, 32> tileSizes;
-    reduceCoopTiles<Op, T>(tileSizes);
+    aggregateCoopTiles<Op, T>(aggType, tileSizes);
   } else {
     std::index_sequence<1, 2, 4, 8, 16, 32, 64> tileSizes;
-    reduceCoopTiles<Op, T>(tileSizes);
+    aggregateCoopTiles<Op, T>(aggType, tileSizes);
   }
 }
 
 template <bool Coalesced, class T, int WarpSize, class Op = void>
-void runReduceRandomForOps(const std::tuple<>)
+void runAggregationRandomForOps(AggregationType aggType, const std::tuple<>)
 {
 }
 
 template <bool Coalesced, class T, int WarpSize, class Op, class... Ops>
-void runReduceRandomForOps(const std::tuple<Op, Ops...>)
+void runAggregationRandomForOps(AggregationType aggType, const std::tuple<Op, Ops...>)
 {
   const std::tuple<Ops...> remainingOps;
 
-  runReduceRandomForType<Coalesced, Op, T, WarpSize>();
-  runReduceRandomForOps<Coalesced, T, WarpSize>(remainingOps);
+  runAggregationRandomForType<Coalesced, Op, T, WarpSize>(aggType);
+  runAggregationRandomForOps<Coalesced, T, WarpSize>(aggType, remainingOps);
 }
 
 // for all the tile sizes and all input types, using random input values, calculates the reduce()
-// values. Additionally, randomly make some threads not participate
+// values. Additionally, randomly make some threads not participate for the coalesced_threads case
 TEMPLATE_TEST_CASE(Unit_Thread_Block_Tile_Reduce_Random_arithmetic, int, unsigned int, long long,
                    unsigned long long, float, half, double)
 {
@@ -841,9 +841,9 @@ TEMPLATE_TEST_CASE(Unit_Thread_Block_Tile_Reduce_Random_arithmetic, int, unsigne
              cooperative_groups::greater<TestType>> types;
 
   if (getWarpSize() == 32) {
-    runReduceRandomForOps<false, TestType, 32>(types);
+    runAggregationRandomForOps<false, TestType, 32>(AggregationType::Reduce, types);
   } else {
-    runReduceRandomForOps<false, TestType, 64>(types);
+    runAggregationRandomForOps<false, TestType, 64>(AggregationType::Reduce, types);
   }
 }
 
@@ -855,9 +855,9 @@ TEMPLATE_TEST_CASE(Unit_Thread_Block_Tile_Reduce_Random_boolean, int, unsigned i
              cooperative_groups::bit_xor<TestType>> types;
 
   if (getWarpSize() == 32) {
-    runReduceRandomForOps<false, TestType, 32>(types);
+    runAggregationRandomForOps<false, TestType, 32>(AggregationType::Reduce, types);
   } else {
-    runReduceRandomForOps<false, TestType, 64>(types);
+    runAggregationRandomForOps<false, TestType, 64>(AggregationType::Reduce, types);
   }
 }
 
@@ -865,9 +865,9 @@ TEMPLATE_TEST_CASE(Unit_Thread_Block_Tile_Reduce_Random_boolean, int, unsigned i
 TEST_CASE(Unit_Thread_Block_Tile_Reduce_Custom_Op)
 {
   if (getWarpSize() == 32) {
-    runReduceRandomForType<false, MaxOfAbsolute<int>, int, 32>();
+    runAggregationRandomForType<false, MaxOfAbsolute<int>, int, 32>(AggregationType::Reduce);
   } else {
-    runReduceRandomForType<false, MaxOfAbsolute<int>, int, 64>();
+    runAggregationRandomForType<false, MaxOfAbsolute<int>, int, 64>(AggregationType::Reduce);
   }
 }
 
@@ -899,6 +899,8 @@ void __global__ maxMagnitude(Vector* result)
 
   *result = cg::reduce(mytile, input[threadIdx.x], op);
 }
+
+// TODO g-h-c write a particular case for trivially copyable parameters for scans
 
 // tests that we can pass trivially copyable structs as values to reduce
 TEST_CASE(Unit_Thread_Block_Tile_Reduce_Trivially_Copyable_Parameters)
@@ -956,7 +958,8 @@ struct Max {
 };
 
 template <size_t NumElems, class Functor>
-__global__ void applyFunctor(ArrayContainer<NumElems>* result)
+__global__ void applyFunctor(ArrayContainer<NumElems>* result,
+                             AggregationType aggType)
 {
   cg::thread_block mygroup = cg::this_thread_block();
   auto mytile = cg::tiled_partition<NumElems>(mygroup);
@@ -966,22 +969,38 @@ __global__ void applyFunctor(ArrayContainer<NumElems>* result)
   if (threadIdx.x < NumElems) {
     input[threadIdx.x] = threadIdx.x;
     __syncwarp();
-    *result = cg::reduce(mytile, input, op);
+
+    switch (aggType) {
+    case AggregationType::Reduce:
+      *result = cg::reduce(mytile, input, op);
+      break;
+    case AggregationType::InclusiveScan:
+      *result = cg::inclusive_scan(mytile, input, op);
+      break;
+    case AggregationType::ExclusiveScan:
+      // TODO g-h-c
+      //*result = cg::exclusive_scan(mytile, input, op);
+      break;
+    default:
+      assert(false && "AggregationType not supported");
+    }
   }
 }
 
+// tests aggregations of arguments of different sizes (types <= 32 bytes are accepted)
 template <size_t NumElems, template <size_t> class Functor>
-void testReduceSizes()
+void testArgsDifferentSizes(AggregationType aggType)
 {
   LinearAllocGuard<ArrayContainer<NumElems>> h_result(LinearAllocs::malloc, sizeof(ArrayContainer<NumElems>));
   LinearAllocGuard<ArrayContainer<NumElems>> d_result(LinearAllocs::hipMalloc, sizeof(ArrayContainer<NumElems>));
   dim3 gridDim = { 1 };
   dim3 blockDim = { 32 };
   void* devicePtr = d_result.ptr();
-  void* args[] = { &devicePtr };
+  void* args[] = { &devicePtr, &aggType };
   ArrayContainer<NumElems>* result;
 
-  HIP_CHECK(hipLaunchCooperativeKernel(reinterpret_cast<void*>(applyFunctor<NumElems, Functor<NumElems>>), gridDim, blockDim, args, 0, nullptr));
+  HIP_CHECK(hipLaunchCooperativeKernel(reinterpret_cast<void*>(applyFunctor<NumElems, Functor<NumElems>>),
+                                       gridDim, blockDim, args, 0, nullptr));
   HIP_CHECK(hipDeviceSynchronize());
   HIP_CHECK(hipGetLastError());
   HIP_CHECK(hipMemcpy(h_result.host_ptr(), d_result.ptr(),
@@ -1002,7 +1021,7 @@ void testReduceSizes()
   }
 
   if constexpr (NumElems > 1) {
-    testReduceSizes<NumElems / 2, Functor>();
+    testArgsDifferentSizes<NumElems / 2, Functor>(aggType);
   }
 }
 
@@ -1011,11 +1030,11 @@ void testReduceSizes()
 TEST_CASE(Unit_Thread_Block_Tile_Reduce_All_Parameter_Sizes)
 {
   SECTION("sum") {
-    testReduceSizes<32, Sum>();
+    testArgsDifferentSizes<32, Sum>(AggregationType::Reduce);
   }
 
   SECTION("max") {
-    testReduceSizes<32, Max>();
+    testArgsDifferentSizes<32, Max>(AggregationType::Reduce);
   }
 }
 
@@ -1075,12 +1094,11 @@ TEMPLATE_TEST_CASE(Unit_Thread_Block_Coalesced_Reduce_arithmetic, int, unsigned 
              cooperative_groups::greater<TestType>> ops;
 
   if (getWarpSize() == 32) {
-    runReduceRandomForOps<true, TestType, 32>(ops);
+    runAggregationRandomForOps<true, TestType, 32>(AggregationType::Reduce, ops);
   } else {
-    runReduceRandomForOps<true, TestType, 64>(ops);
+    runAggregationRandomForOps<true, TestType, 64>(AggregationType::Reduce, ops);
   }
 }
-
 
 TEMPLATE_TEST_CASE(Unit_Thread_Block_Coalesced_Reduce_boolean, int, unsigned int, long long, unsigned long long)
 {
@@ -1088,9 +1106,9 @@ TEMPLATE_TEST_CASE(Unit_Thread_Block_Coalesced_Reduce_boolean, int, unsigned int
              cooperative_groups::bit_or<TestType>,
              cooperative_groups::bit_xor<TestType>> ops;
   if (getWarpSize() == 32) {
-    runReduceRandomForOps<true, TestType, 32>(ops);
+    runAggregationRandomForOps<true, TestType, 32>(AggregationType::Reduce, ops);
   } else {
-    runReduceRandomForOps<true, TestType, 64>(ops);
+    runAggregationRandomForOps<true, TestType, 64>(AggregationType::Reduce, ops);
   }
 }
 
