@@ -61,8 +61,8 @@
 /experimental/perf-dkms                                               @bwelton
 
 # Emulation
-/emulation                                                            @atgutier
-/emulation/mirage                                                     @atgutier @amd-arosa
+/emulation/                                                           @atgutier
+/emulation/mirage/                                                    @atgutier @amd-arosa
 
 # Documentation-specific ownership by project (last to take precedence)
 
