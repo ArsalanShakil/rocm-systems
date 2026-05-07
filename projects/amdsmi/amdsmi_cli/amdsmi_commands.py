@@ -3215,6 +3215,52 @@ class AMDSMICommands:
                 except Exception as e:
                     values_dict["usage"] = "N/A"
                     logging.debug("Failed to get gpu activity for gpu %s | %s", gpu_id, e)
+
+                # Supplement with APU-specific activity data when available
+                if isinstance(values_dict.get("usage"), dict):
+                    apu_usage_fields = {
+                        "apu_gfx_activity": gpu_metric.get(
+                            "apu_metrics.average_gfx_activity", "N/A"
+                        ),
+                        "apu_mm_activity": gpu_metric.get("apu_metrics.average_mm_activity", "N/A"),
+                        "apu_vcn_activity": gpu_metric.get(
+                            "apu_metrics.average_vcn_activity", "N/A"
+                        ),
+                        "apu_ipu_activity": gpu_metric.get(
+                            "apu_metrics.average_ipu_activity", "N/A"
+                        ),
+                        "apu_core_c0_activity": gpu_metric.get(
+                            "apu_metrics.average_core_c0_activity", "N/A"
+                        ),
+                        "apu_dram_reads": gpu_metric.get("apu_metrics.average_dram_reads", "N/A"),
+                        "apu_dram_writes": gpu_metric.get("apu_metrics.average_dram_writes", "N/A"),
+                        "apu_ipu_reads": gpu_metric.get("apu_metrics.average_ipu_reads", "N/A"),
+                        "apu_ipu_writes": gpu_metric.get("apu_metrics.average_ipu_writes", "N/A"),
+                    }
+                    for key, value in apu_usage_fields.items():
+                        activity_unit = "%"
+                        if value != "N/A":
+                            if "reads" in key or "writes" in key:
+                                # DRAM/IPU reads/writes are counts, not percentages
+                                values_dict["usage"][key] = value
+                            elif isinstance(value, list):
+                                if self.logger.is_human_readable_format():
+                                    formatted = [
+                                        f"{v} {activity_unit}" if v != "N/A" else "N/A"
+                                        for v in value
+                                    ]
+                                    values_dict["usage"][key] = "[" + ", ".join(formatted) + "]"
+                                elif self.logger.is_json_format():
+                                    values_dict["usage"][key] = [
+                                        {"value": v, "unit": activity_unit} if v != "N/A" else "N/A"
+                                        for v in value
+                                    ]
+                                else:
+                                    values_dict["usage"][key] = value
+                            else:
+                                values_dict["usage"][key] = self.helpers.unit_format(
+                                    self.logger, value, activity_unit
+                                )
         if "power" in current_platform_args:
             if args.power:
                 power_dict = {
@@ -3277,6 +3323,49 @@ class AMDSMICommands:
                             power_dict["throttle_status"] = "UNTHROTTLED"
                 except Exception as e:
                     logging.debug("Failed to get throttle status for gpu %s | %s", gpu_id, e)
+
+                # Supplement with APU-specific power data when available
+                apu_power_fields = {
+                    "apu_socket_power": gpu_metric.get("apu_metrics.average_socket_power", "N/A"),
+                    "apu_gfx_power": gpu_metric.get("apu_metrics.average_gfx_power", "N/A"),
+                    "apu_cpu_power": gpu_metric.get("apu_metrics.average_cpu_power", "N/A"),
+                    "apu_soc_power": gpu_metric.get("apu_metrics.average_soc_power", "N/A"),
+                    "apu_core_power": gpu_metric.get("apu_metrics.average_core_power", "N/A"),
+                    "apu_ipu_power": gpu_metric.get("apu_metrics.average_ipu_power", "N/A"),
+                    "apu_power": gpu_metric.get("apu_metrics.average_apu_power", "N/A"),
+                    "apu_dgpu_power": gpu_metric.get("apu_metrics.average_dgpu_power", "N/A"),
+                    "apu_all_core_power": gpu_metric.get(
+                        "apu_metrics.average_all_core_power", "N/A"
+                    ),
+                    "apu_sys_power": gpu_metric.get("apu_metrics.average_sys_power", "N/A"),
+                    "apu_stapm_power_limit": gpu_metric.get("apu_metrics.stapm_power_limit", "N/A"),
+                    "apu_current_stapm_power_limit": gpu_metric.get(
+                        "apu_metrics.current_stapm_power_limit", "N/A"
+                    ),
+                    "apu_throttle_status": gpu_metric.get("apu_metrics.throttle_status", "N/A"),
+                    "apu_indep_throttle_status": gpu_metric.get(
+                        "apu_metrics.indep_throttle_status", "N/A"
+                    ),
+                }
+                for key, value in apu_power_fields.items():
+                    if value != "N/A":
+                        if isinstance(value, list):
+                            if self.logger.is_human_readable_format():
+                                formatted = [
+                                    f"{v} {power_unit}" if v != "N/A" else "N/A" for v in value
+                                ]
+                                power_dict[key] = "[" + ", ".join(formatted) + "]"
+                            elif self.logger.is_json_format():
+                                power_dict[key] = [
+                                    {"value": v, "unit": power_unit} if v != "N/A" else "N/A"
+                                    for v in value
+                                ]
+                            else:
+                                power_dict[key] = value
+                        else:
+                            power_dict[key] = self.helpers.unit_format(
+                                self.logger, value, power_unit
+                            )
 
                 values_dict["power"] = power_dict
         if "clock" in current_platform_args:
@@ -3634,6 +3723,45 @@ class AMDSMICommands:
                     except Exception as e:
                         logging.debug("Failed to get deep sleep status for gpu %s | %s", gpu_id, e)
 
+                # Supplement with APU-specific clock data when available
+                apu_clock_fields = {
+                    "apu_current_coreclk": gpu_metric.get("apu_metrics.current_coreclk", "N/A"),
+                    "apu_current_l3clk": gpu_metric.get("apu_metrics.current_l3clk", "N/A"),
+                    "apu_current_fclk": gpu_metric.get("apu_metrics.current_fclk", "N/A"),
+                    "apu_current_core_maxfreq": gpu_metric.get(
+                        "apu_metrics.current_core_maxfreq", "N/A"
+                    ),
+                    "apu_current_gfx_maxfreq": gpu_metric.get(
+                        "apu_metrics.current_gfx_maxfreq", "N/A"
+                    ),
+                    "apu_avg_gfxclk": gpu_metric.get("apu_metrics.average_gfxclk_frequency", "N/A"),
+                    "apu_avg_socclk": gpu_metric.get("apu_metrics.average_socclk_frequency", "N/A"),
+                    "apu_avg_uclk": gpu_metric.get("apu_metrics.average_uclk_frequency", "N/A"),
+                    "apu_avg_fclk": gpu_metric.get("apu_metrics.average_fclk_frequency", "N/A"),
+                    "apu_avg_vclk": gpu_metric.get("apu_metrics.average_vclk_frequency", "N/A"),
+                    "apu_avg_dclk": gpu_metric.get("apu_metrics.average_dclk_frequency", "N/A"),
+                    "apu_avg_vpeclk": gpu_metric.get("apu_metrics.average_vpeclk_frequency", "N/A"),
+                    "apu_avg_ipuclk": gpu_metric.get("apu_metrics.average_ipuclk_frequency", "N/A"),
+                    "apu_avg_mpipu": gpu_metric.get("apu_metrics.average_mpipu_frequency", "N/A"),
+                }
+                for key, value in apu_clock_fields.items():
+                    if value != "N/A":
+                        if isinstance(value, list):
+                            if self.logger.is_human_readable_format():
+                                formatted = [
+                                    f"{v} {clock_unit}" if v != "N/A" else "N/A" for v in value
+                                ]
+                                clocks[key] = "[" + ", ".join(formatted) + "]"
+                            elif self.logger.is_json_format():
+                                clocks[key] = [
+                                    {"value": v, "unit": clock_unit} if v != "N/A" else "N/A"
+                                    for v in value
+                                ]
+                            else:
+                                clocks[key] = value
+                        else:
+                            clocks[key] = self.helpers.unit_format(self.logger, value, clock_unit)
+
                 values_dict["clock"] = clocks
         if "temperature" in current_platform_args:
             if args.temperature:
@@ -3778,6 +3906,42 @@ class AMDSMICommands:
                                 "value": temperature_value,
                                 "unit": temp_unit_json,
                             }
+
+                # Supplement with APU-specific temperature data when available
+                apu_temp_fields = {
+                    "apu_gfx": gpu_metric.get("apu_metrics.temperature_gfx", "N/A"),
+                    "apu_soc": gpu_metric.get("apu_metrics.temperature_soc", "N/A"),
+                    "apu_core": gpu_metric.get("apu_metrics.temperature_core", "N/A"),
+                    "apu_l3": gpu_metric.get("apu_metrics.temperature_l3", "N/A"),
+                    "apu_skin": gpu_metric.get("apu_metrics.temperature_skin", "N/A"),
+                    "apu_avg_gfx": gpu_metric.get("apu_metrics.average_temperature_gfx", "N/A"),
+                    "apu_avg_soc": gpu_metric.get("apu_metrics.average_temperature_soc", "N/A"),
+                    "apu_avg_core": gpu_metric.get("apu_metrics.average_temperature_core", "N/A"),
+                    "apu_avg_l3": gpu_metric.get("apu_metrics.average_temperature_l3", "N/A"),
+                }
+                for key, value in apu_temp_fields.items():
+                    if value != "N/A":
+                        if isinstance(value, list):
+                            if self.logger.is_human_readable_format():
+                                formatted = [
+                                    f"{v} {temp_unit_human_readable}" if v != "N/A" else "N/A"
+                                    for v in value
+                                ]
+                                temperatures[key] = "[" + ", ".join(formatted) + "]"
+                            elif self.logger.is_json_format():
+                                temperatures[key] = [
+                                    {"value": v, "unit": temp_unit_json} if v != "N/A" else "N/A"
+                                    for v in value
+                                ]
+                            else:
+                                temperatures[key] = value
+                        else:
+                            if self.logger.is_human_readable_format():
+                                temperatures[key] = f"{value} {temp_unit_human_readable}"
+                            elif self.logger.is_json_format():
+                                temperatures[key] = {"value": value, "unit": temp_unit_json}
+                            else:
+                                temperatures[key] = value
 
                 values_dict["temperature"] = temperatures
 
@@ -3935,6 +4099,11 @@ class AMDSMICommands:
                         "Failed to get fan rpms for gpu %s | %s", args.gpu, e.get_error_info()
                     )
 
+                # Supplement with APU-specific fan data when available
+                apu_fan_pwm = gpu_metric.get("apu_metrics.fan_pwm", "N/A")
+                if apu_fan_pwm != "N/A":
+                    fan_dict["apu_fan_pwm"] = apu_fan_pwm
+
                 values_dict["fan"] = fan_dict
         if "voltage_curve" in current_platform_args:
             if args.voltage_curve:
@@ -4060,6 +4229,44 @@ class AMDSMICommands:
                         logging.debug(
                             "Failed to get voltage for gpu %s | %s", gpu_id, e.get_error_info()
                         )
+                # Supplement with APU-specific voltage/current data when available
+                apu_volt_unit = "mV"
+                apu_curr_unit = "mA"
+                apu_voltage_fields = {
+                    "apu_cpu_voltage": (
+                        gpu_metric.get("apu_metrics.average_cpu_voltage", "N/A"),
+                        apu_volt_unit,
+                    ),
+                    "apu_soc_voltage": (
+                        gpu_metric.get("apu_metrics.average_soc_voltage", "N/A"),
+                        apu_volt_unit,
+                    ),
+                    "apu_gfx_voltage": (
+                        gpu_metric.get("apu_metrics.average_gfx_voltage", "N/A"),
+                        apu_volt_unit,
+                    ),
+                    "apu_cpu_current": (
+                        gpu_metric.get("apu_metrics.average_cpu_current", "N/A"),
+                        apu_curr_unit,
+                    ),
+                    "apu_soc_current": (
+                        gpu_metric.get("apu_metrics.average_soc_current", "N/A"),
+                        apu_curr_unit,
+                    ),
+                    "apu_gfx_current": (
+                        gpu_metric.get("apu_metrics.average_gfx_current", "N/A"),
+                        apu_curr_unit,
+                    ),
+                }
+                for key, (value, unit) in apu_voltage_fields.items():
+                    if value != "N/A":
+                        voltage_dict[key] = self.helpers.unit_format(self.logger, value, unit)
+
+                # APU time filter alpha value
+                apu_time_filter = gpu_metric.get("apu_metrics.time_filter_alphavalue", "N/A")
+                if apu_time_filter != "N/A":
+                    voltage_dict["apu_time_filter_alphavalue"] = apu_time_filter
+
                 values_dict["voltage"] = voltage_dict
         if "energy" in current_platform_args:
             if args.energy:
@@ -4378,6 +4585,34 @@ class AMDSMICommands:
                             throttle_status[key] = self.helpers.unit_format(
                                 self.logger, value, activity_unit
                             )
+                # Supplement with APU-specific throttle residency data when available
+                apu_throttle_fields = {
+                    "apu_throttle_residency_prochot": gpu_metric.get(
+                        "apu_metrics.throttle_residency_prochot", "N/A"
+                    ),
+                    "apu_throttle_residency_spl": gpu_metric.get(
+                        "apu_metrics.throttle_residency_spl", "N/A"
+                    ),
+                    "apu_throttle_residency_fppt": gpu_metric.get(
+                        "apu_metrics.throttle_residency_fppt", "N/A"
+                    ),
+                    "apu_throttle_residency_sppt": gpu_metric.get(
+                        "apu_metrics.throttle_residency_sppt", "N/A"
+                    ),
+                    "apu_throttle_residency_thm_core": gpu_metric.get(
+                        "apu_metrics.throttle_residency_thm_core", "N/A"
+                    ),
+                    "apu_throttle_residency_thm_gfx": gpu_metric.get(
+                        "apu_metrics.throttle_residency_thm_gfx", "N/A"
+                    ),
+                    "apu_throttle_residency_thm_soc": gpu_metric.get(
+                        "apu_metrics.throttle_residency_thm_soc", "N/A"
+                    ),
+                }
+                for key, value in apu_throttle_fields.items():
+                    if value != "N/A":
+                        throttle_status[key] = value
+
                 values_dict["throttle"] = throttle_status
 
         # Store timestamp first if watching_output is enabled
@@ -10505,6 +10740,11 @@ class AMDSMICommands:
         if args.temperature:
             try:
                 temperature = gpu_metrics_info["temperature_hotspot"]
+                # Fallback to APU GFX temperature if hotspot is N/A
+                if temperature == "N/A":
+                    temperature = gpu_metrics_info.get("apu_metrics.temperature_gfx", "N/A")
+                    if temperature != "N/A":
+                        temperature = round(temperature)
                 monitor_values["hotspot_temperature"] = temperature
             except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
                 monitor_values["hotspot_temperature"] = "N/A"
@@ -10512,6 +10752,11 @@ class AMDSMICommands:
 
             try:
                 temperature = gpu_metrics_info["temperature_mem"]
+                # Fallback to APU SOC temperature if mem temperature is N/A
+                if temperature == "N/A":
+                    temperature = gpu_metrics_info.get("apu_metrics.temperature_soc", "N/A")
+                    if temperature != "N/A":
+                        temperature = round(temperature)
                 monitor_values["memory_temperature"] = temperature
             except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
                 monitor_values["memory_temperature"] = "N/A"
@@ -10586,6 +10831,9 @@ class AMDSMICommands:
         if args.gfx:
             try:
                 gfx_clk = gpu_metrics_info["current_gfxclk"]
+                # Fallback to APU average GFX clock if current is N/A
+                if gfx_clk == "N/A":
+                    gfx_clk = gpu_metrics_info.get("apu_metrics.average_gfxclk_frequency", "N/A")
                 monitor_values["gfx_clk"] = gfx_clk
                 freq_unit = "MHz"
                 if gfx_clk != "N/A":
@@ -10638,6 +10886,11 @@ class AMDSMICommands:
             if not args.default_output:
                 try:
                     mem_clock = gpu_metrics_info["current_uclk"]
+                    # Fallback to APU average UCLK if current is N/A
+                    if mem_clock == "N/A":
+                        mem_clock = gpu_metrics_info.get(
+                            "apu_metrics.average_uclk_frequency", "N/A"
+                        )
                     monitor_values["mem_clock"] = mem_clock
                     freq_unit = "MHz"
                     if mem_clock != "N/A":
@@ -10707,6 +10960,11 @@ class AMDSMICommands:
                 decoding_activity_avg = self.helpers.average_flattened_ints(
                     decoder_util, context="decoder_util"
                 )
+                # Fallback to APU VCN activity if standard metrics are N/A
+                if decoding_activity_avg == "N/A":
+                    apu_vcn = gpu_metrics_info.get("apu_metrics.average_vcn_activity", "N/A")
+                    if apu_vcn != "N/A":
+                        decoding_activity_avg = apu_vcn
                 monitor_values["decoder"] = decoding_activity_avg
 
                 activity_unit = "%"
@@ -10727,6 +10985,9 @@ class AMDSMICommands:
         if (args.encoder or args.decoder) and not args.default_output:
             try:
                 vclock = gpu_metrics_info["current_vclk0"]
+                # Fallback to APU average VCLK if current is N/A
+                if vclock == "N/A":
+                    vclock = gpu_metrics_info.get("apu_metrics.average_vclk_frequency", "N/A")
                 monitor_values["vclock"] = vclock
 
                 freq_unit = "MHz"
@@ -12565,11 +12826,16 @@ class AMDSMICommands:
                     current_power = gpu_metrics["current_socket_power"]
                 else:
                     current_power = gpu_metrics["average_socket_power"]
+                # Fallback to APU socket power if both standard fields are N/A
+                if current_power == "N/A":
+                    current_power = gpu_metrics.get("apu_metrics.average_socket_power", "N/A")
                 # If the hotspot temperature is not available use the edge temp (applicable to APUs)
                 if gpu_metrics["temperature_hotspot"] != "N/A":
                     temperature = gpu_metrics["temperature_hotspot"]
                 elif gpu_metrics["temperature_edge"] != "N/A":
                     temperature = gpu_metrics["temperature_edge"]
+                elif gpu_metrics.get("apu_metrics.temperature_gfx", "N/A") != "N/A":
+                    temperature = round(gpu_metrics["apu_metrics.temperature_gfx"])
                 else:
                     temperature = "N/A"
             else:
