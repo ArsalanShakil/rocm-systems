@@ -29,7 +29,7 @@ src_path=$(dirname "$(realpath $0)")/../../
 
 cmake \
     -DBUILD_CODE_COVERAGE=${CODE_COV:-OFF} \
-    -DCMAKE_BUILD_TYPE=${BUILD_TYPE:-Release} \
+    -DCMAKE_BUILD_TYPE=${BUILD_TYPE:-RelWithDebInfo} \
     -DCMAKE_INSTALL_PREFIX=${INSTALL_PREFIX:-~/rocshmem} \
     -DCMAKE_VERBOSE_MAKEFILE=OFF \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
@@ -38,6 +38,7 @@ cmake \
     -DBUILD_EXAMPLES=ON \
     -DBUILD_PYTHON_TESTS=ON \
     -DPROFILE=OFF \
+    -DSQTT_ENABLED=ON \
     -DUSE_GDA=ON \
     -DGDA_MLX5=ON \
     -DGDA_BNXT=ON \

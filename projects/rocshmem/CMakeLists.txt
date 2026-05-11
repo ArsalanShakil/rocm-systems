@@ -320,6 +320,19 @@ if (NOT BUILD_TESTS_ONLY)
       $<INSTALL_INTERFACE:include>
   )
 
+  # Add SQTT instrumentation pass plugin
+  target_compile_options(
+      ${PROJECT_NAME}
+       PRIVATE
+       "-fpass-plugin=/app/rocm-systems-sqtt/experimental/sqtt-instrumentation/build/SQTTInstrumentPass.so"
+)
+# Add SQTT include directory
+  target_include_directories(
+     ${PROJECT_NAME}
+     PUBLIC
+    "$<BUILD_INTERFACE:/app/rocm-systems-sqtt/experimental/sqtt-instrumentation/include>"
+)
+
   target_link_libraries(
     ${PROJECT_NAME}
     PUBLIC
