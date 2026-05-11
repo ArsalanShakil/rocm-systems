@@ -3240,8 +3240,13 @@ class AMDSMICommands:
                     for key, value in apu_usage_fields.items():
                         activity_unit = "%"
                         if value != "N/A":
-                            if "reads" in key or "writes" in key:
-                                # DRAM/IPU reads/writes are counts, not percentages
+                            if "dram" in key:
+                                # DRAM reads/writes are in MB/s
+                                values_dict["usage"][key] = self.helpers.unit_format(
+                                    self.logger, value, "MB/s"
+                                )
+                            elif "reads" in key or "writes" in key:
+                                # IPU reads/writes (no unit specified in header)
                                 values_dict["usage"][key] = value
                             elif isinstance(value, list):
                                 if self.logger.is_human_readable_format():
@@ -3341,10 +3346,6 @@ class AMDSMICommands:
                     "apu_stapm_power_limit": gpu_metric.get("apu_metrics.stapm_power_limit", "N/A"),
                     "apu_current_stapm_power_limit": gpu_metric.get(
                         "apu_metrics.current_stapm_power_limit", "N/A"
-                    ),
-                    "apu_throttle_status": gpu_metric.get("apu_metrics.throttle_status", "N/A"),
-                    "apu_indep_throttle_status": gpu_metric.get(
-                        "apu_metrics.indep_throttle_status", "N/A"
                     ),
                 }
                 for key, value in apu_power_fields.items():
@@ -3742,7 +3743,9 @@ class AMDSMICommands:
                     "apu_avg_dclk": gpu_metric.get("apu_metrics.average_dclk_frequency", "N/A"),
                     "apu_avg_vpeclk": gpu_metric.get("apu_metrics.average_vpeclk_frequency", "N/A"),
                     "apu_avg_ipuclk": gpu_metric.get("apu_metrics.average_ipuclk_frequency", "N/A"),
-                    "apu_avg_mpipu": gpu_metric.get("apu_metrics.average_mpipu_frequency", "N/A"),
+                    "apu_avg_mpipuclk": gpu_metric.get(
+                        "apu_metrics.average_mpipu_frequency", "N/A"
+                    ),
                 }
                 for key, value in apu_clock_fields.items():
                     if value != "N/A":
@@ -3909,15 +3912,23 @@ class AMDSMICommands:
 
                 # Supplement with APU-specific temperature data when available
                 apu_temp_fields = {
-                    "apu_gfx": gpu_metric.get("apu_metrics.temperature_gfx", "N/A"),
-                    "apu_soc": gpu_metric.get("apu_metrics.temperature_soc", "N/A"),
-                    "apu_core": gpu_metric.get("apu_metrics.temperature_core", "N/A"),
-                    "apu_l3": gpu_metric.get("apu_metrics.temperature_l3", "N/A"),
-                    "apu_skin": gpu_metric.get("apu_metrics.temperature_skin", "N/A"),
-                    "apu_avg_gfx": gpu_metric.get("apu_metrics.average_temperature_gfx", "N/A"),
-                    "apu_avg_soc": gpu_metric.get("apu_metrics.average_temperature_soc", "N/A"),
-                    "apu_avg_core": gpu_metric.get("apu_metrics.average_temperature_core", "N/A"),
-                    "apu_avg_l3": gpu_metric.get("apu_metrics.average_temperature_l3", "N/A"),
+                    "apu_temperature_gfx": gpu_metric.get("apu_metrics.temperature_gfx", "N/A"),
+                    "apu_temperature_soc": gpu_metric.get("apu_metrics.temperature_soc", "N/A"),
+                    "apu_temperature_core": gpu_metric.get("apu_metrics.temperature_core", "N/A"),
+                    "apu_temperature_l3": gpu_metric.get("apu_metrics.temperature_l3", "N/A"),
+                    "apu_temperature_skin": gpu_metric.get("apu_metrics.temperature_skin", "N/A"),
+                    "apu_avg_temperature_gfx": gpu_metric.get(
+                        "apu_metrics.average_temperature_gfx", "N/A"
+                    ),
+                    "apu_avg_temperature_soc": gpu_metric.get(
+                        "apu_metrics.average_temperature_soc", "N/A"
+                    ),
+                    "apu_avg_temperature_core": gpu_metric.get(
+                        "apu_metrics.average_temperature_core", "N/A"
+                    ),
+                    "apu_avg_temperature_l3": gpu_metric.get(
+                        "apu_metrics.average_temperature_l3", "N/A"
+                    ),
                 }
                 for key, value in apu_temp_fields.items():
                     if value != "N/A":
@@ -4262,12 +4273,14 @@ class AMDSMICommands:
                     if value != "N/A":
                         voltage_dict[key] = self.helpers.unit_format(self.logger, value, unit)
 
-                # APU time filter alpha value
+                values_dict["voltage"] = voltage_dict
+
+                # APU time filter alpha value (unit: us, not a voltage metric)
                 apu_time_filter = gpu_metric.get("apu_metrics.time_filter_alphavalue", "N/A")
                 if apu_time_filter != "N/A":
-                    voltage_dict["apu_time_filter_alphavalue"] = apu_time_filter
-
-                values_dict["voltage"] = voltage_dict
+                    values_dict["apu_time_filter_alphavalue"] = self.helpers.unit_format(
+                        self.logger, apu_time_filter, "us"
+                    )
         if "energy" in current_platform_args:
             if args.energy:
                 try:
@@ -4587,6 +4600,10 @@ class AMDSMICommands:
                             )
                 # Supplement with APU-specific throttle residency data when available
                 apu_throttle_fields = {
+                    "apu_throttle_status": gpu_metric.get("apu_metrics.throttle_status", "N/A"),
+                    "apu_indep_throttle_status": gpu_metric.get(
+                        "apu_metrics.indep_throttle_status", "N/A"
+                    ),
                     "apu_throttle_residency_prochot": gpu_metric.get(
                         "apu_metrics.throttle_residency_prochot", "N/A"
                     ),
@@ -10752,11 +10769,6 @@ class AMDSMICommands:
 
             try:
                 temperature = gpu_metrics_info["temperature_mem"]
-                # Fallback to APU SOC temperature if mem temperature is N/A
-                if temperature == "N/A":
-                    temperature = gpu_metrics_info.get("apu_metrics.temperature_soc", "N/A")
-                    if temperature != "N/A":
-                        temperature = round(temperature)
                 monitor_values["memory_temperature"] = temperature
             except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
                 monitor_values["memory_temperature"] = "N/A"
