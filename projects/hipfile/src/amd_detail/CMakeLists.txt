@@ -4,6 +4,8 @@
 
 # ROCm-backed hipFile
 
+include(AISUseTBB)
+
 set(HIPFILE_SOURCES
     "${HIPFILE_SRC_COMMON_PATH}/hipfile-common.cpp"
     async.cpp
@@ -34,7 +36,7 @@ set(HIPFILE_SOURCES
 ais_add_libraries(
     NAME     hipfile
     DETAIL   amd
-    LIBS     mount
+    LIBS     mount TBB::tbb
     SRCS     ${HIPFILE_SOURCES}
     LIBINCL  ${HIPFILE_INCLUDE_PATH}
     SYSINCLS ${HIPFILE_AMD_SOURCE_PATH}
