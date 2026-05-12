@@ -250,6 +250,7 @@ if(BUILD_TESTS)
       RcclWrapTests.cpp
       TransportTests.cpp
       mem_manager/MemManagerTests.cpp
+      graph/SearchTests.cpp
       graph/XmlTests.cpp
       common/main_fixtures.cpp
       common/EnvVars.cpp
