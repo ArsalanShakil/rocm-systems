@@ -1400,7 +1400,7 @@ struct isBooleanFunc<T, cooperative_groups::bit_xor<T>> : __hip_internal::true_t
 template <typename TyGroup>
 __CG_QUALIFIER__ unsigned long long groupMask(const TyGroup& group)
 {
-  unsigned long long mask;
+  unsigned long long mask = ~0ull;
 
   if constexpr (impl::isCoalescedGroup<TyGroup>::value) {
     // for coalesced_groups, the mask is simply the activemask

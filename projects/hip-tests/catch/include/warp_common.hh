@@ -502,6 +502,8 @@ T calculateExpected(T* output,
 
         if (inclusive) {
           arg = input[i];
+        } else if (i > 0) {
+          arg = input[i - 1];
         }
 
         if (initialized) {
