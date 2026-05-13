@@ -561,10 +561,12 @@ void printMismatch(const T& result, const T& expected, const T* input, unsigned 
   }
 }
 
-template <class T>
+template <class Op, class T>
 void compareFloatingPoint(const T& result, const T& expected, unsigned long long mask, const T* input, int laneId)
 {
   using namespace Catch::Matchers;
+  std::string opName = opToString<T, Op>();
+
   if constexpr (std::is_same<T, __half>::value) {
     float resultFloat = __half2float(result);
     float expectedFloat = __half2float(expected);
@@ -584,6 +586,7 @@ void compareFloatingPoint(const T& result, const T& expected, unsigned long long
         }
       }
 
+      INFO("Operator: " << opName << " mask: 0x" << std::hex << mask);
       REQUIRE_THAT(__half2float(resultFloat), WithinRel(expectedFloat, eps));
     }
   } else {
@@ -600,6 +603,7 @@ void compareFloatingPoint(const T& result, const T& expected, unsigned long long
           std::cout << "Difference: " << absDifference << "\n";
         }
 
+        INFO("Operator: " << opName << " mask: 0x" << std::hex << mask);
         REQUIRE_THAT(result, WithinRel(expected, eps));
       }
     }
@@ -663,7 +667,7 @@ void runTestReduce(int iteration, Reduce reduce)
             }
           }
         } else
-          compareFloatingPoint(result, expected, mask, waveInput, lane);
+          compareFloatingPoint<Op<T>>(result, expected, mask, waveInput, lane);
 
       }
       lane++;
