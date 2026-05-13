@@ -20,11 +20,20 @@ class IBuffer;
 namespace hipFile {
 class IFile;
 }
+namespace hipFile {
+class ITaskGroup;
+}
 
 namespace hipFile {
 
 struct InvalidBatchHandle : public std::invalid_argument {
     InvalidBatchHandle() : std::invalid_argument{"Invalid batch handle"}
+    {
+    }
+};
+
+struct BatchFull : public std::invalid_argument {
+    BatchFull() : std::invalid_argument{"Not enough room in batch"}
     {
     }
 };
@@ -49,6 +58,9 @@ public:
 
     /// @brief Cancel the operation if it is pending.
     void cancel();
+
+    /// @brief Execute the operation.
+    void run();
 
     /// @brief Record an internal execution failure on the operation.
     void record_internal_error();
@@ -103,6 +115,8 @@ public:
 
 class BatchContext : public IBatchContext {
 public:
+    ~BatchContext() override;
+
     ///
     /// @brief Return the max number of concurrent operations supported by this BatchContext.
     ///
@@ -132,6 +146,9 @@ private:
     /// application.
     /// shared_ptr as it may need to be passed to a backend.
     std::unordered_set<std::shared_ptr<BatchOperation>> outstanding_ops;
+
+    /// Task group used for all submitted operations owned by this context.
+    std::unique_ptr<ITaskGroup> task_group;
 
     BatchContext(unsigned capacity);
 

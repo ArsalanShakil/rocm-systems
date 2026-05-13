@@ -13,9 +13,10 @@
 #include "mbuffer.h"
 #include "mfile.h"
 #include "mstate.h"
+#include "mthread-pool.h"
 #include "state.h"
 
-#include <cstdio>
+#include <array>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -23,7 +24,9 @@
 #include <utility>
 
 using ::testing::_;
+using ::testing::ByMove;
 using ::testing::DoDefault;
+using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StrictMock;
 using ::testing::Throw;
@@ -75,6 +78,56 @@ TEST_F(HipFileBatch, CreateOperationWrite)
     io_params->opcode = hipFileBatchWrite;
 
     BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+}
+
+TEST_F(HipFileBatch, CreateOperationStartsWaiting)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    hipFileIOEvents_t event = op.event();
+    ASSERT_EQ(event.status, hipFileWaiting);
+    ASSERT_EQ(event.ret, 0u);
+}
+
+TEST_F(HipFileBatch, MarkOperationPending)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+
+    ASSERT_EQ(op.event().status, hipFilePending);
+}
+
+TEST_F(HipFileBatch, CancelWaitingOperationDoesNothing)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.cancel();
+
+    ASSERT_EQ(op.event().status, hipFileWaiting);
+}
+
+TEST_F(HipFileBatch, MarkPendingPendingOperationThrowsInvalidStateTransition)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+
+    ASSERT_THROW(op.mark_pending(), InvalidStateTransition);
+    ASSERT_EQ(op.event().status, hipFilePending);
+}
+
+TEST_F(HipFileBatch, RunCanceledOperationReturnsImmediately)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+    op.run();
+
+    hipFileIOEvents_t event = op.event();
+    ASSERT_EQ(event.status, hipFileCanceled);
+    ASSERT_EQ(event.ret, 0u);
 }
 
 TEST_F(HipFileBatch, CreateOperationBadBuffer)
@@ -228,6 +281,8 @@ struct HipFileBatchContext : public HipFileUnopened {
     std::shared_ptr<IBatchContext>            _context;
     unsigned                                  _context_capacity = 2;
     std::unique_ptr<StrictMock<MDriverState>> mock_driver_state;
+    std::unique_ptr<StrictMock<MThreadPool>>  mock_thread_pool;
+    NiceMock<MTaskGroup>                     *mock_task_group = nullptr;
 
     hipFileIOParams_t                    io_params{};
     std::shared_ptr<StrictMock<MBuffer>> default_mock_buffer;
@@ -252,6 +307,8 @@ struct HipFileBatchContext : public HipFileUnopened {
         io_params.opcode              = hipFileBatchRead;
 
         mock_driver_state = std::make_unique<StrictMock<MDriverState>>();
+        mock_thread_pool  = std::make_unique<StrictMock<MThreadPool>>();
+        mock_task_group   = expectTaskGroupCreated();
         _context          = batch_map.get(batch_map.createContext(_context_capacity));
         // May be overridden with EXPECT_CALL in the test.
         EXPECT_CALL(*mock_driver_state, getFileAndBuffer).WillRepeatedly(Return(std::move(default_fb_pair)));
@@ -259,14 +316,72 @@ struct HipFileBatchContext : public HipFileUnopened {
 
     void TearDown() override
     {
-        batch_map.destroyContext(_context.get());
+        if (_context) {
+            if (mock_task_group) {
+                allowTeardown(mock_task_group);
+            }
+            batch_map.destroyContext(_context.get());
+            _context.reset();
+        }
+        mock_task_group = nullptr;
+        mock_thread_pool.reset();
         mock_driver_state.reset();
+    }
+
+    NiceMock<MTaskGroup> *expectTaskGroupCreated()
+    {
+        auto task_group = std::make_unique<StrictMock<MTaskGroup>>();
+        auto raw        = task_group.get();
+        EXPECT_CALL(*mock_thread_pool, makeTaskGroup())
+            .WillOnce(Return(ByMove(std::move(task_group))))
+            .RetiresOnSaturation();
+        allowTeardown(raw);
+        return raw;
     }
 };
 
 TEST_F(HipFileBatchContext, SubmitSingleGoodOp)
 {
-    _context->submit_operations(&io_params, 1);
+    EXPECT_CALL(*mock_task_group, run(_)).Times(1);
+
+    ASSERT_NO_THROW(_context->submit_operations(&io_params, 1));
+
+    ASSERT_THROW(_context->submit_operations(nullptr, _context_capacity), std::invalid_argument);
+}
+
+TEST_F(HipFileBatchContext, SubmitSingleGoodWriteOp)
+{
+    io_params.opcode = hipFileBatchWrite;
+
+    EXPECT_CALL(*mock_task_group, run(_)).Times(1);
+
+    ASSERT_NO_THROW(_context->submit_operations(&io_params, 1));
+
+    ASSERT_THROW(_context->submit_operations(nullptr, _context_capacity), std::invalid_argument);
+}
+
+TEST_F(HipFileBatchContext, SubmitMultipleGoodOps)
+{
+    std::array<hipFileIOParams_t, 2> params{io_params, io_params};
+
+    EXPECT_CALL(*mock_task_group, run(_)).Times(params.size());
+
+    ASSERT_NO_THROW(_context->submit_operations(params.data(), params.size()));
+
+    ASSERT_THROW(_context->submit_operations(nullptr, 1), std::invalid_argument);
+}
+
+TEST_F(HipFileBatchContext, SubmitMultipleGoodOpsLooksUpEveryRequest)
+{
+    std::array<hipFileIOParams_t, 2> params{io_params, io_params};
+    file_buffer_pair                 default_fb_pair = {default_mock_file, default_mock_buffer};
+
+    EXPECT_CALL(*mock_driver_state, getFileAndBuffer(io_params.fh, io_params.u.batch.devPtr_base))
+        .Times(params.size())
+        .WillRepeatedly(Return(default_fb_pair));
+    EXPECT_CALL(*mock_task_group, run(_)).Times(params.size());
+
+    _context->submit_operations(params.data(), params.size());
 }
 
 TEST_F(HipFileBatchContext, SubmitZeroOperations)
@@ -277,19 +392,38 @@ TEST_F(HipFileBatchContext, SubmitZeroOperations)
 TEST_F(HipFileBatchContext, SubmitOverCapacity)
 {
     // We should fail before we ever try touching the nullptr.
-    ASSERT_THROW(_context->submit_operations(nullptr, _context_capacity + 1), std::invalid_argument);
+    EXPECT_CALL(*mock_driver_state, getFileAndBuffer).Times(0);
+    ASSERT_THROW(_context->submit_operations(nullptr, _context_capacity + 1), BatchFull);
 }
 
 TEST_F(HipFileBatchContext, SubmitOverCapacityOverMultipleSubmissions)
 {
     // Submit one at a time up to the capacity.
     // In the future we might care that we are submitting the same operation.
+    EXPECT_CALL(*mock_task_group, run(_)).Times(static_cast<int>(_context_capacity));
+
     for (unsigned i = 0; i < _context_capacity; i++) {
-        printf("i: %u\n", i);
         _context->submit_operations(&io_params, 1);
     }
 
-    ASSERT_THROW(_context->submit_operations(nullptr, 1), std::invalid_argument);
+    EXPECT_CALL(*mock_driver_state, getFileAndBuffer).Times(0);
+    ASSERT_THROW(_context->submit_operations(nullptr, 1), BatchFull);
+}
+
+TEST_F(HipFileBatchContext, SubmitBatchWithBadOpDoesNotRecordGoodOps)
+{
+    std::array<hipFileIOParams_t, 2> params{io_params, io_params};
+    params[1].opcode = invalidEnum<hipFileOpcode_t>(-1);
+
+    EXPECT_CALL(*mock_task_group, run(_)).Times(0);
+
+    ASSERT_THROW(_context->submit_operations(params.data(), params.size()), std::invalid_argument);
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+
+    params[1].opcode = hipFileBatchRead;
+    EXPECT_CALL(*mock_task_group, run(_)).Times(params.size());
+
+    ASSERT_NO_THROW(_context->submit_operations(params.data(), params.size()));
 }
 
 TEST_F(HipFileBatchContext, SubmitSingleBadBuffer)
