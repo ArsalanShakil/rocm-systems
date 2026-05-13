@@ -332,6 +332,12 @@ if (NOT BUILD_TESTS_ONLY)
      PUBLIC
     "$<BUILD_INTERFACE:/app/rocm-systems-sqtt/experimental/sqtt-instrumentation/include>"
 )
+# Add SQTT enabled compile definition
+  target_compile_definitions(
+     ${PROJECT_NAME}
+     PRIVATE
+     SQTT_ENABLED=1
+)
 
   target_link_libraries(
     ${PROJECT_NAME}
