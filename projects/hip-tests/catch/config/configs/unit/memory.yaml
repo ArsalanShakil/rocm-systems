@@ -389,6 +389,7 @@ memory:
   Unit_hipHostRegister_Memcpy: *level_2
   Unit_hipHostRegister_Flags: *level_2
   Unit_hipHostRegister_Negative: *level_2
+  Unit_hipHostRegister_with_hipExtHostRegisterCoarseGrained: *level_2
   Unit_hipHostRegister_Capture:
     <<: *level_2
     tags: [alloc]
