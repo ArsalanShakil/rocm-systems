@@ -30,7 +30,8 @@ using ::testing::_;
 using ::testing::AllOf;
 using ::testing::ByMove;
 using ::testing::Field;
-using ::testing::NiceMock;
+using ::testing::InSequence;
+using ::testing::Invoke;
 using ::testing::Return;
 using ::testing::StrictMock;
 using ::testing::Throw;
@@ -103,11 +104,11 @@ TEST_F(HipFileBatch, MarkOperationPending)
     ASSERT_EQ(op.event().status, hipFilePending);
 }
 
-TEST_F(HipFileBatch, CancelWaitingOperationDoesNothing)
+TEST_F(HipFileBatch, TryCancelWaitingOperationIsNoOp)
 {
     BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
 
-    op.cancel();
+    op.try_cancel();
 
     ASSERT_EQ(op.event().status, hipFileWaiting);
 }
@@ -120,6 +121,52 @@ TEST_F(HipFileBatch, MarkPendingPendingOperationThrowsInvalidStateTransition)
 
     ASSERT_THROW(op.mark_pending(), InvalidStateTransition);
     ASSERT_EQ(op.event().status, hipFilePending);
+}
+
+TEST_F(HipFileBatch, CancelPendingOperation)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+
+    ASSERT_EQ(op.event().status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatch, CancelPendingOperationIsIdempotent)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+    op.try_cancel();
+
+    ASSERT_EQ(op.event().status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatch, MarkPendingCanceledOperationThrowsInvalidStateTransition)
+{
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+
+    ASSERT_THROW(op.mark_pending(), InvalidStateTransition);
+    ASSERT_EQ(op.event().status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatch, CanceledOperationEventPreservesCookie)
+{
+    int cookie{};
+    io_params->cookie = &cookie;
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+
+    hipFileIOEvents_t event = op.event();
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileCanceled);
 }
 
 TEST_F(HipFileBatch, RunCanceledOperationReturnsImmediately)
@@ -302,6 +349,26 @@ TEST_F(HipFileBatch, DestroyContext)
     batch_map.destroyContext(handle);
 }
 
+TEST_F(HipFileBatch, DestroyContextRemovesHandle)
+{
+    hipFileBatchHandle_t handle = batch_map.createContext(1);
+
+    batch_map.destroyContext(handle);
+
+    ASSERT_THROW(batch_map.get(handle), InvalidBatchHandle);
+}
+
+TEST_F(HipFileBatch, DestroyContextPreservesOtherContexts)
+{
+    hipFileBatchHandle_t handle1 = batch_map.createContext(1);
+    hipFileBatchHandle_t handle2 = batch_map.createContext(1);
+
+    batch_map.destroyContext(handle1);
+
+    ASSERT_THROW(batch_map.get(handle1), InvalidBatchHandle);
+    ASSERT_NE(batch_map.get(handle2), nullptr);
+}
+
 TEST_F(HipFileBatch, DestroyMissingContext)
 {
     ASSERT_THROW(batch_map.destroyContext(reinterpret_cast<hipFileBatchHandle_t>(1)), InvalidBatchHandle);
@@ -337,7 +404,23 @@ TEST_F(HipFileBatch, GetDestroyedContext)
     ASSERT_THROW(batch_map.get(handle), InvalidBatchHandle);
 }
 
+TEST_F(HipFileBatch, DestroyAlreadyDestroyedContext)
+{
+    hipFileBatchHandle_t handle = batch_map.createContext(1);
+
+    batch_map.destroyContext(handle);
+
+    ASSERT_THROW(batch_map.destroyContext(handle), InvalidBatchHandle);
+}
+
 struct HipFileBatchContext : public HipFileUnopened {
+    struct OperationState {
+        void           *cookie{nullptr};
+        hipFileStatus_t status{hipFileWaiting};
+        ssize_t         result{0};
+        unsigned        successful_cancel_count{0};
+    };
+
     BatchContextMap                           batch_map = BatchContextMap{};
     std::shared_ptr<IBatchContext>            _context;
     unsigned                                  _context_capacity = 2;
@@ -418,11 +501,54 @@ struct HipFileBatchContext : public HipFileUnopened {
     {
         auto op = std::make_shared<StrictMock<MBatchOperation>>();
         EXPECT_CALL(*op, mark_pending()).Times(1);
+        EXPECT_CALL(*op, try_cancel()).Times(testing::AnyNumber());
+        EXPECT_CALL(*op, is_terminal()).Times(testing::AnyNumber()).WillRepeatedly(Return(false));
         return op;
     }
 
-    void expectOperationFactoryCreates(
-        const std::vector<std::shared_ptr<StrictMock<MBatchOperation>>> &ops)
+    std::shared_ptr<OperationState> makeOperationState(hipFileStatus_t status = hipFileWaiting,
+                                                       void *cookie = nullptr, ssize_t result = 0)
+    {
+        auto state    = std::make_shared<OperationState>();
+        state->status = status;
+        state->cookie = cookie;
+        state->result = result;
+        return state;
+    }
+
+    std::shared_ptr<StrictMock<MBatchOperation>>
+    makeStatefulOperation(const std::shared_ptr<OperationState> &state)
+    {
+        auto op = std::make_shared<StrictMock<MBatchOperation>>();
+        EXPECT_CALL(*op, mark_pending()).Times(testing::AnyNumber()).WillRepeatedly(Invoke([state]() {
+            if (state->status == hipFileWaiting) {
+                state->status = hipFilePending;
+            }
+        }));
+        EXPECT_CALL(*op, try_cancel()).Times(testing::AnyNumber()).WillRepeatedly(Invoke([state]() {
+            if (state->status == hipFilePending) {
+                state->status = hipFileCanceled;
+                state->successful_cancel_count++;
+            }
+        }));
+        EXPECT_CALL(*op, event()).Times(testing::AnyNumber()).WillRepeatedly(Invoke([state]() {
+            return hipFileIOEvents_t{state->cookie, state->status, static_cast<size_t>(state->result)};
+        }));
+        EXPECT_CALL(*op, is_terminal()).Times(testing::AnyNumber()).WillRepeatedly(Invoke([state]() {
+            return state->status == hipFileComplete || state->status == hipFileFailed ||
+                   state->status == hipFileCanceled || state->status == hipFileInvalid ||
+                   state->status == hipFileTimeout;
+        }));
+        EXPECT_CALL(*op, record_internal_error())
+            .Times(testing::AnyNumber())
+            .WillRepeatedly(Invoke([state]() {
+                state->status = hipFileFailed;
+                state->result = -hipFileInternalError;
+            }));
+        return op;
+    }
+
+    void expectOperationFactoryCreates(const std::vector<std::shared_ptr<IBatchOperation>> &ops)
     {
         auto index = std::make_shared<size_t>(0);
         EXPECT_CALL(mock_operation_factory, create(_, _, _))
@@ -433,7 +559,7 @@ struct HipFileBatchContext : public HipFileUnopened {
             });
     }
 
-    void submitMockOperations(const std::vector<std::shared_ptr<StrictMock<MBatchOperation>>> &ops)
+    void submitMockOperations(const std::vector<std::shared_ptr<IBatchOperation>> &ops)
     {
         std::vector<hipFileIOParams_t> params(ops.size(), io_params);
 
@@ -522,6 +648,34 @@ TEST_F(HipFileBatchContext, SubmittedFactoryOperationRunsFromQueuedWork)
 
     EXPECT_CALL(*op, run()).Times(1);
     enqueued_work();
+}
+
+TEST_F(HipFileBatchContext, SubmittedWorkInvalidStateTransitionReportsInternalErrorEvent)
+{
+    std::function<void()> enqueued_work;
+    int                   cookie{};
+    auto                  state = makeOperationState(hipFileWaiting, &cookie);
+    auto                  op    = makeStatefulOperation(state);
+
+    expectOperationFactoryCreates({op});
+    EXPECT_CALL(*mock_task_group, run(_)).WillOnce([&enqueued_work](std::function<void()> work) {
+        enqueued_work = std::move(work);
+    });
+
+    _context->submit_operations(&io_params, 1, &mock_operation_factory);
+    ASSERT_TRUE(enqueued_work);
+
+    EXPECT_CALL(*op, run()).WillOnce(Throw(InvalidStateTransition{hipFilePending, hipFilePending}));
+    enqueued_work();
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, nullptr));
+
+    ASSERT_EQ(nr, 1);
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileFailed);
+    ASSERT_EQ(event.ret, static_cast<size_t>(-hipFileInternalError));
 }
 
 TEST_F(HipFileBatchContext, SubmitFactoryFailureDoesNotRecordGoodOps)
@@ -782,6 +936,220 @@ TEST_F(HipFileBatchContext, GetStatusZeroTimeoutScansOutstandingOperationsOnce)
     ASSERT_EQ(event.cookie, &cookie);
     ASSERT_EQ(event.status, hipFileComplete);
     ASSERT_EQ(event.ret, 4);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsEmptySucceeds)
+{
+    ASSERT_NE(context(), nullptr);
+
+    EXPECT_CALL(*mock_task_group, cancel()).Times(1);
+    EXPECT_CALL(*mock_task_group, wait()).Times(1);
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsCancelsAndWaitsForTaskGroup)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto state = makeOperationState();
+    auto op    = makeStatefulOperation(state);
+    submitMockOperations({op});
+
+    {
+        InSequence seq;
+        EXPECT_CALL(*mock_task_group, cancel()).Times(1);
+        EXPECT_CALL(*mock_task_group, wait()).Times(1);
+    }
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+    ASSERT_EQ(state->successful_cancel_count, 1);
+    ASSERT_EQ(state->status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsPropagatesTaskGroupWaitException)
+{
+    ASSERT_NE(context(), nullptr);
+
+    EXPECT_CALL(*mock_task_group, cancel()).Times(1);
+    EXPECT_CALL(*mock_task_group, wait()).WillOnce(Throw(std::runtime_error("wait error")));
+
+    ASSERT_THROW(context()->cancel_operations(), std::runtime_error);
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsCancelsPendingOperations)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto state1 = makeOperationState();
+    auto state2 = makeOperationState();
+    auto op1    = makeStatefulOperation(state1);
+    auto op2    = makeStatefulOperation(state2);
+    submitMockOperations({op1, op2});
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+
+    ASSERT_EQ(state1->successful_cancel_count, 1);
+    ASSERT_EQ(state1->status, hipFileCanceled);
+    ASSERT_EQ(state2->successful_cancel_count, 1);
+    ASSERT_EQ(state2->status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsLeavesTerminalOperationsUnchanged)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto complete_state = makeOperationState(hipFileComplete, nullptr, 7);
+    auto failed_state   = makeOperationState(hipFileFailed, nullptr, -hipFileInternalError);
+    auto complete_op    = makeStatefulOperation(complete_state);
+    auto failed_op      = makeStatefulOperation(failed_state);
+    submitMockOperations({complete_op, failed_op});
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+
+    ASSERT_EQ(complete_state->successful_cancel_count, 0);
+    ASSERT_EQ(complete_state->status, hipFileComplete);
+    ASSERT_EQ(complete_state->result, 7);
+    ASSERT_EQ(failed_state->successful_cancel_count, 0);
+    ASSERT_EQ(failed_state->status, hipFileFailed);
+    ASSERT_EQ(failed_state->result, -hipFileInternalError);
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsCanceledEventsAreReturnedByGetStatus)
+{
+    ASSERT_NE(context(), nullptr);
+
+    int  waiting_cookie{};
+    int  pending_cookie{};
+    auto state1 = makeOperationState(hipFileWaiting, &waiting_cookie);
+    auto state2 = makeOperationState(hipFileWaiting, &pending_cookie);
+    auto op1    = makeStatefulOperation(state1);
+    auto op2    = makeStatefulOperation(state2);
+    submitMockOperations({op1, op2});
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+
+    unsigned                         nr = 2;
+    std::array<hipFileIOEvents_t, 2> events{};
+    ASSERT_NO_THROW(context()->get_status(2, &nr, events.data(), nullptr));
+
+    ASSERT_EQ(nr, 2);
+    ASSERT_THAT(events, UnorderedElementsAre(
+                            AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&waiting_cookie)),
+                                  Field(&hipFileIOEvents_t::status, hipFileCanceled)),
+                            AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&pending_cookie)),
+                                  Field(&hipFileIOEvents_t::status, hipFileCanceled))));
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsMixedStates)
+{
+    ASSERT_NE(context(), nullptr);
+
+    int  pending_cookie{};
+    int  failed_cookie{};
+    auto pending_state = makeOperationState(hipFileWaiting, &pending_cookie);
+    auto failed_state  = makeOperationState(hipFileFailed, &failed_cookie, -hipFileInternalError);
+    auto pending_op    = makeStatefulOperation(pending_state);
+    auto failed_op     = makeStatefulOperation(failed_state);
+    submitMockOperations({pending_op, failed_op});
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+
+    unsigned                         nr = 2;
+    std::array<hipFileIOEvents_t, 2> events{};
+    ASSERT_NO_THROW(context()->get_status(2, &nr, events.data(), nullptr));
+
+    ASSERT_EQ(nr, 2);
+    std::vector<hipFileIOEvents_t> returned_events{events.begin(), events.begin() + nr};
+    ASSERT_THAT(returned_events,
+                UnorderedElementsAre(
+                    AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&pending_cookie)),
+                          Field(&hipFileIOEvents_t::status, hipFileCanceled)),
+                    AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&failed_cookie)),
+                          Field(&hipFileIOEvents_t::status, hipFileFailed),
+                          Field(&hipFileIOEvents_t::ret, static_cast<size_t>(-hipFileInternalError)))));
+}
+
+TEST_F(HipFileBatchContext, CancelOperationsRepeatedIsIdempotent)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto state = makeOperationState();
+    auto op    = makeStatefulOperation(state);
+    submitMockOperations({op});
+
+    ASSERT_NO_THROW(context()->cancel_operations());
+    ASSERT_NO_THROW(context()->cancel_operations());
+
+    ASSERT_EQ(state->successful_cancel_count, 1);
+    ASSERT_EQ(state->status, hipFileCanceled);
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 1);
+
+    nr = 1;
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileBatchContext, DestroyContextCancelsPendingOperations)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto state1 = makeOperationState();
+    auto state2 = makeOperationState();
+    auto op1    = makeStatefulOperation(state1);
+    auto op2    = makeStatefulOperation(state2);
+    submitMockOperations({op1, op2});
+
+    batch_map.destroyContext(_context.get());
+    _context.reset();
+
+    ASSERT_EQ(state1->successful_cancel_count, 1);
+    ASSERT_EQ(state1->status, hipFileCanceled);
+    ASSERT_EQ(state2->successful_cancel_count, 1);
+    ASSERT_EQ(state2->status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatchContext, DestroyContextDoesNotOverwriteTerminalOperations)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto complete_state = makeOperationState(hipFileComplete, nullptr, 7);
+    auto failed_state   = makeOperationState(hipFileFailed, nullptr, -hipFileInternalError);
+    auto complete_op    = makeStatefulOperation(complete_state);
+    auto failed_op      = makeStatefulOperation(failed_state);
+    submitMockOperations({complete_op, failed_op});
+
+    batch_map.destroyContext(_context.get());
+    _context.reset();
+
+    ASSERT_EQ(complete_state->successful_cancel_count, 0);
+    ASSERT_EQ(complete_state->status, hipFileComplete);
+    ASSERT_EQ(complete_state->result, 7);
+    ASSERT_EQ(failed_state->successful_cancel_count, 0);
+    ASSERT_EQ(failed_state->status, hipFileFailed);
+    ASSERT_EQ(failed_state->result, -hipFileInternalError);
+}
+
+TEST_F(HipFileBatchContext, DestroyContextWithOutstandingOperationsRemovesHandle)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto state = makeOperationState();
+    auto op    = makeStatefulOperation(state);
+    submitMockOperations({op});
+    hipFileBatchHandle_t handle = _context.get();
+
+    batch_map.destroyContext(handle);
+    _context.reset();
+
+    ASSERT_THROW(batch_map.get(handle), InvalidBatchHandle);
 }
 
 TEST_F(HipFileBatchContext, SubmitSingleBadBuffer)

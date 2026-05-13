@@ -439,9 +439,14 @@ hipFileError_t
 hipFileBatchIOCancel(hipFileBatchHandle_t batch_idp)
 try {
     hipFileInit();
-    (void)batch_idp;
 
-    throw std::runtime_error("Not Implemented");
+    std::shared_ptr<IBatchContext> batch_context = Context<DriverState>::get()->getBatchContext(batch_idp);
+    batch_context->cancel_operations();
+
+    return {hipFileSuccess, hipSuccess};
+}
+catch (const std::invalid_argument &) {
+    return {hipFileInvalidValue, hipSuccess};
 }
 catch (...) {
     return handle_exception();

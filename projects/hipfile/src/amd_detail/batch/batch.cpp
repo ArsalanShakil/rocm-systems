@@ -366,8 +366,7 @@ BatchContext::submit_operations(const hipFileIOParams_t *params, unsigned num_pa
 
     std::vector<std::shared_ptr<IBatchOperation>> pending_ops{};
     BatchOperationFactory                         default_factory{};
-    IBatchOperationFactory                       &factory =
-        operation_factory == nullptr ? default_factory : *operation_factory;
+    IBatchOperationFactory &factory = operation_factory == nullptr ? default_factory : *operation_factory;
 
     // It would be more performant to be able to perform multiple lookups
     // rather than waiting to lock the DriverState lock for each lookup.
@@ -482,6 +481,36 @@ BatchContext::get_status(unsigned min_nr, unsigned *nr, hipFileIOEvents_t *iocbp
     }
 
     collect_terminal_events();
+}
+
+void
+BatchContext::cancel_operations()
+{
+    {
+        std::unique_lock<std::shared_mutex> lock{context_mutex};
+
+        for (const auto &op : outstanding_ops) {
+            op->try_cancel();
+        }
+
+        task_group->cancel();
+    }
+
+    try {
+        task_group->wait();
+    }
+    catch (...) {
+        {
+            std::shared_lock<std::shared_mutex> _serialize{context_mutex};
+        }
+        status_cv.notify_all();
+        throw;
+    }
+
+    {
+        std::shared_lock<std::shared_mutex> _serialize{context_mutex};
+    }
+    status_cv.notify_all();
 }
 
 void
