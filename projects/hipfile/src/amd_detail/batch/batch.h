@@ -7,6 +7,8 @@
 
 #include "hipfile.h"
 
+#include <condition_variable>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -44,8 +46,47 @@ struct InvalidStateTransition : public std::logic_error {
 };
 
 /// @brief Represents a single IO Request
-class BatchOperation {
+class IBatchOperation {
 public:
+    virtual ~IBatchOperation() = default;
+
+    /// @brief Mark the operation as accepted and ready to run.
+    virtual void mark_pending() = 0;
+
+    /// @brief Cancel the operation if it can be transitioned to Canceled; otherwise no-op.
+    virtual void try_cancel() = 0;
+
+    /// @brief Execute the operation.
+    virtual void run() = 0;
+
+    /// @brief Record an internal execution failure on the operation.
+    virtual void record_internal_error() = 0;
+
+    /// @brief Return a snapshot of the operation event state.
+    virtual hipFileIOEvents_t event() const = 0;
+
+    /// @brief Return whether the operation has reached a terminal status.
+    virtual bool is_terminal() const = 0;
+};
+
+/// @brief Represents a single IO Request
+class BatchOperation : public IBatchOperation {
+public:
+    /// @brief Internal operation status. Includes Running, which is not exposed via
+    ///        the public API; get_status() and event() translate it to hipFilePending.
+    enum class InternalStatus {
+        Waiting,
+        Pending,
+        Running,
+        Complete,
+        Canceled,
+        Invalid,
+        Timeout,
+        Failed,
+    };
+
+    ~BatchOperation() override = default;
+
     /// @brief Create an operation to handle and track an IO request.
     /// @param [in] params IO parameters
     /// @param [in] buffer Buffer corresponding to params->u.batch.devPtr_base
@@ -54,22 +95,19 @@ public:
                    std::shared_ptr<IFile> file);
 
     /// @brief Mark the operation as accepted and ready to run.
-    void mark_pending();
+    void mark_pending() override;
 
-    /// @brief Cancel the operation if it is pending.
-    void cancel();
+    /// @brief Cancel the operation if it can be transitioned to Canceled; otherwise no-op.
+    void try_cancel() override;
 
     /// @brief Execute the operation.
-    void run();
+    void run() override;
 
     /// @brief Record an internal execution failure on the operation.
-    void record_internal_error();
+    void record_internal_error() override;
 
-    /// @brief Return the current operation status.
-    hipFileStatus_t get_status() const;
-
-    /// @brief Return the operation result.
-    ssize_t get_result() const;
+    /// @brief Return a snapshot of the operation event state.
+    hipFileIOEvents_t event() const override;
 
     /// @brief Return whether the operation has reached a terminal status.
     bool is_terminal() const override;
@@ -104,16 +142,35 @@ private:
     static bool is_terminal_status(InternalStatus status) noexcept;
 };
 
+class IBatchOperationFactory {
+public:
+    virtual ~IBatchOperationFactory() = default;
+
+    virtual std::shared_ptr<IBatchOperation> create(std::unique_ptr<const hipFileIOParams_t> params,
+                                                    std::shared_ptr<IBuffer> buffer,
+                                                    std::shared_ptr<IFile> file) = 0;
+};
+
+class BatchOperationFactory : public IBatchOperationFactory {
+public:
+    std::shared_ptr<IBatchOperation> create(std::unique_ptr<const hipFileIOParams_t> params,
+                                            std::shared_ptr<IBuffer> buffer,
+                                            std::shared_ptr<IFile> file) override;
+};
+
 class IBatchContext {
 public:
     static constexpr unsigned MAX_SIZE = 128;
 
-    virtual ~IBatchContext()                                                                 = default;
-    virtual unsigned get_capacity() const noexcept                                           = 0;
-    virtual void     submit_operations(const hipFileIOParams_t *params, unsigned num_params) = 0;
+    virtual ~IBatchContext() = default;
+    virtual unsigned get_capacity() const noexcept = 0;
+    virtual void     submit_operations(const hipFileIOParams_t *params, unsigned num_params,
+                                       IBatchOperationFactory *operation_factory = nullptr) = 0;
+    virtual void     get_status(unsigned min_nr, unsigned *nr, hipFileIOEvents_t *iocbp,
+                                struct timespec *timeout)                                  = 0;
 };
 
-class BatchContext : public IBatchContext {
+class BatchContext : public IBatchContext, public std::enable_shared_from_this<BatchContext> {
 public:
     ~BatchContext() override;
 
@@ -132,7 +189,18 @@ public:
     /// @note This is an All or None operation. If one submitted operation is not valid, no operations
     ///       will be submitted.
     ///
-    void submit_operations(const hipFileIOParams_t *params, const unsigned num_params) override;
+    void submit_operations(const hipFileIOParams_t *params, const unsigned num_params,
+                           IBatchOperationFactory *operation_factory = nullptr) override;
+
+    ///
+    /// @brief Poll for completed operations from this Context.
+    /// @param [in]     min_nr  Minimum number of events requested before returning.
+    /// @param [in,out] nr      Input event capacity and output number of events returned.
+    /// @param [out]    iocbp   Event output buffer.
+    /// @param [in]     timeout Maximum amount of time to wait.
+    ///
+    void get_status(unsigned min_nr, unsigned *nr, hipFileIOEvents_t *iocbp,
+                    struct timespec *timeout) override;
 
 private:
     const unsigned capacity;
@@ -141,11 +209,14 @@ private:
     /// Shared as internally we can be more strategic about concurrent access.
     mutable std::shared_mutex context_mutex;
 
+    /// Wakes callers waiting for operations to become terminal.
+    std::condition_variable_any status_cv;
+
     /// An outstanding operation is a BatchOperation that has been submitted
     /// but is not yet complete or completed but not yet retrieved by the
     /// application.
     /// shared_ptr as it may need to be passed to a backend.
-    std::unordered_set<std::shared_ptr<BatchOperation>> outstanding_ops;
+    std::unordered_set<std::shared_ptr<IBatchOperation>> outstanding_ops;
 
     /// Task group used for all submitted operations owned by this context.
     std::unique_ptr<ITaskGroup> task_group;

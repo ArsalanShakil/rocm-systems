@@ -97,7 +97,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitSuccess)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(1));
-    EXPECT_CALL(*mock_b_context, submit_operations(&io_param, 1));
+    EXPECT_CALL(*mock_b_context, submit_operations(&io_param, 1, nullptr));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     ASSERT_EQ(result, HIPFILE_SUCCESS);
@@ -111,7 +111,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNonZeroFlagsIgnored)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(1));
-    EXPECT_CALL(*mock_b_context, submit_operations(&io_param, 1));
+    EXPECT_CALL(*mock_b_context, submit_operations(&io_param, 1, nullptr));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0x1234);
     ASSERT_EQ(result, HIPFILE_SUCCESS);
@@ -124,7 +124,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullHandle)
     std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
-    EXPECT_CALL(*mock_b_context, submit_operations).Times(0);
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).Times(0);
 
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
@@ -138,7 +138,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitUnknownHandle)
     std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
-    EXPECT_CALL(*mock_b_context, submit_operations).Times(0);
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).Times(0);
 
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
@@ -176,7 +176,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitOverContextCapacity)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(context_capacity));
-    EXPECT_CALL(*mock_b_context, submit_operations).Times(0);
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).Times(0);
 
     auto result = hipFileBatchIOSubmit(b_handle, request_count, io_params.data(), 0);
     ASSERT_EQ(result, HipFileOpError(hipFileBatchFull));
@@ -190,7 +190,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBatchFull)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(1));
-    EXPECT_CALL(*mock_b_context, submit_operations).WillOnce(Throw(BatchFull()));
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).WillOnce(Throw(BatchFull()));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     ASSERT_EQ(result, HipFileOpError(hipFileBatchFull));
@@ -204,7 +204,7 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadArgument)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(1));
-    EXPECT_CALL(*mock_b_context, submit_operations).WillOnce(Throw(std::invalid_argument("")));
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).WillOnce(Throw(std::invalid_argument("")));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
@@ -218,9 +218,150 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitUnexpectedException)
 
     EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
     EXPECT_CALL(*mock_b_context, get_capacity()).WillOnce(Return(1));
-    EXPECT_CALL(*mock_b_context, submit_operations).WillOnce(Throw(std::runtime_error("test error")));
+    EXPECT_CALL(*mock_b_context, submit_operations(_, _, _)).WillOnce(Throw(std::runtime_error("test error")));
 
     auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
+    ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusNullHandle)
+{
+    hipFileBatchHandle_t           b_handle = nullptr;
+    unsigned                       nr       = 1;
+    hipFileIOEvents_t              event{};
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
+    EXPECT_CALL(*mock_b_context, get_status).Times(0);
+
+    auto           result          = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
+    hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
+    ASSERT_EQ(result, expected_result);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusUnknownHandle)
+{
+    hipFileBatchHandle_t           b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                       nr       = 1;
+    hipFileIOEvents_t              event{};
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
+    EXPECT_CALL(*mock_b_context, get_status).Times(0);
+
+    auto           result          = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
+    hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
+    ASSERT_EQ(result, expected_result);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusNullNumEvents)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOEvents_t    event{};
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 0, nullptr, &event, nullptr);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusNullEventsWithCapacity)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned             nr       = 1;
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 0, &nr, nullptr, nullptr);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusZeroCapacityWithMinimum)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned             nr       = 0;
+    hipFileIOEvents_t    event{};
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusMinimumExceedsCapacity)
+{
+    hipFileBatchHandle_t             b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                         nr       = 1;
+    std::array<hipFileIOEvents_t, 1> events{};
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 2, &nr, events.data(), nullptr);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusZeroMinimumAndZeroCapacitySucceeds)
+{
+    hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                       nr             = 0;
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, get_status(0, &nr, nullptr, nullptr));
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 0, &nr, nullptr, nullptr);
+    ASSERT_EQ(result, HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusSuccess)
+{
+    hipFileBatchHandle_t             b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                         nr       = 2;
+    std::array<hipFileIOEvents_t, 2> events{};
+    struct timespec                  timeout {};
+    std::shared_ptr<MBatchContext>   mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, get_status(1, &nr, events.data(), &timeout))
+        .WillOnce(Invoke([](unsigned, unsigned *num_events, hipFileIOEvents_t *io_events, struct timespec *) {
+            io_events[0].status = hipFileComplete;
+            io_events[0].ret    = 7;
+            *num_events         = 1;
+        }));
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 1, &nr, events.data(), &timeout);
+    ASSERT_EQ(result, HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 1);
+    ASSERT_EQ(events[0].status, hipFileComplete);
+    ASSERT_EQ(events[0].ret, 7);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusBadArgument)
+{
+    hipFileBatchHandle_t           b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                       nr       = 1;
+    hipFileIOEvents_t              event{};
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, get_status).WillOnce(Throw(std::invalid_argument("")));
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOGetStatusUnexpectedException)
+{
+    hipFileBatchHandle_t           b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    unsigned                       nr       = 1;
+    hipFileIOEvents_t              event{};
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(*mock_b_context, get_status).WillOnce(Throw(std::runtime_error("test error")));
+
+    auto result = hipFileBatchIOGetStatus(b_handle, 1, &nr, &event, nullptr);
     ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
 }
 

@@ -10,6 +10,7 @@
 #include "hipfile-test.h"
 #include "hipfile-warnings.h"
 #include "invalid-enum.h"
+#include "mbatch.h"
 #include "mbuffer.h"
 #include "mfile.h"
 #include "mstate.h"
@@ -17,19 +18,23 @@
 #include "state.h"
 
 #include <array>
+#include <functional>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using ::testing::_;
+using ::testing::AllOf;
 using ::testing::ByMove;
-using ::testing::DoDefault;
+using ::testing::Field;
 using ::testing::NiceMock;
 using ::testing::Return;
 using ::testing::StrictMock;
 using ::testing::Throw;
+using ::testing::UnorderedElementsAre;
 
 using namespace hipFile;
 
@@ -128,6 +133,62 @@ TEST_F(HipFileBatch, RunCanceledOperationReturnsImmediately)
     hipFileIOEvents_t event = op.event();
     ASSERT_EQ(event.status, hipFileCanceled);
     ASSERT_EQ(event.ret, 0u);
+}
+
+TEST_F(HipFileBatch, OperationEventStartsWaiting)
+{
+    int cookie{};
+    io_params->cookie = &cookie;
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    hipFileIOEvents_t event = op.event();
+
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileWaiting);
+    ASSERT_EQ(event.ret, 0);
+}
+
+TEST_F(HipFileBatch, OperationEventUsesCopiedCookie)
+{
+    int               original_cookie{};
+    int               modified_cookie{};
+    hipFileIOParams_t source_params = *io_params;
+    source_params.cookie            = &original_cookie;
+
+    auto           params = std::make_unique<const hipFileIOParams_t>(source_params);
+    BatchOperation op     = BatchOperation{std::move(params), default_mock_buffer, default_mock_file};
+    source_params.cookie  = &modified_cookie;
+
+    ASSERT_EQ(op.event().cookie, &original_cookie);
+}
+
+TEST_F(HipFileBatch, OperationEventReportsPendingStatus)
+{
+    int cookie{};
+    io_params->cookie = &cookie;
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+
+    hipFileIOEvents_t event = op.event();
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFilePending);
+    ASSERT_EQ(event.ret, 0);
+}
+
+TEST_F(HipFileBatch, OperationEventReportsCanceledStatus)
+{
+    int cookie{};
+    io_params->cookie = &cookie;
+    BatchOperation op = BatchOperation{std::move(io_params), default_mock_buffer, default_mock_file};
+
+    op.mark_pending();
+    op.try_cancel();
+
+    hipFileIOEvents_t event = op.event();
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileCanceled);
+    ASSERT_EQ(event.ret, 0);
 }
 
 TEST_F(HipFileBatch, CreateOperationBadBuffer)
@@ -282,7 +343,8 @@ struct HipFileBatchContext : public HipFileUnopened {
     unsigned                                  _context_capacity = 2;
     std::unique_ptr<StrictMock<MDriverState>> mock_driver_state;
     std::unique_ptr<StrictMock<MThreadPool>>  mock_thread_pool;
-    NiceMock<MTaskGroup>                     *mock_task_group = nullptr;
+    StrictMock<MTaskGroup>                     *mock_task_group = nullptr;
+    StrictMock<MBatchOperationFactory>        mock_operation_factory;
 
     hipFileIOParams_t                    io_params{};
     std::shared_ptr<StrictMock<MBuffer>> default_mock_buffer;
@@ -328,7 +390,12 @@ struct HipFileBatchContext : public HipFileUnopened {
         mock_driver_state.reset();
     }
 
-    NiceMock<MTaskGroup> *expectTaskGroupCreated()
+    std::shared_ptr<BatchContext> context()
+    {
+        return std::dynamic_pointer_cast<BatchContext>(_context);
+    }
+
+    StrictMock<MTaskGroup> *expectTaskGroupCreated()
     {
         auto task_group = std::make_unique<StrictMock<MTaskGroup>>();
         auto raw        = task_group.get();
@@ -337,6 +404,44 @@ struct HipFileBatchContext : public HipFileUnopened {
             .RetiresOnSaturation();
         allowTeardown(raw);
         return raw;
+    }
+
+    // Re-installable cancel/wait allowance so destruction paths don't trip strict
+    // after tests call VerifyAndClearExpectations on a task group.
+    static void allowTeardown(StrictMock<MTaskGroup> *tg)
+    {
+        EXPECT_CALL(*tg, cancel()).Times(testing::AnyNumber());
+        EXPECT_CALL(*tg, wait()).Times(testing::AnyNumber());
+    }
+
+    std::shared_ptr<StrictMock<MBatchOperation>> makeOperation()
+    {
+        auto op = std::make_shared<StrictMock<MBatchOperation>>();
+        EXPECT_CALL(*op, mark_pending()).Times(1);
+        return op;
+    }
+
+    void expectOperationFactoryCreates(
+        const std::vector<std::shared_ptr<StrictMock<MBatchOperation>>> &ops)
+    {
+        auto index = std::make_shared<size_t>(0);
+        EXPECT_CALL(mock_operation_factory, create(_, _, _))
+            .Times(static_cast<int>(ops.size()))
+            .WillRepeatedly([ops, index](std::unique_ptr<const hipFileIOParams_t>, std::shared_ptr<IBuffer>,
+                                         std::shared_ptr<IFile>) -> std::shared_ptr<IBatchOperation> {
+                return ops[(*index)++];
+            });
+    }
+
+    void submitMockOperations(const std::vector<std::shared_ptr<StrictMock<MBatchOperation>>> &ops)
+    {
+        std::vector<hipFileIOParams_t> params(ops.size(), io_params);
+
+        expectOperationFactoryCreates(ops);
+        EXPECT_CALL(*mock_task_group, run(_)).Times(static_cast<int>(ops.size()));
+
+        _context->submit_operations(params.data(), static_cast<unsigned>(params.size()),
+                                    &mock_operation_factory);
     }
 };
 
@@ -384,6 +489,66 @@ TEST_F(HipFileBatchContext, SubmitMultipleGoodOpsLooksUpEveryRequest)
     _context->submit_operations(params.data(), params.size());
 }
 
+TEST_F(HipFileBatchContext, SubmitUsesProvidedOperationFactory)
+{
+    auto op = makeOperation();
+
+    EXPECT_CALL(mock_operation_factory, create(_, _, _))
+        .WillOnce([this, op](std::unique_ptr<const hipFileIOParams_t> params, std::shared_ptr<IBuffer> buffer,
+                             std::shared_ptr<IFile> file) -> std::shared_ptr<IBatchOperation> {
+            EXPECT_EQ(params->fh, io_params.fh);
+            EXPECT_EQ(params->u.batch.devPtr_base, io_params.u.batch.devPtr_base);
+            EXPECT_EQ(buffer.get(), default_mock_buffer.get());
+            EXPECT_EQ(file.get(), default_mock_file.get());
+            return op;
+        });
+    EXPECT_CALL(*mock_task_group, run(_)).Times(1);
+
+    _context->submit_operations(&io_params, 1, &mock_operation_factory);
+}
+
+TEST_F(HipFileBatchContext, SubmittedFactoryOperationRunsFromQueuedWork)
+{
+    std::function<void()> enqueued_work;
+    auto                  op = makeOperation();
+
+    expectOperationFactoryCreates({op});
+    EXPECT_CALL(*mock_task_group, run(_)).WillOnce([&enqueued_work](std::function<void()> work) {
+        enqueued_work = std::move(work);
+    });
+
+    _context->submit_operations(&io_params, 1, &mock_operation_factory);
+    ASSERT_TRUE(enqueued_work);
+
+    EXPECT_CALL(*op, run()).Times(1);
+    enqueued_work();
+}
+
+TEST_F(HipFileBatchContext, SubmitFactoryFailureDoesNotRecordGoodOps)
+{
+    std::array<hipFileIOParams_t, 2> params{io_params, io_params};
+    auto                             op = std::make_shared<StrictMock<MBatchOperation>>();
+
+    EXPECT_CALL(mock_operation_factory, create(_, _, _))
+        .WillOnce([op](std::unique_ptr<const hipFileIOParams_t>, std::shared_ptr<IBuffer>,
+                       std::shared_ptr<IFile>) -> std::shared_ptr<IBatchOperation> { return op; })
+        .WillOnce([](std::unique_ptr<const hipFileIOParams_t>, std::shared_ptr<IBuffer>,
+                     std::shared_ptr<IFile>) -> std::shared_ptr<IBatchOperation> {
+            throw std::invalid_argument("factory error");
+        });
+    EXPECT_CALL(*mock_task_group, run(_)).Times(0);
+
+    ASSERT_THROW(_context->submit_operations(params.data(), static_cast<unsigned>(params.size()),
+                                             &mock_operation_factory),
+                 std::invalid_argument);
+    testing::Mock::VerifyAndClearExpectations(&mock_operation_factory);
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+
+    auto accepted_op1 = makeOperation();
+    auto accepted_op2 = makeOperation();
+    ASSERT_NO_THROW(submitMockOperations({accepted_op1, accepted_op2}));
+}
+
 TEST_F(HipFileBatchContext, SubmitZeroOperations)
 {
     _context->submit_operations(nullptr, 0);
@@ -424,6 +589,199 @@ TEST_F(HipFileBatchContext, SubmitBatchWithBadOpDoesNotRecordGoodOps)
     EXPECT_CALL(*mock_task_group, run(_)).Times(params.size());
 
     ASSERT_NO_THROW(_context->submit_operations(params.data(), params.size()));
+}
+
+TEST_F(HipFileBatchContext, SubmittedWorkKeepsContextAliveUntilReleased)
+{
+    std::function<void()>       enqueued_work;
+    std::weak_ptr<BatchContext> weak_context = context();
+
+    // enqueued_work will capture the function that has been passed to the thread pool
+    EXPECT_CALL(*mock_task_group, run(_)).WillOnce([&enqueued_work](std::function<void()> work) {
+        enqueued_work = std::move(work);
+    });
+
+    ASSERT_NO_THROW(_context->submit_operations(&io_params, 1));
+    // enqueued_work has been assigned
+    ASSERT_TRUE(enqueued_work);
+
+    // Destroy the context and our shared_ptr to it
+    batch_map.destroyContext(_context.get());
+    _context.reset();
+
+    // BatchContext is still valid because it was captured by lambda
+    ASSERT_FALSE(weak_context.expired());
+
+    // Assigning empty function will call destructor for the lambda that was assigned
+    enqueued_work = {};
+
+    // The shared_ptr has been destroyed
+    ASSERT_TRUE(weak_context.expired());
+}
+
+TEST_F(HipFileBatchContext, GetStatusNoOutstandingReturnsImmediately)
+{
+    ASSERT_NE(context(), nullptr);
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    struct timespec   timeout{1, 0};
+
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, &timeout));
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileBatchContext, GetStatusNoOutstandingZeroCapacityReturnsImmediately)
+{
+    ASSERT_NE(context(), nullptr);
+
+    unsigned nr = 0;
+
+    ASSERT_NO_THROW(context()->get_status(0, &nr, nullptr, nullptr));
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileBatchContext, GetStatusReturnsCompletedOperationAndConsumesIt)
+{
+    ASSERT_NE(context(), nullptr);
+
+    int               cookie{};
+    auto              op = makeOperation();
+    hipFileIOEvents_t completed_event{&cookie, hipFileComplete, 9};
+    EXPECT_CALL(*op, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*op, event()).WillOnce(Return(completed_event));
+    submitMockOperations({op});
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, nullptr));
+
+    ASSERT_EQ(nr, 1);
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileComplete);
+    ASSERT_EQ(event.ret, 9);
+
+    nr = 1;
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileBatchContext, GetStatusReturnsFailedAndCanceledOperations)
+{
+    ASSERT_NE(context(), nullptr);
+
+    int               failed_cookie{};
+    int               canceled_cookie{};
+    auto              failed_op      = makeOperation();
+    auto              canceled_op    = makeOperation();
+    hipFileIOEvents_t failed_event   = {&failed_cookie, hipFileFailed,
+                                        static_cast<size_t>(-hipFileInternalError)};
+    hipFileIOEvents_t canceled_event = {&canceled_cookie, hipFileCanceled, 0};
+    EXPECT_CALL(*failed_op, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*failed_op, event()).WillRepeatedly(Return(failed_event));
+    EXPECT_CALL(*canceled_op, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*canceled_op, event()).WillRepeatedly(Return(canceled_event));
+    submitMockOperations({failed_op, canceled_op});
+
+    unsigned                         nr = 2;
+    std::array<hipFileIOEvents_t, 2> events{};
+    ASSERT_NO_THROW(context()->get_status(2, &nr, events.data(), nullptr));
+
+    ASSERT_EQ(nr, 2);
+    ASSERT_THAT(events, UnorderedElementsAre(
+                            AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&failed_cookie)),
+                                  Field(&hipFileIOEvents_t::status, hipFileFailed),
+                                  Field(&hipFileIOEvents_t::ret, static_cast<size_t>(-hipFileInternalError))),
+                            AllOf(Field(&hipFileIOEvents_t::cookie, static_cast<void *>(&canceled_cookie)),
+                                  Field(&hipFileIOEvents_t::status, hipFileCanceled))));
+}
+
+TEST_F(HipFileBatchContext, GetStatusDoesNotReturnPendingOperation)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto              op = makeOperation();
+    hipFileIOEvents_t completed_event{nullptr, hipFileComplete, 1};
+    EXPECT_CALL(*op, event()).WillOnce(Return(completed_event));
+    submitMockOperations({op});
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    struct timespec   timeout{0, 0};
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, &timeout));
+
+    ASSERT_EQ(nr, 0);
+
+    EXPECT_CALL(*op, is_terminal()).WillRepeatedly(Return(true));
+    nr = 1;
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 1);
+    ASSERT_EQ(event.status, hipFileComplete);
+}
+
+TEST_F(HipFileBatchContext, GetStatusReturnsAtMostCallerCapacity)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto op1 = makeOperation();
+    auto op2 = makeOperation();
+    EXPECT_CALL(*op1, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*op2, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*op1, event()).WillRepeatedly(Return(hipFileIOEvents_t{nullptr, hipFileComplete, 1}));
+    EXPECT_CALL(*op2, event()).WillRepeatedly(Return(hipFileIOEvents_t{nullptr, hipFileComplete, 2}));
+    submitMockOperations({op1, op2});
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, nullptr));
+
+    ASSERT_EQ(nr, 1);
+
+    nr = 2;
+    std::array<hipFileIOEvents_t, 2> events{};
+    ASSERT_NO_THROW(context()->get_status(0, &nr, events.data(), nullptr));
+    ASSERT_EQ(nr, 1);
+}
+
+TEST_F(HipFileBatchContext, GetStatusDoesNotReturnSameOperationTwice)
+{
+    ASSERT_NE(context(), nullptr);
+
+    auto op = makeOperation();
+    EXPECT_CALL(*op, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*op, event()).WillOnce(Return(hipFileIOEvents_t{nullptr, hipFileComplete, 3}));
+    submitMockOperations({op});
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 1);
+
+    nr = 1;
+    ASSERT_NO_THROW(context()->get_status(0, &nr, &event, nullptr));
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(HipFileBatchContext, GetStatusZeroTimeoutScansOutstandingOperationsOnce)
+{
+    ASSERT_NE(context(), nullptr);
+
+    int               cookie{};
+    auto              op = makeOperation();
+    hipFileIOEvents_t completed_event{&cookie, hipFileComplete, 4};
+    EXPECT_CALL(*op, is_terminal()).WillRepeatedly(Return(true));
+    EXPECT_CALL(*op, event()).WillOnce(Return(completed_event));
+    submitMockOperations({op});
+
+    unsigned          nr = 1;
+    hipFileIOEvents_t event{};
+    struct timespec   timeout{0, 0};
+    ASSERT_NO_THROW(context()->get_status(1, &nr, &event, &timeout));
+
+    ASSERT_EQ(nr, 1);
+    ASSERT_EQ(event.cookie, &cookie);
+    ASSERT_EQ(event.status, hipFileComplete);
+    ASSERT_EQ(event.ret, 4);
 }
 
 TEST_F(HipFileBatchContext, SubmitSingleBadBuffer)
