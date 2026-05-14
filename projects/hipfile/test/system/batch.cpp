@@ -315,10 +315,14 @@ TEST_F(BatchTest, SubmitRejectsInvalidArguments)
     auto                             op = makeOp(0, hipFileBatchRead);
     std::array<hipFileIOParams_t, 2> ops{op, makeOp(1, hipFileBatchRead)};
 
-    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 0, &op, 0), HipFileOpError(hipFileInvalidValue));
-    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, nullptr, 0), HipFileOpError(hipFileInvalidValue));
-    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, ops.size(), ops.data(), 0),
-              HipFileOpError(hipFileInvalidValue));
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    constexpr auto invalid_submit_error = HipFileOpError(hipFileInternalError);
+#else
+    constexpr auto invalid_submit_error = HipFileOpError(hipFileInvalidValue);
+#endif
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 0, &op, 0), invalid_submit_error);
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, nullptr, 0), invalid_submit_error);
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, ops.size(), ops.data(), 0), invalid_submit_error);
 }
 
 TEST_F(BatchTest, GetStatusRejectsInvalidArguments)
@@ -327,12 +331,17 @@ TEST_F(BatchTest, GetStatusRejectsInvalidArguments)
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
 
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    constexpr auto invalid_status_arg_error = HipFileOpError(hipFileInternalError);
+#else
+    constexpr auto invalid_status_arg_error = HipFileOpError(hipFileInvalidValue);
+#endif
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, nullptr, &event, nullptr),
-              HipFileOpError(hipFileInvalidValue));
+              invalid_status_arg_error);
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, nullptr, nullptr),
-              HipFileOpError(hipFileInvalidValue));
+              invalid_status_arg_error);
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 2, &nr, &event, nullptr),
-              HipFileOpError(hipFileInvalidValue));
+              invalid_status_arg_error);
 }
 
 HIPFILE_WARN_NO_GLOBAL_CTOR_ON
