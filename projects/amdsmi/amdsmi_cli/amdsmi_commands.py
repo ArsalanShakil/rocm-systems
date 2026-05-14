@@ -4273,14 +4273,14 @@ class AMDSMICommands:
                     if value != "N/A":
                         voltage_dict[key] = self.helpers.unit_format(self.logger, value, unit)
 
-                values_dict["voltage"] = voltage_dict
-
-                # APU time filter alpha value (unit: us, not a voltage metric)
+                # APU time filter alpha value (unit: us)
                 apu_time_filter = gpu_metric.get("apu_metrics.time_filter_alphavalue", "N/A")
                 if apu_time_filter != "N/A":
-                    values_dict["apu_time_filter_alphavalue"] = self.helpers.unit_format(
+                    voltage_dict["apu_time_filter_alphavalue"] = self.helpers.unit_format(
                         self.logger, apu_time_filter, "us"
                     )
+
+                values_dict["voltage"] = voltage_dict
         if "energy" in current_platform_args:
             if args.energy:
                 try:
@@ -4628,7 +4628,10 @@ class AMDSMICommands:
                 }
                 for key, value in apu_throttle_fields.items():
                     if value != "N/A":
-                        throttle_status[key] = value
+                        if "throttle_status" in key:
+                            throttle_status[key] = "THROTTLED" if value else "UNTHROTTLED"
+                        else:
+                            throttle_status[key] = self.helpers.unit_format(self.logger, value, "")
 
                 values_dict["throttle"] = throttle_status
 
