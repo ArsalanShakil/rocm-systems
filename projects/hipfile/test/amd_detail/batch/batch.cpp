@@ -580,6 +580,20 @@ TEST_F(HipFileBatchContext, SubmitSingleGoodOp)
     ASSERT_THROW(_context->submit_operations(nullptr, _context_capacity), std::invalid_argument);
 }
 
+TEST_F(HipFileBatchContext, CreateContextMakesOneTaskGroupPerContext)
+{
+    testing::Mock::VerifyAndClearExpectations(mock_thread_pool.get());
+
+    StrictMock<MTaskGroup> *second_task_group = expectTaskGroupCreated();
+    hipFileBatchHandle_t  handle            = batch_map.createContext(1);
+
+    testing::Mock::VerifyAndClearExpectations(mock_thread_pool.get());
+    EXPECT_CALL(*second_task_group, cancel()).Times(1);
+    EXPECT_CALL(*second_task_group, wait()).Times(1);
+
+    batch_map.destroyContext(handle);
+}
+
 TEST_F(HipFileBatchContext, SubmitSingleGoodWriteOp)
 {
     io_params.opcode = hipFileBatchWrite;
@@ -1114,6 +1128,45 @@ TEST_F(HipFileBatchContext, DestroyContextCancelsPendingOperations)
     ASSERT_EQ(state1->status, hipFileCanceled);
     ASSERT_EQ(state2->successful_cancel_count, 1);
     ASSERT_EQ(state2->status, hipFileCanceled);
+}
+
+TEST_F(HipFileBatchContext, DestroyContextWaitsOutsideMapLock)
+{
+    ASSERT_NE(context(), nullptr);
+
+    StrictMock<MTaskGroup> *other_task_group = expectTaskGroupCreated();
+    hipFileBatchHandle_t  other_handle     = batch_map.createContext(1);
+
+    EXPECT_CALL(*mock_task_group, cancel()).Times(1);
+    EXPECT_CALL(*mock_task_group, wait()).WillOnce([this, other_handle]() {
+        ASSERT_NE(batch_map.get(other_handle), nullptr);
+    });
+
+    batch_map.destroyContext(_context.get());
+    testing::Mock::VerifyAndClearExpectations(mock_task_group);
+    _context.reset();
+
+    EXPECT_CALL(*other_task_group, cancel()).Times(1);
+    EXPECT_CALL(*other_task_group, wait()).Times(1);
+    batch_map.destroyContext(other_handle);
+}
+
+TEST_F(HipFileBatchContext, DestroyContextOnlyWaitsDestroyedContextTaskGroup)
+{
+    ASSERT_NE(context(), nullptr);
+
+    StrictMock<MTaskGroup> *other_task_group = expectTaskGroupCreated();
+    hipFileBatchHandle_t  other_handle     = batch_map.createContext(1);
+
+    EXPECT_CALL(*other_task_group, cancel()).Times(0);
+    EXPECT_CALL(*other_task_group, wait()).Times(0);
+
+    batch_map.destroyContext(_context.get());
+    _context.reset();
+
+    testing::Mock::VerifyAndClearExpectations(other_task_group);
+    allowTeardown(other_task_group);
+    batch_map.destroyContext(other_handle);
 }
 
 TEST_F(HipFileBatchContext, DestroyContextDoesNotOverwriteTerminalOperations)
