@@ -2999,7 +2999,7 @@ class AMDSMIParser(argparse.ArgumentParser):
         nic_monitor_help = "BRCM NIC devices's Monitor attributes"
         switch_monitor_help = "BRCM Switch devices's Monitor attributes"
         process_help = "Enable Process information table below monitor output;\n    Process Name may require elevated permissions"
-        violation_help = "Monitor power and thermal violation status (%%);\n    Only available for MI300 or newer ASICs"
+        violation_help = "Monitor power and thermal violation status (%%);\n    Only available for MI300 or newer ASICs and APUs"
 
         # Create monitor subparser
         monitor_parser = subparsers.add_parser(

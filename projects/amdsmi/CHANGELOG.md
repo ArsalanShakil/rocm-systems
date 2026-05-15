@@ -38,6 +38,8 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
     - `time_filter_alphavalue`
   - Fields not applicable to the current version are set to sentinel values: `0xFFFF` for `uint16_t`, `0xFFFFFFFF` for `uint32_t`, and `UINT64_MAX` for `uint64_t` fields.
   - Python bindings updated with `AmdSmiApuMetrics` ctypes structure.
+  - CLI (`amd-smi metric`) now exposes APU-specific data under `--usage`, `--power`, `--clock`, `--temperature`, `--fan`, `--voltage`, and `--throttle` subcommands when APU metrics are available.
+  - `amd-smi monitor` provides APU temperature and clock fallbacks when standard dGPU sensors report N/A.
 
 - **Added `oam_id` to `amdsmi_enumeration_info_t`**.
   - `amd-smi list -e` now displays `OAM_ID` (Physical XGMI ID / OAM ID).
