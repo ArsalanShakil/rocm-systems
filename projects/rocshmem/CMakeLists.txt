@@ -57,6 +57,7 @@ option(USE_SHARED_CTX "Request support for shared ctx between WG" OFF)
 option(USE_SINGLE_NODE "Enable single node support only." OFF)
 option(USE_HDP_FLUSH "Force flush the HDP cache." OFF)
 option(USE_HDP_FLUSH_HOST_SIDE "Use a polling thread to flush the HDP cache on the host." OFF)
+option(USE_ROCPROFILER_REGISTER "Register rocSHMEM API tables with rocprofiler-register so rocprofiler-sdk tools can trace host-stream APIs." ON)
 
 option(BUILD_FUNCTIONAL_TESTS "Build the functional tests (Requires MPI)" OFF)
 option(BUILD_EXAMPLES "Build the examples" OFF)
@@ -244,6 +245,11 @@ if (NOT BUILD_TESTS_ONLY)
 
   if (USE_SDMA)
     find_package(hsakmt REQUIRED PATHS /opt/rocm)
+  if(USE_ROCPROFILER_REGISTER)
+    find_package(rocprofiler-register QUIET)
+    if(NOT rocprofiler-register_FOUND)
+      message(STATUS "rocprofiler-register not found - rocSHMEM tracing disabled.")
+    endif()
   endif()
 
   set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
@@ -356,6 +362,12 @@ if (NOT BUILD_TESTS_ONLY)
       $<$<NOT:$<BOOL:${FILESYSTEM_NO_LINK_NEEDED}>>:stdc++fs>
       $<$<BOOL:${USE_SDMA}>:hsakmt::hsakmt>
   )
+
+  if(rocprofiler-register_FOUND)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ROCSHMEM_ROCPROFILER_REGISTER=1)
+    target_link_libraries(${PROJECT_NAME}
+                          PRIVATE rocprofiler-register::rocprofiler-register)
+  endif()
 
   if(${ROCM_MAJOR_VERSION} LESS 7)
     # ROCm 6.x requires us to explicitly enable warp sync builtins
