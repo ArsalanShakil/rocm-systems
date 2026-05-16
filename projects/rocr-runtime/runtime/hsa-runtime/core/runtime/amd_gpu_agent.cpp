@@ -66,6 +66,7 @@
 #include "core/inc/isa.h"
 #include "core/inc/runtime.h"
 #include "core/util/os.h"
+#include "core/util/rocr_logging.h"
 #include "inc/hsa_ext_image.h"
 #include "inc/hsa_ven_amd_aqlprofile.h"
 #include "inc/hsa_ven_amd_pc_sampling.h"
@@ -1135,6 +1136,36 @@ hsa_status_t GpuAgent::DmaCopy(void* dst, core::Agent& dst_agent,
                                size_t size,
                                std::vector<core::Signal*>& dep_signals,
                                core::Signal& out_signal) {
+  // Copy pattern analysis for performance monitoring
+  static std::atomic<uint64_t> small_copy_count{0};
+  static std::atomic<uint64_t> total_copy_count{0};
+  static std::atomic<uint64_t> total_bytes_copied{0};
+
+  total_copy_count.fetch_add(1, std::memory_order_relaxed);
+  total_bytes_copied.fetch_add(size, std::memory_order_relaxed);
+
+  // Detect inefficient small copy patterns
+  if (size < 4096) {
+    uint64_t small_count = small_copy_count.fetch_add(1, std::memory_order_relaxed) + 1;
+    // Log every 1000th small copy to avoid flooding
+    if (small_count % 1000 == 0) {
+      RocrLogWarningSampled(ROCR_LOG_COPY | ROCR_LOG_PERF, 100,
+        "Excessive small copies detected: small_count=%llu total_count=%llu last_size=%zu "
+        "PERF_IMPACT=HIGH suggest_batching",
+        (unsigned long long)small_count,
+        (unsigned long long)total_copy_count.load(std::memory_order_relaxed),
+        size);
+    }
+  }
+
+  // Log throughput metrics periodically
+  uint64_t ops = total_copy_count.load(std::memory_order_relaxed);
+  uint64_t bytes = total_bytes_copied.load(std::memory_order_relaxed);
+  RocrLogRateLimited(rocr::ROCR_LOG_DEBUG, ROCR_LOG_METRICS | ROCR_LOG_COPY, 5000,
+    "DmaCopy metrics: total_ops=%llu total_bytes=%llu avg_size=%llu",
+    (unsigned long long)ops, (unsigned long long)bytes,
+    (unsigned long long)(ops > 0 ? bytes / ops : 0));
+
   // Recommended SDMA engine copies only have gang factor 1
   uint32_t rec_mask = 0;
   DmaPreferredEngine(dst_agent, src_agent, &rec_mask);
@@ -1578,7 +1609,7 @@ hsa_status_t GpuAgent::DmaCopyFanOutOp(
     }
 
     for (uint32_t d = 0; d < num_entries; ++d) {
-      LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+      RocrLogDebug(ROCR_LOG_SDMA,
                "SDMA FanOut(%s) WaitSignalBody[%u/%u]: engine %02u, src=%p, dst=%p, "
                "size=%zu, completion_signal=0x%zx",
                op_name,
@@ -1686,7 +1717,7 @@ hsa_status_t GpuAgent::DmaCopyFanOutOp(
   }
 
   // Prologue: dep polls, HDP flush, GCR invalidate, decrement prologue_signal.
-  LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+  RocrLogDebug(ROCR_LOG_SDMA,
            "SDMA FanOut(%s) Prologue: engine %02u, num_entries=%u, dep_signal=0x%zx, "
            "completion_signal=0x%zx, prologue_signal=0x%zx",
            op_name, coord_idx, num_entries,
@@ -1703,7 +1734,7 @@ hsa_status_t GpuAgent::DmaCopyFanOutOp(
 
   for (uint32_t d = 0; d < num_entries; ++d) {
     core::Signal& body_sig = use_body_signals ? *body_raw[d] : out_signal;
-    LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+    RocrLogDebug(ROCR_LOG_SDMA,
              "SDMA FanOut(%s) Body[%u/%u]: engine %02u, src=%p, dst=%p, size=%zu, "
              "prologue_signal=0x%zx, body_signal=0x%zx",
              op_name,
@@ -1750,7 +1781,7 @@ hsa_status_t GpuAgent::DmaCopyFanOutOp(
   }
 
   // Epilogue: waits for all bodies, GCR writeback, end timestamp, signal -> 0.
-  LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+  RocrLogDebug(ROCR_LOG_SDMA,
            "SDMA FanOut(%s) Epilogue: engine %02u, completion_signal=0x%zx, "
            "num_body_signals=%zu",
            op_name, coord_idx,
@@ -1792,7 +1823,7 @@ hsa_status_t GpuAgent::DmaCopyBroadcast(
         if (profiling_enabled())
           out_signal.async_copy_agent(core::Agent::Convert(this->public_handle()));
 
-        LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+        RocrLogDebug(ROCR_LOG_SDMA,
                  "SDMA linearB2BCopy using engine %02u, src=%p, num_entries=%u, size=%zu, "
                  "dep_signal=0x%zx, completion_signal=0x%zx",
                  BlitHostToDev, op.src, num_entries, op.size,
@@ -1809,7 +1840,7 @@ hsa_status_t GpuAgent::DmaCopyBroadcast(
         if (profiling_enabled())
           out_signal.async_copy_agent(core::Agent::Convert(this->public_handle()));
 
-        LogPrint(HSA_AMD_LOG_FLAG_SDMA,
+        RocrLogDebug(ROCR_LOG_SDMA,
                  "SDMA %s using engine %02u, src=%p, num_entries=%u, size=%zu, "
                  "dep_signal=0x%zx, completion_signal=0x%zx",
                  (sdma_blit->IsGfx1250()) ? "Multicast" : "Broadcast",
@@ -2574,7 +2605,7 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type32_t queue_type, u
   if (scratch.main_size != 0) {
     AcquireQueueMainScratch(scratch);
     if (scratch.main_queue_base == nullptr) {
-      LogPrint(HSA_AMD_LOG_FLAG_INFO,
+      RocrLogWarning(ROCR_LOG_SCRATCH,
                "Failed to allocate scratch memory for queue, size=%zu, node=%u",
                scratch.main_size, node_id());
       return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
@@ -2609,7 +2640,7 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type32_t queue_type, u
   }
 
   if (!shared_queue) {
-    LogPrint(HSA_AMD_LOG_FLAG_INFO,
+    RocrLogWarning(ROCR_LOG_QUEUE,
              "Failed to allocate shared queue descriptor memory, node=%u", node_id());
     return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
