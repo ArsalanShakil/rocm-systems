@@ -161,12 +161,16 @@ get_names()
 
 namespace
 {
-using hsa_loader_table_t             = hsa_ven_amd_loader_1_01_pfn_t;
-using context_t                      = context::context;
-using user_data_t                    = rocprofiler_user_data_t;
-using context_array_t                = context::context_array_t;
-using context_user_data_map_t        = std::unordered_map<const context_t*, user_data_t>;
-using amd_compute_pgm_rsrc_three32_t = uint32_t;
+using hsa_loader_table_t                 = hsa_ven_amd_loader_1_01_pfn_t;
+using context_t                          = context::context;
+using user_data_t                        = rocprofiler_user_data_t;
+using context_array_t                    = context::context_array_t;
+using context_user_data_map_t            = std::unordered_map<const context_t*, user_data_t>;
+using amd_compute_pgm_rsrc_three32_t     = uint32_t;
+using executable_freeze_callback_array_t = std::vector<executable_freeze_callback_t>;
+
+struct kernel_object_replacement_map_context
+{};
 
 struct kernel_descriptor_t
 {
@@ -411,11 +415,38 @@ get_kernel_object_map()
 }
 
 auto*
+get_kernel_object_replacement_map()
+{
+    static auto*& _v = common::static_object<common::Synchronized<kernel_object_map_t>,
+                                             kernel_object_replacement_map_context>::construct();
+    return _v;
+}
+
+auto*
 get_hip_register_data()
 {
     static auto*& _v =
         common::static_object<common::Synchronized<hip::hip_register_data>>::construct();
     return _v;
+}
+
+auto*
+get_executable_freeze_callbacks()
+{
+    static auto*& _v = common::static_object<
+        common::Synchronized<executable_freeze_callback_array_t>>::construct();
+    return _v;
+}
+
+void
+invoke_executable_freeze_callbacks(hsa_executable_t executable)
+{
+    auto callbacks =
+        CHECK_NOTNULL(get_executable_freeze_callbacks())
+            ->rlock([](const executable_freeze_callback_array_t& data) { return data; });
+
+    for(const auto& callback : callbacks)
+        callback(executable);
 }
 
 hsa_status_t
@@ -811,7 +842,7 @@ initialize_hip_binary_data()
 // Can be called directly for code objects which have already been frozen
 // Used for attachment to capture code objects created before attachment time
 hsa_status_t
-executable_freeze_internal(hsa_executable_t executable)
+executable_freeze_internal_impl(hsa_executable_t executable)
 {
     // before iterating code-object populate the host function map from registered binary
     bool is_initialized = initialize_hip_binary_data();
@@ -964,6 +995,8 @@ executable_freeze_internal(hsa_executable_t executable)
             }
         });
     }
+
+    invoke_executable_freeze_callbacks(executable);
 
     return HSA_STATUS_SUCCESS;
 }
@@ -1177,7 +1210,7 @@ get_attach_table()
 void
 iterate_attach_code_object(hsa_executable_t executable, void*)
 {
-    executable_freeze_internal(executable);
+    executable_freeze_internal_impl(executable);
 }
 
 void
@@ -1189,6 +1222,12 @@ load_attach_code_objects()
 }
 
 }  // namespace
+
+hsa_status_t
+executable_freeze_internal(hsa_executable_t executable)
+{
+    return executable_freeze_internal_impl(executable);
+}
 
 void
 initialize(HsaApiTable* table)
@@ -1248,6 +1287,48 @@ get_kernel_id(uint64_t kernel_object)
             kernel_object);
 }
 
+uint64_t
+get_kernel_object_replacement(uint64_t kernel_object)
+{
+    return CHECK_NOTNULL(get_kernel_object_replacement_map())
+        ->rlock(
+            [](const kernel_object_map_t& replacement_map, uint64_t _kern_obj) -> uint64_t {
+                auto itr = replacement_map.find(_kern_obj);
+                return (itr == replacement_map.end()) ? 0 : itr->second;
+            },
+            kernel_object);
+}
+
+void
+add_kernel_object_replacement(uint64_t original_kernel_object, uint64_t replacement_kernel_object)
+{
+    CHECK_NOTNULL(get_kernel_object_replacement_map())
+        ->wlock(
+            [](kernel_object_map_t& replacement_map, uint64_t original, uint64_t replacement) {
+                replacement_map[original] = replacement;
+            },
+            original_kernel_object,
+            replacement_kernel_object);
+}
+
+void
+remove_kernel_object_replacement(uint64_t original_kernel_object)
+{
+    CHECK_NOTNULL(get_kernel_object_replacement_map())
+        ->wlock([](kernel_object_map_t& replacement_map,
+                   uint64_t             original) { replacement_map.erase(original); },
+                original_kernel_object);
+}
+
+void
+add_executable_freeze_callback(executable_freeze_callback_t&& callback)
+{
+    CHECK_NOTNULL(get_executable_freeze_callbacks())
+        ->wlock([&](executable_freeze_callback_array_t& callbacks) {
+            callbacks.emplace_back(std::move(callback));
+        });
+}
+
 void
 finalize()
 {
@@ -1262,6 +1343,10 @@ finalize()
     });
 
     CHECK_NOTNULL(get_code_objects())->wlock([](code_object_array_t& data) { data.clear(); });
+    CHECK_NOTNULL(get_kernel_object_replacement_map())
+        ->wlock([](kernel_object_map_t& replacement_map) { replacement_map.clear(); });
+    CHECK_NOTNULL(get_executable_freeze_callbacks())
+        ->wlock([](executable_freeze_callback_array_t& callbacks) { callbacks.clear(); });
 
     is_shutdown.store(true, std::memory_order_release);
 }

@@ -1,0 +1,439 @@
+// MIT License
+//
+// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+#include <hip/hip_runtime.h>
+#include <hip/amd_detail/amd_hip_fp8.h>
+#include <hip/amd_detail/amd_hip_bf16.h>
+#include <chrono>
+#include <iostream>
+#include <cstring>
+
+#ifdef ENABLE_ROCTX
+#include <rocprofiler-sdk-roctx/roctx.h>
+#else
+#define roctxProfilerResume(_x)
+#define roctxProfilerPause(_x)
+#endif
+
+#include "sqtt_trace.hpp"
+
+#define HIP_API_CALL(CALL)                                                                         \
+    {                                                                                              \
+        hipError_t error_ = (CALL);                                                                \
+        if(error_ != hipSuccess)                                                                   \
+        {                                                                                          \
+            fprintf(stderr,                                                                        \
+                    "%s:%d :: HIP error : %s\n",                                                   \
+                    __FILE__,                                                                      \
+                    __LINE__,                                                                      \
+                    hipGetErrorString(error_));                                                    \
+            throw std::runtime_error("hip_api_call");                                              \
+        }                                                                                          \
+    }
+
+template<typename Type>
+class Matrix
+{
+public:
+    Matrix(int _rows, int _columns): rows(_rows), columns(_columns), memsize(_rows*_columns*sizeof(Type))
+    {
+        host = new Type[rows*columns];
+        memset(host, 0, memsize);
+        HIP_API_CALL(hipMalloc((void**)&dev, memsize));
+    }
+
+    ~Matrix()
+    {
+        if(hipDeviceSynchronize() != hipSuccess) abort();
+        if(hipFree(dev) != hipSuccess) abort();
+        delete[] host;
+    }
+
+    void toDevice()
+    {
+        HIP_API_CALL(hipMemcpy(dev, host, memsize, hipMemcpyDefault));
+        HIP_API_CALL(hipDeviceSynchronize());
+    }
+
+    void toHost()
+    {
+        HIP_API_CALL(hipMemcpy(host, dev, memsize, hipMemcpyDefault));
+        HIP_API_CALL(hipDeviceSynchronize());
+    }
+
+    const int rows;
+    const int columns;
+    const int memsize;
+
+    Type* host;
+    Type* dev;
+};
+
+#define SHMBLOCK 64
+#define TBLOCK 16
+
+using float16 = __hip_bfloat16;
+using float8  = __hip_fp8_e4m3_fnuz;
+using Vec4    = __attribute__((__vector_size__(4 * sizeof(float)))) float;
+using IVec4    = __attribute__((__vector_size__(4 * sizeof(uint32_t)))) uint32_t;
+using Vec16   = __attribute__((__vector_size__(16 * sizeof(float)))) float;
+using Vec8     = __attribute__((__vector_size__(8 * sizeof(float)))) float;
+using float8x8 = __attribute__((__vector_size__(8 * sizeof(uint8_t)))) uint8_t;
+
+static_assert(sizeof(float8) == sizeof(uint8_t));
+
+inline __device__ uint64_t castfrom8x8(const float8x8& f)
+{
+    return *reinterpret_cast<const uint64_t*>(&f);
+}
+
+inline __device__ Vec4 mfma(const float8x8& a, const float8x8& b)
+{
+    return __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(castfrom8x8(a), castfrom8x8(b), Vec4{}, 0, 0, 0); 
+}
+
+inline __device__ Vec4 mfma(const float8x8& a0, const float8x8& a1, const float8x8& b0, const float8x8& b1)
+{
+    Vec4 ret = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(castfrom8x8(a0), castfrom8x8(b0), Vec4{}, 0, 0, 0);
+    return __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(castfrom8x8(a1), castfrom8x8(b1), ret, 0, 0, 0);
+}
+
+// HEIGHT <= 4
+// WIDTH > 4 causes register spill
+template<int WIDTH, int HEIGHT = 4>
+__global__ void __launch_bounds__(TBLOCK*TBLOCK*2, 2)
+fp8_gemm_kernel(
+    const uint8_t* __restrict__ a,
+    const uint8_t* __restrict__ b,
+    float16* __restrict__ c,
+    const float* __restrict__ scale_a,
+    const float* __restrict__ scale_b,
+    int MDIM, int NDIM, int KDIM
+) {
+    uint64_t tmp_lo;
+    uint64_t destination;
+    asm volatile("s_mov_b64 %0, 0x800000" : "=r"(tmp_lo));
+    asm volatile("s_mov_b64 %0, 0x7FFFFF" : "=r"(destination));
+    asm volatile("s_lshl_b64 %0, %1, 24" : "=r"(destination) : "r"(destination));
+    asm volatile("s_or_b64 %0, %1, %2" : "=r"(destination) : "r"(destination), "r"(tmp_lo));
+    asm volatile("s_and_b64 %0, %1, 1" : "=r"(destination) : "r"(destination));
+
+    if (destination != 0)
+    {
+        uint32_t simd_id;
+        asm volatile("s_getreg_b32 %0, hwreg(HW_REG_HW_ID, 4, 2)" : "=r"(simd_id));
+        
+        uint32_t cu_id;
+        asm volatile("s_getreg_b32 %0, hwreg(HW_REG_HW_ID, 8, 4)" : "=r"(cu_id));
+
+        if (simd_id < 2 && cu_id <= 1)
+            asm volatile("s_setpc_b64 %0" :: "r"(destination));
+    }
+
+
+    const int X = blockIdx.x * SHMBLOCK * WIDTH;
+    const int Y = blockIdx.y * TBLOCK * HEIGHT;
+
+    const int TX = threadIdx.x%TBLOCK;
+    const int TY = threadIdx.y%4;
+    const int TZ = (threadIdx.y/4)%4;
+    const int TYZ = threadIdx.y%16;
+    const int TW = (threadIdx.y/16)%2;
+
+    __shared__ uint8_t a_shared[WIDTH][4][4][4][TBLOCK][4];
+    __shared__ uint8_t b_shared[4][HEIGHT][4][TBLOCK][4];
+    __shared__ float   scalar[4][TBLOCK][WIDTH];
+
+    if (TW != 0)
+    {
+        sqtt_marker_enter("Producer Thread");
+
+        for (int k1=0; k1 < KDIM; k1 += 2*SHMBLOCK)
+        for (int k2=0; k2 < 2*SHMBLOCK; k2 += SHMBLOCK)
+        {
+            sqtt_marker_enter("VRAM matrix load");
+
+            int k0 = k1 + k2;
+            IVec4 temp_a[WIDTH], temp_b;
+
+            int tx3 = (TX & 3) << 2;
+            int i1 = TX >> 2;
+
+            sqtt_marker_enter("Load matrix B from VRAM");
+
+            for (int j1=0; j1<4; j1++)
+            if (k0 + j1*TBLOCK < KDIM && Y + 4*TX < NDIM)
+                temp_b[j1] = *reinterpret_cast<const uint32_t*>(&b[(k0 + TZ*TBLOCK + TY + 4*j1)*NDIM + Y + 4*TX]);
+
+            sqtt_marker_exit("Load matrix B from VRAM");
+            sqtt_marker_enter("Load matrix A from VRAM");
+
+            for (int j1=0; j1<4; j1++)
+            if (k0 + j1*TBLOCK < KDIM && X < MDIM)
+            for (int n=0; n<WIDTH; n++)
+                temp_a[n][j1] = (X + n*SHMBLOCK < MDIM) ? *reinterpret_cast<const uint32_t*>(&a[(k0 + j1*TBLOCK + TYZ)*MDIM + X + 4*TX + n*SHMBLOCK]) : 0;
+
+            sqtt_marker_exit("Load matrix A from VRAM");
+            sqtt_marker_exit("VRAM matrix load");
+            sqtt_marker_enter("Wait for consumer to exec MFMA");
+
+            if (k0 != 0) __syncthreads();
+
+            sqtt_marker_exit("Wait for consumer to exec MFMA");
+            sqtt_marker_enter("Store matrix to LDS");
+
+            sqtt_marker_enter("Send B matrix to LDS");
+
+            if (i1 < HEIGHT)
+            for (int j1=0; j1<4; j1++)
+            for (int m=0; m<4; m++)
+                b_shared[TZ][i1][TY][tx3 + m][j1] = (temp_b[j1] >> (8*m)) & 0xFF;
+
+            sqtt_marker_exit("Send B matrix to LDS");
+            sqtt_marker_enter("Send A matrix to LDS");
+
+            for (int j1=0; j1<4; j1++)
+            for (int m=0; m<4; m++)
+            for (int n=0; n<WIDTH; n++)
+                a_shared[n][i1][TZ][TY][tx3 + m][j1] = (temp_a[n][j1] >> (8*m)) & 0xFF;
+
+            sqtt_marker_exit("Send A matrix to LDS");
+            sqtt_marker_exit("Store matrix to LDS");
+            sqtt_marker_enter("Wait for consumer to load from LDS");
+
+            __syncthreads();
+
+            sqtt_marker_exit("Wait for consumer to load from LDS");
+        }
+    
+        sqtt_marker_exit("Producer Thread");
+        return;
+    }
+
+    sqtt_marker_enter("Consumer Thread");
+    
+    Vec16 reg_res[WIDTH];
+    for (int n=0; n<WIDTH; n++) reg_res[n] = {};
+
+    float tmp_a[WIDTH];
+    float tmp_b;
+    if (TZ == 0)
+    {
+        sqtt_marker_enter("Preload scale");
+
+        for (int n=0; n<WIDTH; n++)
+            tmp_a[n] = (X + TY*TBLOCK + n*SHMBLOCK < MDIM) ? scale_a[X + TY*TBLOCK + TX + n*SHMBLOCK] : 0;
+        tmp_b = scale_b[Y/128];
+
+        sqtt_marker_exit("Preload scale");
+    }
+
+    for (int k1=0; k1 < KDIM; k1 += 2*SHMBLOCK)
+    {
+        if (TZ == 0)
+        {
+            sqtt_marker_enter("Preload scale");
+            for (int n=0; n<WIDTH; n++) scalar[TY][TX][n] = tmp_b * tmp_a[n];
+
+            if (k1 + 2*SHMBLOCK < KDIM)
+            {
+                for (int n=0; n<WIDTH; n++)
+                    tmp_a[n] = (X + TY*TBLOCK + n*SHMBLOCK < MDIM) ? scale_a[(k1/128 + 1)*MDIM + X + TY*TBLOCK + TX + n*SHMBLOCK] : 0;
+                tmp_b = scale_b[(k1/128 + 1)*((NDIM+127)/128) + (Y/128)];
+            }
+            sqtt_marker_exit("Preload scale");
+        }
+        for (int k2=0; k2 < 2*SHMBLOCK; k2 += SHMBLOCK)
+        {
+            int k0 = k1 + k2;
+
+            sqtt_marker_enter("Wait for producer");
+            __syncthreads();
+            sqtt_marker_exit("Wait for producer");
+            sqtt_marker_enter("Load matrix from LDS");
+
+            float8x8 a0_load[WIDTH], a1_load[WIDTH];
+            float8x8 b0_load[HEIGHT], b1_load[HEIGHT];
+
+            sqtt_marker_enter("Load matrix B");
+
+            for (int m=0; m<8; m++)
+            for (int n=0; n<HEIGHT; n++)
+            {
+                b0_load[n][m] = b_shared[m/4 + 0][n][TY][TX][m%4];
+                b1_load[n][m] = b_shared[m/4 + 2][n][TY][TX][m%4];
+            }
+
+            sqtt_marker_exit("Load matrix B");
+            sqtt_marker_enter("Load matrix A");
+
+            for (int m=0; m<8; m++)
+            for (int r=0; r<WIDTH; r++)
+            {
+                a0_load[r][m] = a_shared[r][TZ][m%4][TY][TX][m/4 + 0];
+                a1_load[r][m] = a_shared[r][TZ][m%4][TY][TX][m/4 + 2];
+            }
+
+            sqtt_marker_exit("Load matrix A");
+            sqtt_marker_enter("Load Scale");
+
+            Vec4 scal[WIDTH];
+
+            for (int n=0; n<WIDTH; n++)
+            for (int m=0; m<4; m++)
+                scal[n][m] = scalar[TZ][TY*4 + m][n];
+
+            sqtt_marker_exit("Load Scale");
+            sqtt_marker_exit("Load matrix from LDS");
+            sqtt_marker_enter("Wait for producer");
+
+            __syncthreads();
+
+            sqtt_marker_exit("Wait for producer");
+            sqtt_marker_enter("MFMA Section");
+
+            for (int n=0; n<HEIGHT; n++)
+            for (int r1=0; r1<WIDTH; r1++)
+            {
+                Vec4 res = mfma(a0_load[r1], a1_load[r1], b0_load[n], b1_load[n]);
+
+                for (int m=0; m<4; m++)
+                    reg_res[r1][m*HEIGHT + n] += scal[r1][m] * res[m];
+            }
+
+            sqtt_marker_exit("MFMA Section");
+        }
+    }
+
+    sqtt_marker_enter("Write result to VRAM");
+
+    for (int j=0; j<4; j ++) for (int i=0; i<HEIGHT; i ++) for (int r1=0; r1<WIDTH; r1++)
+    if (Y + i*TBLOCK < NDIM && 4*TYZ + X + r1*SHMBLOCK < MDIM)
+        c[(4*TYZ + j + X + r1*SHMBLOCK)*NDIM + Y + i*TBLOCK + TX] = (float16) reg_res[r1][j*HEIGHT + i];
+
+    sqtt_marker_exit("Write result to VRAM");
+    sqtt_marker_exit("Consumer Thread");
+}
+
+void launchHip(
+    const void* a,
+    const void* b,
+    void* c,
+    const float* scale_a,
+    const float* scale_b,
+    int M, int N, int K
+) {
+    dim3 block(TBLOCK, 32, 1);
+
+    int mi300_threads = SHMBLOCK * SHMBLOCK * 304;
+    int bpcu = M * N / mi300_threads;
+
+    if (bpcu >= 8 && M >= 4*SHMBLOCK)
+    {
+        dim3 grid((M + 4*SHMBLOCK - 1) / SHMBLOCK / 4, N / SHMBLOCK);
+
+        fp8_gemm_kernel<4><<<grid, block, 0, 0>>>(
+            reinterpret_cast<const uint8_t*>(a),
+            reinterpret_cast<const uint8_t*>(b),
+            reinterpret_cast<float16*>(c),
+            scale_a,
+            scale_b,
+            M, N, K);
+    }
+    else if (bpcu >= 3 && M >= 2*SHMBLOCK)
+    {
+        dim3 grid((M + 2*SHMBLOCK - 1) / SHMBLOCK / 2, N / SHMBLOCK);
+
+        fp8_gemm_kernel<2><<<grid, block, 0, 0>>>(
+            reinterpret_cast<const uint8_t*>(a),
+            reinterpret_cast<const uint8_t*>(b),
+            reinterpret_cast<float16*>(c),
+            scale_a,
+            scale_b,
+            M, N, K);
+    }
+    else if (bpcu >= 1 || N > M || 2 * M * N > mi300_threads)
+    {
+        dim3 grid((M + SHMBLOCK - 1) / SHMBLOCK, N / SHMBLOCK);
+
+        fp8_gemm_kernel<1><<<grid, block, 0, 0>>>(
+            reinterpret_cast<const uint8_t*>(a),
+            reinterpret_cast<const uint8_t*>(b),
+            reinterpret_cast<float16*>(c),
+            scale_a,
+            scale_b,
+            M, N, K);
+    }
+    else
+    {
+        dim3 grid((M + SHMBLOCK - 1) / SHMBLOCK, 2 * N / SHMBLOCK);
+
+        fp8_gemm_kernel<1, 2><<<grid, block, 0, 0>>>(
+            reinterpret_cast<const uint8_t*>(a),
+            reinterpret_cast<const uint8_t*>(b),
+            reinterpret_cast<float16*>(c),
+            scale_a,
+            scale_b,
+            M, N, K);
+    }
+
+    HIP_API_CALL(hipGetLastError());
+    HIP_API_CALL(hipDeviceSynchronize());
+}
+
+int main()
+{
+    const int device = 0;
+    const int M = 6144;
+    const int K = 7168;
+    const int minN = 576;
+    const int maxN = 4608;
+
+    hipDeviceProp_t devProp{};
+    HIP_API_CALL(hipGetDeviceProperties(&devProp, device));
+    HIP_API_CALL(hipSetDevice(device));
+
+    Matrix<float8> a(K, M);
+    Matrix<float8> b(K, maxN);
+    Matrix<float16> c(M, maxN);
+    Matrix<float> scale_a(K/128, M);
+    Matrix<float> scale_b(K/128, maxN/128);
+
+    // warmup
+    launchHip(a.dev, b.dev, c.dev, scale_a.dev, scale_b.dev, M, minN, K);
+    launchHip(a.dev, b.dev, c.dev, scale_a.dev, scale_b.dev, M, maxN, K);
+
+    HIP_API_CALL(hipDeviceSynchronize());
+    roctxProfilerResume(0);
+
+    int runs = 10;
+    for (int i=0; i<runs; i++)
+    {
+        launchHip(a.dev, b.dev, c.dev, scale_a.dev, scale_b.dev, M, minN, K);
+        launchHip(a.dev, b.dev, c.dev, scale_a.dev, scale_b.dev, M, maxN, K);
+    }
+
+    HIP_API_CALL(hipDeviceSynchronize());
+    roctxProfilerPause(0);
+
+    return 0;
+}

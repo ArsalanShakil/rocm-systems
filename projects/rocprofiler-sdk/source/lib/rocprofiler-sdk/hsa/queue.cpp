@@ -82,6 +82,81 @@ namespace
 {
 constexpr auto null_hsa_signal = hsa_signal_t{.handle = 0};
 
+template <typename Integral>
+Integral
+bit_extract(Integral x, int first, int last);
+
+enum class kernel_packet_kind
+{
+    none,
+    dispatch,
+    ext_dispatch,
+};
+
+kernel_packet_kind
+get_kernel_packet_kind(const rocprofiler_packet& packet)
+{
+    const auto& original_packet = packet.kernel_dispatch;
+    auto        packet_type     = bit_extract(original_packet.header,
+                                   HSA_PACKET_HEADER_TYPE,
+                                   HSA_PACKET_HEADER_TYPE + HSA_PACKET_HEADER_WIDTH_TYPE - 1);
+
+    if(packet_type == HSA_PACKET_TYPE_KERNEL_DISPATCH) return kernel_packet_kind::dispatch;
+
+#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
+    if(packet_type == HSA_PACKET_TYPE_VENDOR_SPECIFIC)
+    {
+        const auto& ext_packet = packet.ext_kernel_dispatch;
+        if(ext_packet.amd_format == HSA_AMD_PACKET_TYPE_EXT_KERNEL_DISPATCH)
+            return kernel_packet_kind::ext_dispatch;
+    }
+#endif
+
+    return kernel_packet_kind::none;
+}
+
+uint64_t
+get_kernel_object(const rocprofiler_packet& packet, kernel_packet_kind kind)
+{
+#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
+    if(kind == kernel_packet_kind::ext_dispatch) return packet.ext_kernel_dispatch.kernel_object;
+#else
+    (void) kind;
+#endif
+
+    return packet.kernel_dispatch.kernel_object;
+}
+
+void
+set_kernel_object(rocprofiler_packet& packet, kernel_packet_kind kind, uint64_t kernel_object)
+{
+#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
+    if(kind == kernel_packet_kind::ext_dispatch)
+    {
+        packet.ext_kernel_dispatch.kernel_object = kernel_object;
+        return;
+    }
+#else
+    (void) kind;
+#endif
+
+    packet.kernel_dispatch.kernel_object = kernel_object;
+}
+
+bool
+replace_kernel_object(rocprofiler_packet& packet, kernel_packet_kind kind)
+{
+    if(kind == kernel_packet_kind::none) return false;
+
+    const auto kernel_object = get_kernel_object(packet, kind);
+    const auto replacement_kernel_object =
+        code_object::get_kernel_object_replacement(kernel_object);
+    if(replacement_kernel_object == 0) return false;
+
+    set_kernel_object(packet, kind, replacement_kernel_object);
+    return true;
+}
+
 template <typename DomainT, typename... Args>
 inline bool
 context_filter(const context::context* ctx, DomainT domain, Args... args)
@@ -335,41 +410,34 @@ WriteInterceptor(const void* packets,
 
     auto& queue = *static_cast<Queue*>(data);
 
-    // We have no packets or no one who needs to be notified, do nothing.
-    if(pkt_count == 0 ||
-       (queue.get_notifiers() == 0 && context::get_active_contexts(context_filter).empty()))
-    {
-        writer(packets, pkt_count);
-        return;
-    }
-
     const auto* packets_arr          = static_cast<const rocprofiler_packet*>(packets);
+    auto        passthrough_packets  = packet_vector_t{};
+    auto        replaced_passthrough = false;
     auto        num_dispatch_packets = size_t{0};
     for(size_t i = 0; i < pkt_count; ++i)
     {
-        const auto& original_packet = packets_arr[i].kernel_dispatch;
-        auto        packet_type     = bit_extract(original_packet.header,
-                                       HSA_PACKET_HEADER_TYPE,
-                                       HSA_PACKET_HEADER_TYPE + HSA_PACKET_HEADER_WIDTH_TYPE - 1);
-        if(packet_type == HSA_PACKET_TYPE_KERNEL_DISPATCH)
-        {
-            ++num_dispatch_packets;
-        }
-#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
-        else if(packet_type == HSA_PACKET_TYPE_VENDOR_SPECIFIC)
-        {
-            const auto& ext_packet = packets_arr[i].ext_kernel_dispatch;
-            if(ext_packet.amd_format == HSA_AMD_PACKET_TYPE_EXT_KERNEL_DISPATCH)
-            {
-                ++num_dispatch_packets;
-            }
-        }
-#endif
+        auto kind = get_kernel_packet_kind(packets_arr[i]);
+        if(kind != kernel_packet_kind::none) ++num_dispatch_packets;
+
+        auto packet = packets_arr[i];
+        replaced_passthrough |= replace_kernel_object(packet, kind);
+        passthrough_packets.emplace_back(packet);
     }
 
     if(num_dispatch_packets == 0)
     {
         writer(packets, pkt_count);
+        return;
+    }
+
+    // Device thread trace has no per-dispatch queue callback, but it still needs instrumented
+    // code-object dispatches to execute from the copied code object.
+    if(queue.get_notifiers() == 0 && context::get_active_contexts(context_filter).empty())
+    {
+        if(replaced_passthrough)
+            writer(passthrough_packets.data(), passthrough_packets.size());
+        else
+            writer(packets, pkt_count);
         return;
     }
 
@@ -448,24 +516,9 @@ WriteInterceptor(const void* packets,
         // Searching accross all the packets given during this write
         for(size_t i = 0; i < _num_packets; ++i)
         {
-            const auto& original_packet = _packets[i].kernel_dispatch;
-            auto        packet_type =
-                bit_extract(original_packet.header,
-                            HSA_PACKET_HEADER_TYPE,
-                            HSA_PACKET_HEADER_TYPE + HSA_PACKET_HEADER_WIDTH_TYPE - 1);
-            bool is_kernel_dispatch     = (packet_type == HSA_PACKET_TYPE_KERNEL_DISPATCH);
-            bool is_ext_kernel_dispatch = false;
-
-#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
-            if(packet_type == HSA_PACKET_TYPE_VENDOR_SPECIFIC)
-            {
-                const auto& ext_packet = _packets[i].ext_kernel_dispatch;
-                if(ext_packet.amd_format == HSA_AMD_PACKET_TYPE_EXT_KERNEL_DISPATCH)
-                {
-                    is_ext_kernel_dispatch = true;
-                }
-            }
-#endif
+            const auto packet_kind            = get_kernel_packet_kind(_packets[i]);
+            const auto is_kernel_dispatch     = (packet_kind == kernel_packet_kind::dispatch);
+            const auto is_ext_kernel_dispatch = (packet_kind == kernel_packet_kind::ext_dispatch);
 
             if(!is_kernel_dispatch && !is_ext_kernel_dispatch)
             {
@@ -535,15 +588,34 @@ WriteInterceptor(const void* packets,
                 }
             };
 
-            const auto     pkt_info = extract_packet_info(_packets[i], is_ext_kernel_dispatch);
-            const auto     original_completion_signal = pkt_info.completion_signal;
-            const bool     existing_completion_signal = (original_completion_signal.handle != 0);
-            const uint64_t kernel_id = code_object::get_kernel_id(pkt_info.kernel_object);
+            const auto pkt_info = extract_packet_info(_packets[i], is_ext_kernel_dispatch);
+            const auto original_completion_signal = pkt_info.completion_signal;
+            const bool existing_completion_signal = (original_completion_signal.handle != 0);
+            const auto replacement_kernel_object =
+                code_object::get_kernel_object_replacement(pkt_info.kernel_object);
+            const auto     dispatch_kernel_object = (replacement_kernel_object != 0)
+                                                        ? replacement_kernel_object
+                                                        : pkt_info.kernel_object;
+            const auto     original_kernel_id = code_object::get_kernel_id(pkt_info.kernel_object);
+            const uint64_t kernel_id          = (original_kernel_id != 0)
+                                                    ? original_kernel_id
+                                                    : code_object::get_kernel_id(dispatch_kernel_object);
 
             // Copy kernel pkt, copy is to allow for signal to be modified
             _packet_data.kernel_packet = _packets[i];
             // create a reference for short hand access
             auto& kernel_packet = _packet_data.kernel_packet;
+
+#if HSA_AMD_EXT_API_TABLE_STEP_VERSION >= 0x0D
+            if(is_ext_kernel_dispatch)
+            {
+                kernel_packet.ext_kernel_dispatch.kernel_object = dispatch_kernel_object;
+            }
+            else
+#endif
+            {
+                kernel_packet.kernel_dispatch.kernel_object = dispatch_kernel_object;
+            }
 
             // create our own signal that we can get a callback on. if there is an original
             // completion signal we will create a barrier packet, assign the original completion

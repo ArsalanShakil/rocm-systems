@@ -37,8 +37,9 @@ namespace rocprofiler
 {
 namespace code_object
 {
-using code_object_array_t    = std::vector<std::unique_ptr<hsa::code_object>>;
-using code_object_iterator_t = std::function<void(const hsa::code_object&)>;
+using code_object_array_t          = std::vector<std::unique_ptr<hsa::code_object>>;
+using code_object_iterator_t       = std::function<void(const hsa::code_object&)>;
+using executable_freeze_callback_t = std::function<void(hsa_executable_t)>;
 
 const char*
 name_by_id(uint32_t id);
@@ -55,8 +56,23 @@ get_ids();
 uint64_t
 get_kernel_id(uint64_t kernel_object);
 
+uint64_t
+get_kernel_object_replacement(uint64_t kernel_object);
+
+void
+add_kernel_object_replacement(uint64_t original_kernel_object, uint64_t replacement_kernel_object);
+
+void
+remove_kernel_object_replacement(uint64_t original_kernel_object);
+
 void
 iterate_loaded_code_objects(code_object_iterator_t&& func);
+
+hsa_status_t
+executable_freeze_internal(hsa_executable_t executable);
+
+void
+add_executable_freeze_callback(executable_freeze_callback_t&& callback);
 
 void
 initialize(HsaApiTable* table);
