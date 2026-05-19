@@ -135,7 +135,7 @@ typedef enum rocprofiler_agent_type_t  // NOLINT(performance-enum-size)
 /**
  * @brief The NULL value of a firmware version.
  */
-#define ROCPROFILER_FIRMWARE_VERSION_NONE UINT32_MAX
+#define ROCPROFILER_FIRMWARE_VERSION_NONE 0
 
 /**
  * @brief Service Callback Phase.

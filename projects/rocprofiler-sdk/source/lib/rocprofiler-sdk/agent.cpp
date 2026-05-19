@@ -627,30 +627,50 @@ update_agent_runtime_visibility(rocprofiler_agent_t& agent_info)
 using unique_agent_t = std::unique_ptr<rocprofiler_agent_t, void (*)(rocprofiler_agent_t*)>;
 
 uint32_t
-read_fw_info(const char* fname, uint32_t drm_render_minor)
+read_fw_info(std::string_view fname, uint32_t drm_render_minor)
 {
-    // read firmware_info
-    auto fw_dir  = fmt::format("/sys/class/drm/renderD{}/device/fw_version", drm_render_minor);
-    auto fw_path = fs::path(fw_dir) / fname;
-    if(!fs::exists(fw_path))
+    auto fw_path = fmt::format("/sys/class/drm/renderD{}/device/fw_version/{}", drm_render_minor, fname);
+    auto fw_file = std::ifstream{fw_path};
+    if(!fw_file)
     {
-        ROCP_WARNING << "Firmware version file missing: " << fw_path.string();
+        ROCP_WARNING << "Failed to open firmware version file: " << fw_path;
         return kInvalidFirmwareVersion;
     }
-    auto fw_file  = std::ifstream{fw_path};
+
     auto fw_value = std::string{};
-    if(fw_file && std::getline(fw_file, fw_value) && !fw_value.empty())
+    if(!std::getline(fw_file, fw_value))
     {
-        try
-        {
-            return static_cast<uint32_t>(std::stoul(fw_value, nullptr, 0));
-        } catch(const std::exception& e)
-        {
-            ROCP_WARNING << fmt::format("Failed to parse firmware version '{}' from file '{}': {}",
-                                        fw_value,
-                                        fw_path.string(),
-                                        e.what());
-        }
+        ROCP_WARNING << "Failed to read firmware version from file: " << fw_path;
+        return kInvalidFirmwareVersion;
+    }
+
+    if(fw_value.empty())
+    {
+        ROCP_WARNING << "Firmware version file is empty: " << fw_path;
+        return kInvalidFirmwareVersion;
+    }
+
+    auto tokens = sdk::parse::tokenize(fw_value, " \t\n\r");
+    if(tokens.size() != 1)
+    {
+        ROCP_WARNING << fmt::format("Unexpected content in firmware version file '{}': '{}'",
+                                    fw_path,
+                                    fw_value);
+        return kInvalidFirmwareVersion;
+    }
+
+    try
+    {
+        const auto& token = tokens.at(0);
+        if(token.find("0x") == 0 || token.find("0X") == 0)
+            return static_cast<uint32_t>(std::stoul(token, nullptr, 0));
+        return sdk::parse::from_string<uint32_t>(token);
+    } catch(const std::exception& e)
+    {
+        ROCP_WARNING << fmt::format("Failed to parse firmware version '{}' from file '{}': {}",
+                                    fw_value,
+                                    fw_path,
+                                    e.what());
     }
     return kInvalidFirmwareVersion;
 }

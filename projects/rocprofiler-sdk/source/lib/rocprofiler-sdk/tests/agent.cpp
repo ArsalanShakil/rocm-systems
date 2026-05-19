@@ -121,6 +121,30 @@ TEST(rocprofiler_lib, agent_abi)
     static_assert(sizeof(rocprofiler_agent_t) == expected_rocp_agent_size, "Update agent size!");
 }
 
+TEST(rocprofiler_lib, agent_firmware_info_abi)
+{
+    constexpr auto msg = "ABI break in rocprofiler_agent_firmware_info_v0_t";
+
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, mec2_version), 0) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, mec_version), 4) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, rlc_version), 8) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, rlc_srlc_version), 12) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, rlc_srlg_version), 16) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, rlc_srls_version), 20) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, sdma2_version), 24) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, sdma_version), 28) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, smc_version), 32) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, sos_version), 36) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, ta_ras_version), 40) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, ta_xgmi_version), 44) << msg;
+    EXPECT_EQ(offsetof(rocprofiler_agent_firmware_info_v0_t, vcn_version), 48) << msg;
+
+    constexpr auto expected_fw_info_size = 52;
+    EXPECT_EQ(sizeof(rocprofiler_agent_firmware_info_v0_t), expected_fw_info_size) << msg;
+    static_assert(sizeof(rocprofiler_agent_firmware_info_v0_t) == expected_fw_info_size,
+                  "Update firmware_info size!");
+}
+
 TEST(rocprofiler_lib, agent)
 {
     rocprofiler::registration::init_logging();
@@ -278,6 +302,24 @@ TEST(rocprofiler_lib, agent)
         {
             // HSA lib doesn't set family ID for CPU-only but we do
             EXPECT_EQ(agent->family_id, hsa_agent->family_id) << msg;
+
+            const auto check_fw_version = [&msg](uint32_t version, const char* field) {
+                EXPECT_TRUE(version == ROCPROFILER_FIRMWARE_VERSION_NONE || version > 0)
+                    << msg << " :: invalid " << field << " firmware version: " << version;
+            };
+            check_fw_version(agent->firmware_info.mec2_version, "mec2");
+            check_fw_version(agent->firmware_info.mec_version, "mec");
+            check_fw_version(agent->firmware_info.rlc_version, "rlc");
+            check_fw_version(agent->firmware_info.rlc_srlc_version, "rlc_srlc");
+            check_fw_version(agent->firmware_info.rlc_srlg_version, "rlc_srlg");
+            check_fw_version(agent->firmware_info.rlc_srls_version, "rlc_srls");
+            check_fw_version(agent->firmware_info.sdma2_version, "sdma2");
+            check_fw_version(agent->firmware_info.sdma_version, "sdma");
+            check_fw_version(agent->firmware_info.smc_version, "smc");
+            check_fw_version(agent->firmware_info.sos_version, "sos");
+            check_fw_version(agent->firmware_info.ta_ras_version, "ta_ras");
+            check_fw_version(agent->firmware_info.ta_xgmi_version, "ta_xgmi");
+            check_fw_version(agent->firmware_info.vcn_version, "vcn");
         }
         EXPECT_EQ(agent->fw_version.ui32.uCode, hsa_agent->ucode_version) << msg;
         EXPECT_EQ(agent->sdma_fw_version.uCodeSDMA, hsa_agent->sdma_ucode_version) << msg;

@@ -644,10 +644,6 @@ ioctl_pcs_create(const rocprofiler_agent_t*       agent,
                  uint64_t                         interval,
                  uint32_t*                        ioctl_pcs_id)
 {
-    if(auto status = check_firmware_compatibility(agent, method);
-       status != ROCPROFILER_STATUS_SUCCESS)
-        return status;
-
     pcs_ioctl_version_t pcs_ioctl_version = 0;
     auto status = get_pcs_ioctl_version_if_kfd_supports(agent->gpu_id, &pcs_ioctl_version);
     if(status != ROCPROFILER_STATUS_SUCCESS) return status;
@@ -657,6 +653,10 @@ ioctl_pcs_create(const rocprofiler_agent_t*       agent,
     // using this sampling method on this device.
     status = is_pc_sampling_method_supported(method, agent, pcs_ioctl_version);
     if(status != ROCPROFILER_STATUS_SUCCESS) return status;
+
+    if(auto fw_status = check_firmware_compatibility(agent, method);
+       fw_status != ROCPROFILER_STATUS_SUCCESS)
+        return fw_status;
 
     rocprofiler_ioctl_pc_sampling_info_t ioctl_cfg;
     auto ret = create_ioctl_pcs_config_from_rocp(ioctl_cfg, method, unit, interval);
