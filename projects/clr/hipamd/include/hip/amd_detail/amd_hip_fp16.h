@@ -64,6 +64,16 @@ struct __half2_raw {
 #endif
 namespace __hip_internal {
 template <> struct is_floating_point<_Float16> : __hip_internal::true_type {};
+template <>
+struct numeric_limits<__half> {
+    // IEEE 754 half: 0 11110 1111111111 = 65504 (max finite half)
+    static __device__ __forceinline__ __half max() {
+        __half_raw r; r.x = 0x7BFF; return r;
+    }
+    static __device__ __forceinline__ __half lowest() {
+        __half_raw r; r.x = 0xFBFF; return r;
+    }
+};
 }  // namespace __hip_internal
 
 template <bool cond, typename T = void> using Enable_if_t =
