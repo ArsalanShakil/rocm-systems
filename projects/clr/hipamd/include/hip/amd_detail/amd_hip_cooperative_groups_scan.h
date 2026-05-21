@@ -277,10 +277,9 @@ namespace impl {
       if (mask) {
         return *reinterpret_cast<Val*>(&permuteResult);
       } else {
-        Val tmp;
+        impl::CGIdentity<Val, Op> identity;
 
-        std::memset(&tmp, 0, sizeof(tmp));
-        return tmp;
+        return identity();
       }
     }
   }
