@@ -435,10 +435,26 @@ T calculateExpected(T* output,
   T aggregation[64];
   // the results for the previous step of the aggregation
   T lastAggregation[64];
+  // identity value for this type and operator
+  T id {};
 
-  std::memset(output, 0, 64 * sizeof(T));
   std::memset(aggregation, 0, 64 * sizeof(T));
   std::memset(lastAggregation, 0, 64 * sizeof(T));
+
+  if constexpr (std::is_same<Op, MinOp<T>>::value) {
+    id = std::numeric_limits<T>::max();
+  } else if constexpr (std::is_same<Op, MaxOp<T>>::value) {
+    id = std::numeric_limits<T>::lowest();
+  } else if constexpr (std::is_same<Op, std::bit_and<T>>::value) {
+    id = ~id;
+  } else if constexpr (std::is_same<Op, std::bit_or<T>>::value) {
+  } else {
+    std::memset(&id, 0, sizeof(T));
+  }
+
+  for (int i = 0; i < 64; i++) {
+    output[i] = id;
+  }
 
   if constexpr (std::is_same<Op, std::plus<T>>::value ||
                 std::is_same<Op, cooperative_groups::plus<T>>::value ) {
@@ -487,13 +503,7 @@ T calculateExpected(T* output,
   } else {
     bool initialized = false;
 
-    if (std::is_same<Op, MinOp<T>>::value) {
-      result = std::numeric_limits<T>::max();
-    } else if (std::is_same<Op, MaxOp<T>>::value) {
-      result = std::numeric_limits<T>::lowest();
-    } else {
-      std::memset(&result, 0, sizeof(T));
-    }
+    result = id;
 
     for (int i = 0; i < lastLane + 1; i++) {
       if (mask & (1ull << i)) {
@@ -511,7 +521,7 @@ T calculateExpected(T* output,
           if (inclusive) {
             output[i] = result;
           } else {
-            output[i] = 0;
+            output[i] = id;
           }
           initialized = true;
         }
@@ -635,6 +645,7 @@ void runTestReduce(int iteration, Reduce reduce)
   LinearAllocGuard<T> input, d_input;
   LinearAllocGuard<unsigned long long> masks, d_masks;
   Op<T> op;
+  std::string opName = opToString<T, Op>();
   int numReduce = 0;
 
   genRandomBuffers(d_input, input, dist, gen, kNumReduces * wavefrontSize);
@@ -666,6 +677,7 @@ void runTestReduce(int iteration, Reduce reduce)
           else {
             if (result != expected) {
               printMismatch(result, expected, waveInput, mask, lane);
+              INFO("Operator: " << opName << " mask: 0x" << std::hex << mask);
               REQUIRE(result == expected);
             }
           }
