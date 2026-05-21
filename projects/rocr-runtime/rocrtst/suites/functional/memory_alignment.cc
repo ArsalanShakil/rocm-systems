@@ -49,6 +49,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <atomic>
 
 #include "suites/functional/memory_alignment.h"
 #include "common/base_rocr_utils.h"
@@ -64,6 +65,8 @@ static const uint32_t kNumThreads = 4096;
 
 typedef struct control_block {
     hsa_amd_memory_pool_t* pool;
+    size_t alignment_size;
+    std::atomic<int>* error_count;
 } cb_t;
 
 // Callback function which will call upon when need
@@ -84,6 +87,33 @@ static void CallbackVerifyPoolAlignmendFunc(void *data) {
     // Verifies the alignment attribute is a power of 2
     if (info.size != 0) {
       EXPECT_TRUE((alignment_size&&(!(alignment_size&(alignment_size-1)))));
+    }
+
+    // NEW: Actually allocate memory and verify alignment (concurrent stress test)
+    if (info.size != 0 && cb->alignment_size > 0) {
+      const int kAllocsPerThread = 5;
+      size_t alloc_size = std::min((size_t)4096, info.size / 1024);  // Small allocation
+
+      for (int i = 0; i < kAllocsPerThread; i++) {
+        void* ptr = nullptr;
+        err = hsa_amd_memory_pool_allocate(*(cb->pool), alloc_size, 0, &ptr);
+
+        if (err == HSA_STATUS_SUCCESS && ptr != nullptr) {
+          // Verify alignment
+          uintptr_t ptr_value = (uintptr_t)ptr;
+          bool is_aligned = (ptr_value % cb->alignment_size) == 0;
+
+          if (!is_aligned && cb->error_count) {
+            cb->error_count->fetch_add(1, std::memory_order_relaxed);
+          }
+
+          EXPECT_TRUE(is_aligned) << "Thread allocation: pointer " << ptr
+                                  << " not aligned to " << cb->alignment_size;
+
+          // Free immediately
+          hsa_amd_memory_pool_free(ptr);
+        }
+      }
     }
   }
   return;
@@ -215,13 +245,73 @@ void MemoryAlignmentTest::MemoryPoolAlignment(hsa_agent_t agent,
       EXPECT_TRUE((alignment_size&&(!(alignment_size&(alignment_size-1)))));
     }
 
-    // verifies that alignment attribute is a power of 2 in different threads
+    // NEW: Verify actual allocated pointers are aligned
+    if (pool_i.size != 0) {
+      const int kNumAllocations = 10;
+      void* allocated_ptrs[kNumAllocations] = {nullptr};
+
+      // Test various allocation sizes
+      size_t test_sizes[] = {
+        64,              // Small allocation
+        256,             // Medium
+        alignment_size,  // Exactly one alignment
+        alignment_size * 2,  // Multiple of alignment
+        alignment_size + 64, // Unaligned size
+        4096,            // Page size
+        65536            // 64KB
+      };
+
+      for (size_t size_idx = 0; size_idx < sizeof(test_sizes)/sizeof(test_sizes[0]); size_idx++) {
+        size_t alloc_size = test_sizes[size_idx];
+
+        // Skip sizes larger than pool size
+        if (alloc_size > pool_i.size) {
+          continue;
+        }
+
+        // Allocate memory
+        void* ptr = nullptr;
+        err = hsa_amd_memory_pool_allocate(pool, alloc_size, 0, &ptr);
+
+        // Some pools may fail large allocations - that's OK
+        if (err == HSA_STATUS_SUCCESS) {
+          // Verify pointer is aligned
+          uintptr_t ptr_value = (uintptr_t)ptr;
+          bool is_aligned = (ptr_value % alignment_size) == 0;
+
+          if (!is_aligned) {
+            std::cout << "ERROR: Allocated pointer " << ptr
+                      << " (0x" << std::hex << ptr_value << std::dec << ")"
+                      << " is NOT aligned to " << alignment_size << " bytes" << std::endl;
+            std::cout << "  Allocation size: " << alloc_size << " bytes" << std::endl;
+            std::cout << "  Misalignment: " << (ptr_value % alignment_size) << " bytes" << std::endl;
+          }
+
+          EXPECT_TRUE(is_aligned) << "Pointer " << ptr << " not aligned to " << alignment_size;
+
+          if (verbosity() > 1) {
+            std::cout << "  Allocated " << alloc_size << " bytes at " << ptr
+                      << " - aligned to " << alignment_size << " bytes: "
+                      << (is_aligned ? "PASS" : "FAIL") << std::endl;
+          }
+
+          // Free the allocation
+          hsa_amd_memory_pool_free(ptr);
+        }
+      }
+    }
+
+    // Concurrent test: verifies alignment attribute is power of 2 AND
+    // that actual allocations from multiple threads are correctly aligned
+    std::atomic<int> concurrent_errors{0};
     rocrtst::test_group* tg_concurrent = rocrtst::TestGroupCreate(kNumThreads);
     // The control blocks are used to pass data to the threads
     uint32_t kk;
     cb_t cb[kNumThreads];
     for (kk = 0; kk < kNumThreads; kk++) {
       cb[kk].pool = &pool;
+      cb[kk].alignment_size = alignment_size;
+      cb[kk].error_count = &concurrent_errors;
       rocrtst::TestGroupAdd(tg_concurrent, &CallbackVerifyPoolAlignmendFunc, &cb[kk], 1);
     }
 
@@ -239,6 +329,13 @@ void MemoryAlignmentTest::MemoryPoolAlignment(hsa_agent_t agent,
 
     // Destroy thread group and cleanup resources
     rocrtst::TestGroupDestroy(tg_concurrent);
+
+    // Check for concurrent allocation alignment errors
+    if (concurrent_errors.load() > 0) {
+      std::cout << "WARNING: " << concurrent_errors.load()
+                << " concurrent allocation alignment errors detected!" << std::endl;
+    }
+    EXPECT_EQ(0, concurrent_errors.load()) << "Concurrent allocations had alignment errors";
   }
   return;
 }
