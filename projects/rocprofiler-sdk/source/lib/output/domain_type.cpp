@@ -68,6 +68,7 @@ DEFINE_BUFFER_TYPE_NAME(PC_SAMPLING_STOCHASTIC,
                         "PC_SAMPLING_STOCHASTIC",
                         "pc_sampling_stochastic",
                         "pc_sampling_stochastic_stats")
+DEFINE_BUFFER_TYPE_NAME(GRAPH_LAUNCH, "GRAPH_LAUNCH", "graph_launch_trace", "graph_launch_stats")
 
 #undef DEFINE_BUFFER_TYPE_NAME
 

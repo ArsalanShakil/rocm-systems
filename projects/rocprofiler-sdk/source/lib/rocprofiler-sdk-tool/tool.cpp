@@ -205,10 +205,11 @@ struct buffer_ids
     rocprofiler_buffer_id_t rocdecode_api_trace     = {};
     rocprofiler_buffer_id_t rocjpeg_api_trace       = {};
     rocprofiler_buffer_id_t pc_sampling_stochastic  = {};
+    rocprofiler_buffer_id_t graph_launch_trace      = {};
 
     auto as_array() const
     {
-        return std::array<rocprofiler_buffer_id_t, 13>{hsa_api_trace,
+        return std::array<rocprofiler_buffer_id_t, 14>{hsa_api_trace,
                                                        hip_api_trace,
                                                        kernel_trace,
                                                        memory_copy_trace,
@@ -220,7 +221,8 @@ struct buffer_ids
                                                        pc_sampling_host_trap,
                                                        rocdecode_api_trace,
                                                        rocjpeg_api_trace,
-                                                       pc_sampling_stochastic};
+                                                       pc_sampling_stochastic,
+                                                       graph_launch_trace};
     }
     auto pc_sampling_buffers_as_array() const
     {
@@ -1306,6 +1308,13 @@ buffered_tracing_callback(rocprofiler_context_id_t /*context*/,
 
                 tool::write_ring_buffer(*record, domain_type::ROCJPEG);
             }
+            else if(header->kind == ROCPROFILER_BUFFER_TRACING_GRAPH_LAUNCH)
+            {
+                auto* record =
+                    static_cast<rocprofiler_buffer_tracing_graph_launch_record_t*>(header->payload);
+
+                tool::write_ring_buffer(*record, domain_type::GRAPH_LAUNCH);
+            }
             else
             {
                 ROCP_CI_LOG(WARNING) << fmt::format(
@@ -2323,7 +2332,10 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                                             get_buffers().kfd_trace},
                       buffer_service_config{tool::get_config().kfd_queue_trace,
                                             ROCPROFILER_BUFFER_TRACING_KFD_QUEUE,
-                                            get_buffers().kfd_trace}})
+                                            get_buffers().kfd_trace},
+                      buffer_service_config{tool::get_config().graph_launch_trace,
+                                            ROCPROFILER_BUFFER_TRACING_GRAPH_LAUNCH,
+                                            get_buffers().graph_launch_trace}})
 
     {
         if(itr.option)
@@ -2933,6 +2945,8 @@ generate_output(cleanup_mode _cleanup_mode)
 
     auto kernel_dispatch_output =
         rocprofiler::tool::kernel_dispatch_buffered_output_ext_t{tool::get_config().kernel_trace};
+    auto graph_launch_output =
+        rocprofiler::tool::graph_launch_buffered_output_t{tool::get_config().graph_launch_trace};
 
     auto hsa_output = tool::hsa_buffered_output_t{tool::get_config().hsa_core_api_trace ||
                                                   tool::get_config().hsa_amd_ext_api_trace ||
@@ -3001,6 +3015,7 @@ generate_output(cleanup_mode _cleanup_mode)
     generate_output(pc_sampling_host_trap_output, outdata, contributions, cleanups);
     generate_output(rocjpeg_output, outdata, contributions, cleanups);
     generate_output(pc_sampling_stochastic_output, outdata, contributions, cleanups);
+    generate_output(graph_launch_output, outdata, contributions, cleanups);
 
     if(tool::get_config().advanced_thread_trace && !tool_metadata->att_filenames.empty())
     {
