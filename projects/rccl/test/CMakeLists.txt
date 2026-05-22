@@ -340,6 +340,6 @@ if(BUILD_TESTS)
     rocm_install(TARGETS ${test_executable} COMPONENT tests)
   endforeach()
 
-  add_subdirectory(mch)
+  add_subdirectory(microtest)
 
 endif()
