@@ -77,9 +77,10 @@
  * - 1.23 - hsa_amd_agent_info_t: HSA_AMD_AGENT_INFO_MAX_DATA_PREFETCH_REGIONS
  * - 1.24 - hsa_amd_external_semaphore_handle_open/hsa_amd_external_semaphore_handle_close
  * - 1.25 - hsa_amd_vmem_export_fabric_handle, hsa_amd_vmem_import_fabric_handle
+ * - 1.26 - hsa_amd_queue_signal_external_semaphore
  */
 #define HSA_AMD_INTERFACE_VERSION_MAJOR 1
-#define HSA_AMD_INTERFACE_VERSION_MINOR 25
+#define HSA_AMD_INTERFACE_VERSION_MINOR 26
 
 #ifdef __cplusplus
 extern "C" {
@@ -3266,6 +3267,28 @@ hsa_status_t HSA_API hsa_amd_external_semaphore_handle_open(
  */
 hsa_status_t HSA_API hsa_amd_external_semaphore_handle_close(
     hsa_amd_external_semaphore_t sem);
+
+/**
+ * @brief Submits a GPU-side signal of an imported external semaphore
+ * onto @p queue, queued behind prior packets on the AQL ring. Windows
+ * routes to D3DKMTSignalSynchronizationObjectFromGpu via libhsakmt;
+ * Linux / KFD is currently a stub (HSA_STATUS_ERROR).
+ *
+ * @param queue Must be an AMD GPU AQL queue from the agent that
+ *   imported @p sem; others return HSA_STATUS_ERROR_INVALID_QUEUE.
+ * @param sem   Handle from hsa_amd_external_semaphore_handle_open.
+ * @param value Fence value written to the syncobj (passed verbatim).
+ *
+ * @retval HSA_STATUS_SUCCESS                Signal queued.
+ * @retval HSA_STATUS_ERROR_INVALID_QUEUE    Null/invalid/non-GPU queue.
+ * @retval HSA_STATUS_ERROR_INVALID_ARGUMENT sem.handle is malformed.
+ * @retval HSA_STATUS_ERROR_INVALID_AGENT    Queue's node has no WDDM device.
+ * @retval HSA_STATUS_ERROR                  KMD signal ioctl failed.
+ */
+hsa_status_t HSA_API hsa_amd_queue_signal_external_semaphore(
+    hsa_queue_t                  *queue,
+    hsa_amd_external_semaphore_t  sem,
+    uint64_t                      value);
 
 /** @} */
 
