@@ -220,52 +220,42 @@ struct numeric_limits;
 
 template <>
 struct numeric_limits<int> {
-    static __device__ __forceinline__ int max()    { return 0x7FFFFFFF; }
-    static __device__ __forceinline__ int lowest() { return ~0x7FFFFFFF; }
+    static constexpr int max()    { return 0x7FFFFFFF; }
+    static constexpr int lowest() { return ~0x7FFFFFFF; }
 };
 
 template <>
 struct numeric_limits<unsigned int> {
-    static __device__ __forceinline__ unsigned int max()    { return 0xFFFFFFFFu; }
-    static __device__ __forceinline__ unsigned int lowest() { return 0u; }
+    static constexpr unsigned int max()    { return 0xFFFFFFFFu; }
+    static constexpr unsigned int lowest() { return 0u; }
 };
 
 template <>
 struct numeric_limits<long long> {
-    static __device__ __forceinline__ long long max()    { return 0x7FFFFFFFFFFFFFFFLL; }
-    static __device__ __forceinline__ long long lowest() { return ~0x7FFFFFFFFFFFFFFFLL; }
+    static constexpr long long max()    { return 0x7FFFFFFFFFFFFFFFLL; }
+    static constexpr long long lowest() { return ~0x7FFFFFFFFFFFFFFFLL; }
 };
 
 template <>
 struct numeric_limits<unsigned long long> {
-    static __device__ __forceinline__ unsigned long long max()    { return 0xFFFFFFFFFFFFFFFFull; }
-    static __device__ __forceinline__ unsigned long long lowest() { return 0ull; }
+    static constexpr unsigned long long max()    { return 0xFFFFFFFFFFFFFFFFull; }
+    static constexpr unsigned long long lowest() { return 0ull; }
 };
 
 template <>
 struct numeric_limits<float> {
     // IEEE 754: 0 11111110 11111111111111111111111 = largest finite float
-    static __device__ __forceinline__ float max()    { return __int_as_float(0x7F7FFFFF); }
-    static __device__ __forceinline__ float lowest() { return __int_as_float(0xFF7FFFFF); }
+    static constexpr float max()    { return __builtin_bit_cast(float, 0x7F7FFFFF); }
+    static constexpr float lowest() { return __builtin_bit_cast(float, 0xFF7FFFFF); }
 };
 
 template <>
 struct numeric_limits<double> {
     // IEEE 754: 0 11111111110 [52 ones] = largest finite double
-    static __device__ __forceinline__ double max()    { return __longlong_as_double(0x7FEFFFFFFFFFFFFFLL); }
-    static __device__ __forceinline__ double lowest() { return __longlong_as_double(0xFFEFFFFFFFFFFFFFLL); }
+    static constexpr double max()    { return __builtin_bit_cast(double, 0x7FEFFFFFFFFFFFFFLL); }
+    static constexpr double lowest() { return __builtin_bit_cast(double, 0xFFEFFFFFFFFFFFFFLL); }
 };
 
-template <>
-struct numeric_limits<__half> {
-    // IEEE 754 half: 0 11110 1111111111 = 65504 (max finite half)
-    static __device__ __forceinline__ __half max() {
-        __half_raw r; r.x = 0x7BFF; return r;
-    }
-    static __device__ __forceinline__ __half lowest() {
-        __half_raw r; r.x = 0xFBFF; return r;
-    }
-};
 }  // namespace __hip_internal
 typedef __hip_internal::uint8_t __hip_uint8_t;
 typedef __hip_internal::uint16_t __hip_uint16_t;

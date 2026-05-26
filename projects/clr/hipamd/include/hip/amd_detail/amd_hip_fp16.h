@@ -64,16 +64,6 @@ struct __half2_raw {
 #endif
 namespace __hip_internal {
 template <> struct is_floating_point<_Float16> : __hip_internal::true_type {};
-template <>
-struct numeric_limits<__half> {
-    // IEEE 754 half: 0 11110 1111111111 = 65504 (max finite half)
-    static __device__ __forceinline__ __half max() {
-        __half_raw r; r.x = 0x7BFF; return r;
-    }
-    static __device__ __forceinline__ __half lowest() {
-        __half_raw r; r.x = 0xFBFF; return r;
-    }
-};
 }  // namespace __hip_internal
 
 template <bool cond, typename T = void> using Enable_if_t =
@@ -925,6 +915,19 @@ inline __device__ __half unsafeAtomicAdd(__half* address, __half value) {
   if (is_lower) return __low2half(out);
   return __high2half(out);
 }
+
+namespace __hip_internal {
+template <>
+struct numeric_limits<__half> {
+    // IEEE 754 half: 0 11110 1111111111 = 65504 (max finite half)
+    static constexpr __half max() {
+        __half_raw r; r.x = 0x7BFF; return r;
+    }
+    static constexpr __half lowest() {
+        __half_raw r; r.x = 0xFBFF; return r;
+    }
+};
+}  // namespace __hip_internal
 #endif  // defined(__clang__) && defined(__HIP__)
 
 // Math functions
@@ -1148,12 +1151,17 @@ template <typename MaskT> __device__ inline __half __reduce_max_sync(MaskT mask,
 
   return __reduce_op_sync(mask, val, op, wfReduce);
 }
+#endif
 
+#if !defined(__HIP_NO_HALF_OPERATORS__)
+namespace cooperative_groups {
+namespace impl {
 GENERATE_SCAN_FUNC(add, f16, __half);
 GENERATE_SCAN_FUNC(min, f16, __half);
 GENERATE_SCAN_FUNC(max, f16, __half);
-
-#endif  // __HIP_NO_HALF_OPERATORS__
+}
+}
+#endif
 
 #endif  // defined(__cplusplus)
 #elif defined(__GNUC__) || defined(_MSC_VER)
