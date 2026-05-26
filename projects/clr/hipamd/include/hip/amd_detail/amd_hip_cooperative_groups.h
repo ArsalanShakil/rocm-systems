@@ -1420,7 +1420,7 @@ template <class T>
 struct CGIdentity<T, cooperative_groups::less<T>> {
   __CG_QUALIFIER__ T operator()()
   {
-    return __hip_internal::numeric_limits<T>::max();
+    return __hip_internal::NumericLimits<T>::maximum();
   }
 };
 
@@ -1428,7 +1428,7 @@ template <class T>
 struct CGIdentity<T, cooperative_groups::greater<T>> {
   __CG_QUALIFIER__ T operator()()
   {
-    return __hip_internal::numeric_limits<T>::lowest();
+    return __hip_internal::NumericLimits<T>::lowest();
   }
 };
 
