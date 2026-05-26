@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+import pandas as pd
+
 import config
 from argparser import omniarg_parser
 from rocprof_compute_soc.soc_base import OmniSoC_Base
