@@ -3017,6 +3017,9 @@ class AMDSMICommands:
             )
             gpu_metric = amdsmi_interface._NA_amdsmi_get_gpu_metrics_info()
 
+        # Detect APU system: if APU metrics are populated, suppress dGPU-only sections
+        is_apu = gpu_metric.get("apu_metrics.temperature_gfx", "N/A") != "N/A"
+
         # Workaround for XCP (partition) metrics not providing num_partition in v1.9+/v1.1+
         # Provides original formatting for earlier metric versions
         partition_metric_info = self.helpers._get_metric_version_and_partition_info(
@@ -3028,7 +3031,7 @@ class AMDSMICommands:
             values_dict["gpu"] = int(gpu_id)
         # Populate the pcie_dict first due to multiple gpu metrics calls incorrectly increasing bandwidth
         if "pcie" in current_platform_args:
-            if args.pcie:
+            if args.pcie and not is_apu:
                 pcie_dict = {
                     "width": "N/A",
                     "speed": "N/A",
@@ -3958,7 +3961,7 @@ class AMDSMICommands:
 
         # Since pcie bw may increase based on frequent metrics calls, we add it to the output here, but the populate the values first
         if "pcie" in current_platform_args:
-            if args.pcie:
+            if args.pcie and not is_apu:
                 values_dict["pcie"] = pcie_dict
 
         if "gpu_board" in current_platform_args:
@@ -4030,7 +4033,7 @@ class AMDSMICommands:
 
                 values_dict["ecc"] = ecc_count
         if "ecc_blocks" in current_platform_args:
-            if args.ecc_blocks:
+            if args.ecc_blocks and not is_apu:
                 ecc_dict = {}
                 sysfs_blocks = ["UMC", "SDMA", "GFX", "MMHUB", "PCIE_BIF", "HDP", "XGMI_WAFL"]
                 try:
@@ -4074,7 +4077,7 @@ class AMDSMICommands:
                         e.get_error_info(),
                     )
         if "fan" in current_platform_args:
-            if args.fan:
+            if args.fan and not is_apu:
                 fan_dict = {"speed": "N/A", "max": "N/A", "rpm": "N/A", "usage": "N/A"}
 
                 try:
@@ -4117,7 +4120,7 @@ class AMDSMICommands:
 
                 values_dict["fan"] = fan_dict
         if "voltage_curve" in current_platform_args:
-            if args.voltage_curve:
+            if args.voltage_curve and not is_apu:
                 # Populate N/A values per voltage point
                 voltage_point_dict = {}
                 for point in range(amdsmi_interface.AMDSMI_NUM_VOLTAGE_CURVE_POINTS):
@@ -4165,7 +4168,7 @@ class AMDSMICommands:
 
                 values_dict["voltage_curve"] = voltage_point_dict
         if "overdrive" in current_platform_args:
-            if args.overdrive:
+            if args.overdrive and not is_apu:
                 try:
                     overdrive_level = amdsmi_interface.amdsmi_get_gpu_overdrive_level(args.gpu)
                     od_unit = "%"
@@ -4206,7 +4209,7 @@ class AMDSMICommands:
                         "Failed to get perf level for gpu %s | %s", gpu_id, e.get_error_info()
                     )
         if "xgmi_err" in current_platform_args:
-            if args.xgmi_err:
+            if args.xgmi_err and not is_apu:
                 try:
                     xgmi_err_status = amdsmi_interface.amdsmi_gpu_xgmi_error_status(args.gpu)
                     values_dict["xgmi_err"] = (
@@ -4282,7 +4285,7 @@ class AMDSMICommands:
 
                 values_dict["voltage"] = voltage_dict
         if "energy" in current_platform_args:
-            if args.energy:
+            if args.energy and not is_apu:
                 try:
                     energy_dict = amdsmi_interface.amdsmi_get_energy_count(args.gpu)
 
@@ -4634,6 +4637,44 @@ class AMDSMICommands:
                             throttle_status[key] = self.helpers.unit_format(self.logger, value, "")
 
                 values_dict["throttle"] = throttle_status
+
+        # On APU systems, remove dGPU-only fields/sections that are entirely N/A
+        if is_apu:
+            # Remove sections that are all N/A
+            for section_key in list(values_dict.keys()):
+                section_val = values_dict[section_key]
+                if isinstance(section_val, dict):
+                    # Remove individual N/A fields within sections
+                    na_keys = [
+                        k for k, v in section_val.items() if v == "N/A" and not k.startswith("apu_")
+                    ]
+                    for k in na_keys:
+                        del section_val[k]
+                    # Also remove fields that are lists/dicts of all N/A
+                    all_na_keys = []
+                    for k, v in section_val.items():
+                        if k.startswith("apu_"):
+                            continue
+                        if (
+                            isinstance(v, str)
+                            and v.startswith("[")
+                            and all(x.strip() == "N/A" for x in v.strip("[]").split(", "))
+                        ):
+                            all_na_keys.append(k)
+                        elif isinstance(v, list) and all(x == "N/A" for x in v):
+                            all_na_keys.append(k)
+                        elif isinstance(v, dict) and all(
+                            (isinstance(sub, list) and all(x == "N/A" for x in sub)) or sub == "N/A"
+                            for sub in v.values()
+                        ):
+                            all_na_keys.append(k)
+                    for k in all_na_keys:
+                        del section_val[k]
+                    # Remove empty sections
+                    if not section_val:
+                        del values_dict[section_key]
+                elif section_val == "N/A":
+                    del values_dict[section_key]
 
         # Store timestamp first if watching_output is enabled
         if watching_output:
