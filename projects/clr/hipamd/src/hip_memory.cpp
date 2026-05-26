@@ -3341,12 +3341,18 @@ hipError_t hipMemsetD8Async(hipDeviceptr_t dst, unsigned char value, size_t coun
 hipError_t hipMemsetD16(hipDeviceptr_t dst, unsigned short value, size_t count) {
   HIP_INIT_API(hipMemsetD16, dst, value, count);
   CHECK_STREAM_CAPTURING();
+  if (reinterpret_cast<uintptr_t>(dst) & 0x1) {
+    HIP_RETURN(hipErrorInvalidValue);
+  }
   HIP_RETURN(ihipMemset(dst, value, sizeof(int16_t), count * sizeof(int16_t), nullptr));
 }
 
 hipError_t hipMemsetD16Async(hipDeviceptr_t dst, unsigned short value, size_t count,
                              hipStream_t stream) {
   HIP_INIT_API(hipMemsetD16Async, dst, value, count, stream);
+  if (reinterpret_cast<uintptr_t>(dst) & 0x1) {
+    HIP_RETURN(hipErrorInvalidValue);
+  }
   int iValue = value;
   size_t valueSize = sizeof(int16_t);
   size_t sizeBytes = count * sizeof(int16_t);
@@ -3357,11 +3363,17 @@ hipError_t hipMemsetD16Async(hipDeviceptr_t dst, unsigned short value, size_t co
 hipError_t hipMemsetD32(hipDeviceptr_t dst, int value, size_t count) {
   HIP_INIT_API(hipMemsetD32, dst, value, count);
   CHECK_STREAM_CAPTURING();
+  if (reinterpret_cast<uintptr_t>(dst) & 0x3) {
+    HIP_RETURN(hipErrorInvalidValue);
+  }
   HIP_RETURN(ihipMemset(dst, value, sizeof(int32_t), count * sizeof(int32_t), nullptr));
 }
 
 hipError_t hipMemsetD32Async(hipDeviceptr_t dst, int value, size_t count, hipStream_t stream) {
   HIP_INIT_API(hipMemsetD32Async, dst, value, count, stream);
+  if (reinterpret_cast<uintptr_t>(dst) & 0x3) {
+    HIP_RETURN(hipErrorInvalidValue);
+  }
   int iValue = value;
   size_t valueSize = sizeof(int32_t);
   size_t sizeBytes = count * sizeof(int32_t);
