@@ -413,6 +413,21 @@ Here are the contents of ``rocjpeg_api_trace.csv`` file:
    :widths: 10,10,10,10,10,20,20
    :header-rows: 1
 
+OMPT trace
+++++++++++
+
+`OMPT <https://www.openmp.org/spec-html/5.2/openmpch19.html>`_ (OpenMP Tools Interface) is the standard interface exposed by OpenMP runtimes for tools to subscribe to runtime events. This option traces host-side OpenMP execution (parallel regions, work-sharing, tasks, sync regions, mutexes, thread lifecycle) and, for applications that offload to a device, the host-side target events (``target``, ``target_data_op``, ``target_submit``). For end-to-end examples, see :ref:`using-rocprofv3-with-openmp`.
+
+.. code-block:: shell
+
+    rocprofv3 --ompt-trace --output-format csv -- <application_path>
+
+The above command generates an ``ompt_trace`` file prefixed with the process ID. ``--ompt-trace`` is also enabled implicitly by ``--sys-trace`` and ``--runtime-trace``.
+
+.. note::
+
+   Requires an OMPT-capable OpenMP runtime that implements ``ompt_start_tool`` — for example the LLVM-based ``libomp`` shipped with ROCm / AOMP. GCC's ``libgomp`` does not implement the OMPT interface (see the `GOMP status page <https://www.gnu.org/software/gcc/projects/gomp/>`_), so ``g++ -fopenmp`` binaries do not produce OMPT records.
+
 Dynamic process attachment
 +++++++++++++++++++++++++++
 

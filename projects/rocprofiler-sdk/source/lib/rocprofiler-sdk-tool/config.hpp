@@ -130,6 +130,7 @@ struct config : output_config
     bool   hip_runtime_api_trace         = get_env("ROCPROF_HIP_RUNTIME_API_TRACE", false);
     bool   hip_compiler_api_trace        = get_env("ROCPROF_HIP_COMPILER_API_TRACE", false);
     bool   rccl_api_trace                = get_env("ROCPROF_RCCL_API_TRACE", false);
+    bool   ompt_trace                    = get_env("ROCPROF_OMPT_TRACE", false);
     bool   rocdecode_api_trace           = get_env("ROCPROF_ROCDECODE_API_TRACE", false);
     bool   rocjpeg_api_trace             = get_env("ROCPROF_ROCJPEG_API_TRACE", false);
     bool   list_metrics                  = get_env("ROCPROF_LIST_METRICS", false);
@@ -174,6 +175,7 @@ struct config : output_config
     std::string extra_counters_contents = get_env("ROCPROF_EXTRA_COUNTERS_CONTENTS", "");
     std::string att_library_path        = get_env("ROCPROF_ATT_LIBRARY_PATH", "");
     std::string att_gpu_index           = get_env("ROCPROF_ATT_PARAM_GPU_INDEX", "");
+    std::string ompt_trace_operations   = get_env("ROCPROF_OMPT_TRACE_OPERATIONS", "");
 
     std::unordered_set<size_t>         kernel_filter_range    = {};
     std::vector<std::set<std::string>> counters               = {};
@@ -217,6 +219,7 @@ config::get_attach_invariants() const
                            hip_runtime_api_trace,
                            hip_compiler_api_trace,
                            rccl_api_trace,
+                           ompt_trace,
                            rocdecode_api_trace,
                            rocjpeg_api_trace,
                            advanced_thread_trace,
@@ -286,6 +289,8 @@ config::save(ArchiveT& ar) const
     CFG_SERIALIZE_MEMBER(hip_runtime_api_trace);
     CFG_SERIALIZE_MEMBER(hip_compiler_api_trace);
     CFG_SERIALIZE_MEMBER(rccl_api_trace);
+    CFG_SERIALIZE_MEMBER(ompt_trace);
+    CFG_SERIALIZE_MEMBER(ompt_trace_operations);
     CFG_SERIALIZE_MEMBER(rocdecode_api_trace);
     CFG_SERIALIZE_MEMBER(rocjpeg_api_trace);
 

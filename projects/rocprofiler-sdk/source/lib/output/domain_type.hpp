@@ -34,6 +34,7 @@ enum class domain_type
     SCRATCH_MEMORY,
     COUNTER_COLLECTION,
     RCCL,
+    OMPT,
     MEMORY_ALLOCATION,
     COUNTER_VALUES,
     PC_SAMPLING_HOST_TRAP,

@@ -196,6 +196,7 @@ write_json(
     const generator<rocprofiler_buffer_tracing_scratch_memory_record_t>&    scratch_memory_gen,
     const generator<tool_buffer_tracing_kfd_record_t>&                      kfd_gen,
     const generator<rocprofiler_buffer_tracing_rccl_api_record_t>&          rccl_api_gen,
+    const generator<rocprofiler_buffer_tracing_ompt_record_t>&              ompt_gen,
     const generator<tool_buffer_tracing_memory_allocation_ext_record_t>&    memory_allocation_gen,
     const generator<rocprofiler_buffer_tracing_rocdecode_api_ext_record_t>& rocdecode_api_gen,
     const generator<rocprofiler_buffer_tracing_rocjpeg_api_record_t>&       rocjpeg_api_gen,
@@ -239,6 +240,7 @@ write_json(
         json_ar(cereal::make_nvp("hsa_api", hsa_api_gen));
         json_ar(cereal::make_nvp("marker_api", marker_api_gen));
         json_ar(cereal::make_nvp("rccl_api", rccl_api_gen));
+        json_ar(cereal::make_nvp("ompt", ompt_gen));
         json_ar(cereal::make_nvp("memory_copy", memory_copy_gen));
         json_ar(cereal::make_nvp("memory_allocation", memory_allocation_gen));
         json_ar(cereal::make_nvp("scratch_memory", scratch_memory_gen));

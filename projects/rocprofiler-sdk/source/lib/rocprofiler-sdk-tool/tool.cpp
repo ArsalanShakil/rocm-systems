@@ -75,6 +75,7 @@
 #include <rocprofiler-sdk/intercept_table.h>
 #include <rocprofiler-sdk/internal_threading.h>
 #include <rocprofiler-sdk/marker/api_id.h>
+#include <rocprofiler-sdk/ompt/api_id.h>
 #include <rocprofiler-sdk/rocprofiler.h>
 #include <rocprofiler-sdk/version.h>
 #include <rocprofiler-sdk/cxx/hash.hpp>
@@ -203,6 +204,7 @@ struct buffer_ids
     rocprofiler_buffer_id_t counter_collection      = {};
     rocprofiler_buffer_id_t scratch_memory          = {};
     rocprofiler_buffer_id_t rccl_api_trace          = {};
+    rocprofiler_buffer_id_t ompt_trace              = {};
     rocprofiler_buffer_id_t pc_sampling_host_trap   = {};
     rocprofiler_buffer_id_t rocdecode_api_trace     = {};
     rocprofiler_buffer_id_t rocjpeg_api_trace       = {};
@@ -210,7 +212,7 @@ struct buffer_ids
 
     auto as_array() const
     {
-        return std::array<rocprofiler_buffer_id_t, 13>{hsa_api_trace,
+        return std::array<rocprofiler_buffer_id_t, 14>{hsa_api_trace,
                                                        hip_api_trace,
                                                        kernel_trace,
                                                        memory_copy_trace,
@@ -219,6 +221,7 @@ struct buffer_ids
                                                        counter_collection,
                                                        scratch_memory,
                                                        rccl_api_trace,
+                                                       ompt_trace,
                                                        pc_sampling_host_trap,
                                                        rocdecode_api_trace,
                                                        rocjpeg_api_trace,
@@ -1293,6 +1296,13 @@ buffered_tracing_callback(rocprofiler_context_id_t /*context*/,
                     static_cast<rocprofiler_buffer_tracing_rccl_api_record_t*>(header->payload);
 
                 tool::write_ring_buffer(*record, domain_type::RCCL);
+            }
+            else if(header->kind == ROCPROFILER_BUFFER_TRACING_OMPT)
+            {
+                auto* record =
+                    static_cast<rocprofiler_buffer_tracing_ompt_record_t*>(header->payload);
+
+                tool::write_ring_buffer(*record, domain_type::OMPT);
             }
             else if(header->kind == ROCPROFILER_BUFFER_TRACING_ROCDECODE_API_EXT)
             {
@@ -2425,6 +2435,74 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
         std::vector<rocprofiler_tracing_operation_t> operations = {};
     };
 
+    // Resolve the comma-separated category list from --ompt-trace (or from
+    // ROCPROF_OMPT_TRACE_OPERATIONS when the env-var path is used) into the
+    // explicit operation IDs that rocprofiler_configure_buffer_tracing_service
+    // expects. Returns an empty vector for the "all operations" case (the SDK
+    // treats num_operations==0 as "enable all").
+    auto resolve_ompt_ops = [](const std::string& csv) {
+        using ompt_ops_t                 = std::vector<rocprofiler_tracing_operation_t>;
+        static const auto category_table = std::unordered_map<std::string_view, ompt_ops_t>{
+            {"thread", {ROCPROFILER_OMPT_ID_thread_begin, ROCPROFILER_OMPT_ID_thread_end}},
+            {"parallel",
+             {ROCPROFILER_OMPT_ID_parallel_begin,
+              ROCPROFILER_OMPT_ID_parallel_end,
+              ROCPROFILER_OMPT_ID_implicit_task,
+              ROCPROFILER_OMPT_ID_work,
+              ROCPROFILER_OMPT_ID_dispatch,
+              ROCPROFILER_OMPT_ID_reduction,
+              ROCPROFILER_OMPT_ID_masked}},
+            {"task",
+             {ROCPROFILER_OMPT_ID_task_create,
+              ROCPROFILER_OMPT_ID_task_schedule,
+              ROCPROFILER_OMPT_ID_dependences,
+              ROCPROFILER_OMPT_ID_task_dependence}},
+            {"sync",
+             {ROCPROFILER_OMPT_ID_sync_region,
+              ROCPROFILER_OMPT_ID_sync_region_wait,
+              ROCPROFILER_OMPT_ID_flush,
+              ROCPROFILER_OMPT_ID_cancel}},
+            {"mutex",
+             {ROCPROFILER_OMPT_ID_lock_init,
+              ROCPROFILER_OMPT_ID_lock_destroy,
+              ROCPROFILER_OMPT_ID_mutex_acquire,
+              ROCPROFILER_OMPT_ID_mutex_acquired,
+              ROCPROFILER_OMPT_ID_mutex_released,
+              ROCPROFILER_OMPT_ID_nest_lock}},
+            {"target",
+             {ROCPROFILER_OMPT_ID_target_emi,
+              ROCPROFILER_OMPT_ID_target_data_op_emi,
+              ROCPROFILER_OMPT_ID_target_submit_emi}},
+            {"device",
+             {ROCPROFILER_OMPT_ID_device_initialize,
+              ROCPROFILER_OMPT_ID_device_finalize,
+              ROCPROFILER_OMPT_ID_device_load}},
+            {"error", {ROCPROFILER_OMPT_ID_error}},
+        };
+
+        auto ops = ompt_ops_t{};
+        if(csv.empty()) return ops;
+
+        for(const auto& tok : rocprofiler::sdk::parse::tokenize(csv, ", "))
+        {
+            auto it = category_table.find(tok);
+            if(it == category_table.end())
+            {
+                // rocprofv3.py validates --ompt-trace=<cat> on the CLI, but the
+                // env-var path (ROCPROF_OMPT_TRACE_OPERATIONS=...) bypasses
+                // that validator — warn so a typo is visible at runtime.
+                ROCP_WARNING << "ignoring unknown OMPT category '" << tok
+                             << "' (from --ompt-trace / ROCPROF_OMPT_TRACE_OPERATIONS)";
+                continue;
+            }
+            ops.insert(ops.end(), it->second.begin(), it->second.end());
+        }
+        std::sort(ops.begin(), ops.end());
+        ops.erase(std::unique(ops.begin(), ops.end()), ops.end());
+        return ops;
+    };
+    auto ompt_ops = resolve_ompt_ops(tool::get_config().ompt_trace_operations);
+
     for(auto&& itr : {buffer_service_config{tool::get_config().kernel_trace,
                                             ROCPROFILER_BUFFER_TRACING_KERNEL_DISPATCH,
                                             get_buffers().kernel_trace},
@@ -2455,6 +2533,10 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                       buffer_service_config{tool::get_config().rccl_api_trace,
                                             ROCPROFILER_BUFFER_TRACING_RCCL_API,
                                             get_buffers().rccl_api_trace},
+                      buffer_service_config{tool::get_config().ompt_trace,
+                                            ROCPROFILER_BUFFER_TRACING_OMPT,
+                                            get_buffers().ompt_trace,
+                                            ompt_ops},
                       buffer_service_config{tool::get_config().memory_allocation_trace,
                                             ROCPROFILER_BUFFER_TRACING_MEMORY_ALLOCATION,
                                             get_buffers().memory_allocation_trace},
@@ -2567,6 +2649,9 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                                               dummy_callback_tracing_callback},
                       callback_service_config{tool::get_config().rccl_api_trace,
                                               ROCPROFILER_CALLBACK_TRACING_RCCL_API,
+                                              dummy_callback_tracing_callback},
+                      callback_service_config{tool::get_config().ompt_trace,
+                                              ROCPROFILER_CALLBACK_TRACING_OMPT,
                                               dummy_callback_tracing_callback},
                       callback_service_config{tool::get_config().memory_allocation_trace,
                                               ROCPROFILER_CALLBACK_TRACING_MEMORY_ALLOCATION,
@@ -3142,6 +3227,7 @@ generate_output(cleanup_mode _cleanup_mode)
     auto scratch_memory_output =
         tool::scratch_memory_buffered_output_t{tool::get_config().scratch_memory_trace};
     auto rccl_output = tool::rccl_buffered_output_t{tool::get_config().rccl_api_trace};
+    auto ompt_output = tool::ompt_buffered_output_t{tool::get_config().ompt_trace};
     auto memory_allocation_output =
         tool::memory_allocation_buffered_output_t{tool::get_config().memory_allocation_trace};
     auto kfd_output = tool::kfd_buffered_output_t{
@@ -3189,6 +3275,7 @@ generate_output(cleanup_mode _cleanup_mode)
     generate_output(kfd_output, outdata, contributions, cleanups);
     generate_output(marker_output, outdata, contributions, cleanups);
     generate_output(rccl_output, outdata, contributions, cleanups);
+    generate_output(ompt_output, outdata, contributions, cleanups);
     generate_output(counters_output, outdata, contributions, cleanups);
     generate_output(scratch_memory_output, outdata, contributions, cleanups);
     generate_output(rocdecode_output, outdata, contributions, cleanups);
@@ -3238,6 +3325,7 @@ generate_output(cleanup_mode _cleanup_mode)
                          scratch_memory_output.get_generator(),
                          kfd_output.get_generator(),
                          rccl_output.get_generator(),
+                         ompt_output.get_generator(),
                          memory_allocation_output.get_generator(),
                          rocdecode_output.get_generator(),
                          rocjpeg_output.get_generator(),
@@ -3263,6 +3351,7 @@ generate_output(cleanup_mode _cleanup_mode)
                              marker_output.get_generator(),
                              scratch_memory_output.get_generator(),
                              rccl_output.get_generator(),
+                             ompt_output.get_generator(),
                              memory_allocation_output.get_generator(),
                              rocdecode_output.get_generator(),
                              rocjpeg_output.get_generator());
@@ -3283,6 +3372,7 @@ generate_output(cleanup_mode _cleanup_mode)
                           scratch_memory_output.get_generator(),
                           kfd_output.get_generator(),
                           rccl_output.get_generator(),
+                          ompt_output.get_generator(),
                           rocdecode_output.get_generator(),
                           counters_output.get_generator(),
                           spm_counters_output.get_generator());
@@ -3298,6 +3388,7 @@ generate_output(cleanup_mode _cleanup_mode)
         auto marker_elem_data            = marker_output.load_all();
         auto scratch_memory_elem_data    = scratch_memory_output.load_all();
         auto rccl_elem_data              = rccl_output.load_all();
+        auto ompt_elem_data              = ompt_output.load_all();
         auto memory_allocation_elem_data = memory_allocation_output.load_all();
         auto rocdecode_elem_data         = rocdecode_output.load_all();
         auto rocjpeg_elem_data           = rocjpeg_output.load_all();
@@ -3313,6 +3404,7 @@ generate_output(cleanup_mode _cleanup_mode)
                          &marker_elem_data,
                          &scratch_memory_elem_data,
                          &rccl_elem_data,
+                         &ompt_elem_data,
                          &memory_allocation_elem_data,
                          &rocdecode_elem_data,
                          &rocjpeg_elem_data);

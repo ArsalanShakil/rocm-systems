@@ -9,7 +9,7 @@
 Using rocprofv3 with OpenMP
 ============================
 
-For computations offloaded to AMD GPUs using OpenMP (for example, via OpenMP target offload), ``rocprofv3`` can be used to capture and profile GPU activities initiated by these offloaded regions. Note that ``rocprofv3`` doesn't provide native support for profiling CPU-side OpenMP code or parallel regions.
+For computations offloaded to AMD GPUs using OpenMP (for example, via OpenMP target offload), ``rocprofv3`` can be used to capture and profile GPU activities initiated by these offloaded regions. The ``--ompt-trace`` option additionally records host-side OpenMP execution — parallel regions, tasks, work-sharing, and sync — for any application linked against an OMPT-capable OpenMP runtime; see :ref:`tracing-openmp-with-ompt-trace`.
 
 Example: Vector addition using OpenMP offload on AMD GPUs
 ==========================================================
@@ -90,3 +90,46 @@ Upon execution, ``rocprofv3`` generates several CSV trace files, such as:
 - <pid>_scratch_memory_trace.csv
 
 The preceding files contain detailed profiling information about GPU kernel execution, HSA API calls, memory operations, and more, enabling comprehensive analysis of the offloaded workload.
+
+.. _tracing-openmp-with-ompt-trace:
+
+Tracing OpenMP runtime events with ``--ompt-trace``
+====================================================
+
+The flags shown above capture HIP / HSA / kernel-dispatch / memory activity, but they do not record any OpenMP-level structure. To trace OpenMP itself, pass ``--ompt-trace`` (or ``ROCPROF_OMPT_TRACE=1``; it is also enabled implicitly by ``--sys-trace`` and ``--runtime-trace``). 
+This is primarily a host-side tracing facility — it records CPU-side OpenMP execution (thread lifecycle, parallel regions, work-sharing, tasks, sync regions, mutexes, dispatch) even for applications that never offload, and additionally records the host-side target-offload events (``target``, ``target_data_op``, ``target_submit``, ``device_initialize`` / ``device_load`` / ``device_finalize``) for offloading applications.
+
+.. code-block:: bash
+
+    rocprofv3 --ompt-trace --kernel-trace --memory-copy-trace --output-format csv pftrace -- ./vector_add
+
+This adds ``<pid>_ompt_trace.csv`` (plus corresponding entries in the JSON / Perfetto / OTF2 / rocpd outputs when selected). Combined with ``--kernel-trace`` / ``--memory-copy-trace``, each GPU kernel can be correlated with the surrounding ``target_submit`` / ``target_data_op`` region on the host and placed on the same timeline as the enclosing ``parallel`` / ``work`` regions and tasks.
+
+Filtering by category
+---------------------
+
+``--ompt-trace`` also accepts a comma-separated list of categories to record only a subset of operations. This is useful when an OMPT-instrumented runtime emits very high event volume (for example, when tracing fine-grained synchronization) and the user only cares about, say, target offload or parallel/task structure.
+
+The flag accepts a space-separated list of categories, matching the
+rocprofv3 house style used by ``--pmc``, ``--output-format``, ``--preload``,
+and similar multi-value tracing options.
+
+.. code-block:: bash
+
+    # All OMPT operations (the default; equivalent to bare --ompt-trace,
+    # --ompt-trace all, or --ompt-trace=all)
+    rocprofv3 --ompt-trace -- ./vector_add
+
+    # Only host parallel regions, tasks, and target offload (drops sync/mutex/etc.)
+    rocprofv3 --ompt-trace parallel task target -- ./vector_add
+
+    # Only target-offload events, correlated with kernel dispatches
+    rocprofv3 --ompt-trace target --kernel-trace -- ./vector_add
+
+Recognised categories: ``thread``, ``parallel``, ``task``, ``sync``, ``mutex``, ``target``, ``device``, ``error``, ``all``. Each category resolves to a fixed set of underlying OMPT operations (for example, ``parallel`` covers ``parallel_begin``, ``parallel_end``, ``implicit_task``, ``work``, ``dispatch``, ``reduction``, ``masked``; ``target`` covers ``target_emi``, ``target_data_op_emi``, ``target_submit_emi``). Equivalently, set ``ROCPROF_OMPT_TRACE_OPERATIONS=parallel,task,target`` in the environment — env vars use commas because they are single strings. Unknown tokens passed via the environment variable emit a runtime warning; the CLI rejects them at parse time and points at the space-separated syntax if a comma is found in a token.
+
+.. note::
+
+   ``--ompt-trace`` requires an OMPT-capable OpenMP runtime that implements ``ompt_start_tool``. The LLVM-based ``libomp`` shipped with ROCm / AOMP (used by ``amdclang++ -fopenmp`` above) qualifies. GCC's ``libgomp`` does not implement the OMPT interface (see the `GOMP status page <https://www.gnu.org/software/gcc/projects/gomp/>`_), so ``g++ -fopenmp`` binaries do not produce OMPT records.
+
+   Most OMPT events are host-thread events that scale with ``OMP_NUM_THREADS``; ``OMP_NUM_THREADS=1`` suppresses most parallel-region events. Target-offload events also require ``OMP_TARGET_OFFLOAD`` not to be ``DISABLED`` and at least one supported GPU to be visible (for example, via ``ROCR_VISIBLE_DEVICES``).

@@ -367,6 +367,7 @@ write_otf2(const output_config&                                          cfg,
            std::deque<rocprofiler_buffer_tracing_marker_api_record_t>*   marker_api_data,
            std::deque<rocprofiler_buffer_tracing_scratch_memory_record_t>* /*scratch_memory_data*/,
            std::deque<rocprofiler_buffer_tracing_rccl_api_record_t>*       rccl_api_data,
+           std::deque<rocprofiler_buffer_tracing_ompt_record_t>*           ompt_data,
            std::deque<tool_buffer_tracing_memory_allocation_ext_record_t>* memory_allocation_data,
            std::deque<rocprofiler_buffer_tracing_rocdecode_api_ext_record_t>* rocdecode_api_data,
            std::deque<rocprofiler_buffer_tracing_rocjpeg_api_record_t>*       rocjpeg_api_data)
@@ -419,6 +420,8 @@ write_otf2(const output_config&                                          cfg,
         for(auto itr : *marker_api_data)
             tids.emplace(itr.thread_id);
         for(auto itr : *rccl_api_data)
+            tids.emplace(itr.thread_id);
+        for(auto itr : *ompt_data)
             tids.emplace(itr.thread_id);
         for(auto itr : *rocdecode_api_data)
             tids.emplace(itr.thread_id);
@@ -581,6 +584,8 @@ write_otf2(const output_config&                                          cfg,
                    itr.operation == ROCPROFILER_MARKER_CORE_RANGE_API_ID_roctxMarkA)
                     continue;
 
+                if(itr.start_timestamp == itr.end_timestamp) continue;
+
                 using value_type = common::mpl::unqualified_type_t<decltype(itr)>;
                 auto name        = buffer_names.at(itr.kind, itr.operation);
                 auto paradigm    = OTF2_PARADIGM_HIP;
@@ -616,6 +621,7 @@ write_otf2(const output_config&                                          cfg,
         add_event_data(hip_api_data, sdk::category::hip_api{});
         add_event_data(marker_api_data, sdk::category::marker_api{});
         add_event_data(rccl_api_data, sdk::category::rccl_api{});
+        add_event_data(ompt_data, sdk::category::openmp{});
         add_event_data(rocjpeg_api_data, sdk::category::rocjpeg_api{});
     }
 
