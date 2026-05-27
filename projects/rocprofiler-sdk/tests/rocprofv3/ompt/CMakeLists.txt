@@ -52,9 +52,9 @@ set(ompt-tracing-env
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-tracing
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace --hip-trace --kernel-trace
-        --marker-trace --stats -d ${CMAKE_CURRENT_BINARY_DIR}/%tag%-trace -o out
-        --output-format json csv pftrace otf2 rocpd --log-level env --
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace --stats -d
+        ${CMAKE_CURRENT_BINARY_DIR}/%tag%-trace -o out --output-format json csv pftrace
+        otf2 rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 240
