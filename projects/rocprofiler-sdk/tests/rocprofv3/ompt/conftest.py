@@ -72,6 +72,12 @@ def pytest_addoption(parser):
         default="ompt/openmp-target-trace/out_ompt_stats.csv",
         help="Input OMPT stats CSV",
     )
+    parser.addoption(
+        "--agent-input",
+        action="store",
+        default="ompt/openmp-target-trace/out_agent_info.csv",
+        help="Input agent info CSV",
+    )
 
 
 @pytest.fixture
@@ -133,6 +139,21 @@ def stats_data(request):
     filename = request.config.getoption("--stats-input")
     if not os.path.isfile(filename):
         return pytest.skip("OMPT stats output unavailable")
+    rows = []
+    with open(filename, "r") as inp:
+        for row in csv.DictReader(inp):
+            rows.append(row)
+    return rows
+
+
+@pytest.fixture
+def agent_info_input_data(request):
+    """Return the *_agent_info.csv as a list of dict rows. Matches the
+    ``agent_info_input_data`` fixture in tests/rocprofv3/tracing/conftest.py.
+    """
+    filename = request.config.getoption("--agent-input")
+    if not os.path.isfile(filename):
+        return pytest.skip("agent_info CSV unavailable")
     rows = []
     with open(filename, "r") as inp:
         for row in csv.DictReader(inp):

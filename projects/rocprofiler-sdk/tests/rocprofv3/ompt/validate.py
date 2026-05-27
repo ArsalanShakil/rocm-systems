@@ -47,6 +47,28 @@ def _get_ompt_kind_record(tool_node):
     return None
 
 
+def test_agent_info(agent_info_input_data):
+    """Mirrors tests/rocprofv3/tracing/validate.py::test_agent_info — every
+    agent reported in the trace must be a well-formed CPU or GPU record. This
+    catches regressions where rocprofv3 fails to enumerate agents alongside
+    OMPT tracing.
+    """
+    logical_node_id = max(int(itr["Logical_Node_Id"]) for itr in agent_info_input_data)
+    assert logical_node_id + 1 == len(agent_info_input_data)
+
+    for row in agent_info_input_data:
+        agent_type = row["Agent_Type"]
+        assert agent_type in ("CPU", "GPU")
+        if agent_type == "CPU":
+            assert int(row["Cpu_Cores_Count"]) > 0
+            assert int(row["Simd_Count"]) == 0
+            assert int(row["Max_Waves_Per_Simd"]) == 0
+        else:
+            assert int(row["Cpu_Cores_Count"]) == 0
+            assert int(row["Simd_Count"]) > 0
+            assert int(row["Max_Waves_Per_Simd"]) > 0
+
+
 def test_json_structure(json_data):
     """The rocprofv3 JSON output must contain an OMPT buffer-records section."""
     data = json_data["rocprofiler-sdk-tool"]
@@ -179,10 +201,16 @@ def _is_target_submit_operation(op_name):
 
 
 def test_ompt_target_correlates_with_kernel_dispatch(json_data):
-    """
-    The test is skipped on builds that did not enable --kernel-trace alongside
-    --ompt-trace (kernel_dispatch records absent) so that the pure-OMPT
-    integration test remains a focused smoke test.
+    """AC5 — every OMPT ``target_submit`` record must reference a
+    correlation_id that also appears on a kernel_dispatch record. This
+    validates that the rocprofv3 pipeline preserves the OMPT <-> HSA
+    <-> kernel-dispatch correlation that the SDK promises.
+
+    The OMPT integration test runs with ``--ompt-trace --hip-trace
+    --kernel-trace`` precisely so this AC can be validated end-to-end. We
+    skip rather than fail when kernel_dispatch records are absent so the
+    granular-target variant of this validate.py (which intentionally runs
+    without --kernel-trace) is still useful.
     """
     data = json_data["rocprofiler-sdk-tool"]
     ompt_records = data["buffer_records"][OMPT_BUFFER_KEY]
