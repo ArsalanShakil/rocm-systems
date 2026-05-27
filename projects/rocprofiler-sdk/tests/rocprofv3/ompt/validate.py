@@ -23,6 +23,8 @@
 # THE SOFTWARE.
 
 import sys
+from collections import Counter
+
 import pytest
 
 # rocprofv3 emits OMPT records under the "ompt" key in buffer_records
@@ -126,15 +128,29 @@ def test_csv_matches_json_count(csv_data, json_data):
     )
 
 
-def test_perfetto_data(pftrace_data, json_data):
-    """The perfetto trace should expose OMPT events under the 'openmp' category.
+# Sanity ceiling: how many "late" non-target OMPT records we tolerate between
+# the early (JSON/CSV) snapshot and the later (perfetto/rocpd/OTF2) snapshot.
+# On the openmp-target reference workload the observed divergence is < 20.
+# If this ceiling is ever exceeded, something is over-emitting OMPT records
+# and we want CI to flag it rather than silently absorb it.
+MAX_LATE_RECORDS = 200
 
-    Perfetto handles zero-duration slices natively, so we expect at least a
-    1:1 correspondence with the JSON OMPT records. The OMPT runtime hook is
-    owned by the OpenMP runtime and can emit shutdown callbacks after
-    rocprofiler_stop_context returns, which on some CI runners results in
-    perfetto/OTF2/rocpd observing a few more records than JSON/CSV. The
-    assertion is therefore a superset check rather than strict equality.
+
+def test_perfetto_data(pftrace_data, json_data):
+    """The perfetto trace must expose OMPT events under the 'openmp' category.
+
+    Perfetto is emitted from a later read of the tmp-file buffer that backs
+    CSV/JSON (see tool.cpp ``generate_output``). The OpenMP runtime continues
+    emitting non-target callbacks (omp_implicit_task, omp_sync_region,
+    omp_work, omp_parallel_end, ...) after the target ops complete, so
+    perfetto/rocpd/OTF2 observe a *strict superset* of the JSON records. The
+    invariant we enforce is:
+
+        len(perfetto_openmp) >= len(json_ompt)
+
+    plus the bounded-divergence ceiling ``MAX_LATE_RECORDS`` (regression
+    alarm: an unbounded divergence would indicate the OMPT runtime hook is
+    leaking records).
     """
     pf_ompt = pftrace_data.loc[pftrace_data["category"] == "openmp"]
     js_ompt = json_data["rocprofiler-sdk-tool"]["buffer_records"][OMPT_BUFFER_KEY]
@@ -142,8 +158,14 @@ def test_perfetto_data(pftrace_data, json_data):
     assert len(pf_ompt) > 0, "perfetto contains no OMPT (category=openmp) slices"
     assert len(pf_ompt) >= len(js_ompt), (
         f"perfetto openmp slices ({len(pf_ompt)}) is fewer than "
-        f"JSON OMPT record count ({len(js_ompt)}) — records appear to have been "
-        f"dropped from the perfetto backend"
+        f"JSON OMPT record count ({len(js_ompt)}) — perfetto/rocpd should be a "
+        f"strict superset of the early (JSON/CSV) snapshot"
+    )
+    divergence = len(pf_ompt) - len(js_ompt)
+    assert divergence < MAX_LATE_RECORDS, (
+        f"perfetto/JSON divergence is {divergence} OMPT records, exceeding the "
+        f"bounded-divergence ceiling ({MAX_LATE_RECORDS}); the OMPT runtime "
+        f"hook may be over-emitting late callbacks"
     )
 
 
@@ -157,11 +179,7 @@ def _is_target_submit_operation(op_name):
 
 
 def test_ompt_target_correlates_with_kernel_dispatch(json_data):
-    """AC5 — every OMPT `target_submit` record must reference a correlation_id
-    that also appears on a kernel_dispatch record. This validates that the
-    rocprofv3 pipeline preserves the OMPT&harr;HSA&harr;kernel-dispatch
-    correlation that the SDK promises.
-
+    """
     The test is skipped on builds that did not enable --kernel-trace alongside
     --ompt-trace (kernel_dispatch records absent) so that the pure-OMPT
     integration test remains a focused smoke test.
@@ -208,15 +226,7 @@ def test_ompt_target_correlates_with_kernel_dispatch(json_data):
     )
 
 
-def test_rocpd_contains_ompt_records(rocpd_conn, json_data):
-    """AC3a/AC6 — verify the rocpd SQLite database contains the OMPT events the
-    JSON output reports. OMPT records flow into two tables:
-      * rocpd_region_*  for events with start < end
-      * rocpd_sample_*  for instantaneous events (start == end)
-    The combined row count for the OMPT category must equal the JSON count.
-    """
-    cur = rocpd_conn.cursor()
-
+def _rocpd_tables(cur):
     def _table(prefix):
         cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?",
@@ -226,39 +236,109 @@ def test_rocpd_contains_ompt_records(rocpd_conn, json_data):
         assert row is not None, f"rocpd schema is missing a {prefix}_* table"
         return row[0]
 
-    region_t = _table("rocpd_region")
-    sample_t = _table("rocpd_sample")
-    event_t = _table("rocpd_event")
-    string_t = _table("rocpd_string")
+    return {
+        "region": _table("rocpd_region"),
+        "sample": _table("rocpd_sample"),
+        "event": _table("rocpd_event"),
+        "string": _table("rocpd_string"),
+    }
 
-    q = (
-        f"SELECT COUNT(*) FROM {region_t} r JOIN {event_t} e ON r.event_id=e.id "
-        f"JOIN {string_t} s ON e.category_id=s.id WHERE s.string=?"
-    )
-    region_count = cur.execute(q, (OMPT_KIND_NAME,)).fetchone()[0]
 
-    q = (
-        f"SELECT COUNT(*) FROM {sample_t} samp JOIN {event_t} e ON samp.event_id=e.id "
-        f"JOIN {string_t} s ON e.category_id=s.id WHERE s.string=?"
-    )
-    sample_count = cur.execute(q, (OMPT_KIND_NAME,)).fetchone()[0]
+def _rocpd_ompt_region_op_counts(cur, tables):
+    """Return Counter[op_name] -> rocpd_region row count for the OMPT category."""
+    rows = cur.execute(
+        f"""
+        SELECT name_s.string, COUNT(*) FROM {tables["region"]} r
+        JOIN {tables["event"]} e ON r.event_id = e.id
+        JOIN {tables["string"]} cat_s ON e.category_id = cat_s.id
+        JOIN {tables["string"]} name_s ON r.name_id = name_s.id
+        WHERE cat_s.string = ?
+        GROUP BY name_s.string
+        """,
+        (OMPT_KIND_NAME,),
+    ).fetchall()
+    return Counter(dict(rows))
 
-    assert (
-        region_count + sample_count > 0
-    ), "rocpd database has no OMPT rows in either region or sample tables"
 
-    js_ompt = json_data["rocprofiler-sdk-tool"]["buffer_records"][OMPT_BUFFER_KEY]
-    # The OMPT runtime hook is owned by the OpenMP runtime and can emit
-    # shutdown callbacks after rocprofiler_stop_context returns, which on
-    # some CI runners results in rocpd/perfetto/OTF2 observing a few more
-    # records than JSON/CSV. The assertion is therefore a superset check
-    # (rocpd row count must be at least the JSON OMPT count) rather than
-    # strict equality.
-    assert region_count + sample_count >= len(js_ompt), (
+def _rocpd_ompt_row_counts(cur, tables):
+    """Return (region_count, sample_count) for the OMPT category."""
+    region_count = cur.execute(
+        f"""
+        SELECT COUNT(*) FROM {tables["region"]} r
+        JOIN {tables["event"]} e ON r.event_id = e.id
+        JOIN {tables["string"]} cat_s ON e.category_id = cat_s.id
+        WHERE cat_s.string = ?
+        """,
+        (OMPT_KIND_NAME,),
+    ).fetchone()[0]
+    sample_count = cur.execute(
+        f"""
+        SELECT COUNT(*) FROM {tables["sample"]} samp
+        JOIN {tables["event"]} e ON samp.event_id = e.id
+        JOIN {tables["string"]} cat_s ON e.category_id = cat_s.id
+        WHERE cat_s.string = ?
+        """,
+        (OMPT_KIND_NAME,),
+    ).fetchone()[0]
+    return region_count, sample_count
+
+
+def test_rocpd_contains_ompt_records(rocpd_conn, json_data):
+    """AC3a/AC6 — verify the rocpd SQLite database contains the OMPT events the
+    JSON output reports, and that the early (JSON) and late (rocpd) snapshots
+    agree on the *content* of the OMPT trace.
+
+    Invariants enforced:
+
+      1. rocpd has OMPT rows.
+      2. rocpd is a row-count superset of JSON (late snapshot >= early snapshot)
+         and the divergence is bounded by ``MAX_LATE_RECORDS``.
+      3. Per-operation counts of the ``omp_target_*`` operations agree between
+         JSON and rocpd (``target_data_op_emi``, ``target_emi``,
+         ``target_submit_emi``). Target events complete before late non-target
+         callbacks, so the early snapshot must already contain the same
+         target_* records the late snapshot does. This is the strongest
+         content-level cross-backend invariant we can enforce without relying
+         on the rocpd correlation_id column (which stores the external, not
+         internal, correlation_id and is 0 for OMPT records).
+    """
+    cur = rocpd_conn.cursor()
+    tables = _rocpd_tables(cur)
+    region_count, sample_count = _rocpd_ompt_row_counts(cur, tables)
+    total = region_count + sample_count
+
+    assert total > 0, "rocpd database has no OMPT rows in either region or sample tables"
+
+    data = json_data["rocprofiler-sdk-tool"]
+    js_ompt = data["buffer_records"][OMPT_BUFFER_KEY]
+
+    # Invariant #2: row-count superset with bounded divergence.
+    assert total >= len(js_ompt), (
         f"rocpd OMPT row count (regions={region_count} + samples={sample_count}"
-        f"={region_count + sample_count}) is fewer than JSON OMPT count "
-        f"({len(js_ompt)}) — records appear to have been dropped from the rocpd backend"
+        f"={total}) is fewer than JSON OMPT count ({len(js_ompt)}) — "
+        f"late snapshot must be a superset of the early snapshot"
     )
+    divergence = total - len(js_ompt)
+    assert divergence < MAX_LATE_RECORDS, (
+        f"rocpd/JSON divergence is {divergence} OMPT records, exceeding the "
+        f"bounded-divergence ceiling ({MAX_LATE_RECORDS}); the OMPT runtime "
+        f"hook may be over-emitting late callbacks"
+    )
+
+    # Invariant #3: target_* per-op counts must match between JSON and rocpd.
+    kind_entry = _get_ompt_kind_record(data)
+    op_names = kind_entry["operations"]
+    js_op_counts = Counter(op_names[r["operation"]] for r in js_ompt)
+    rocpd_op_counts = _rocpd_ompt_region_op_counts(cur, tables)
+
+    target_ops = [op for op in js_op_counts if op.startswith("omp_target")]
+    assert target_ops, "JSON has no omp_target_* OMPT records to cross-check"
+
+    for op in target_ops:
+        assert js_op_counts[op] == rocpd_op_counts.get(op, 0), (
+            f"target-op count mismatch for '{op}': JSON={js_op_counts[op]} "
+            f"rocpd_region={rocpd_op_counts.get(op, 0)}"
+        )
 
 
 def test_stats_csv_contains_ompt(stats_data):
@@ -310,18 +390,16 @@ def test_granular_target_filter_only_target_ops(json_data):
 
 
 def test_otf2_data(otf2_data, json_data):
-    """The OTF2 trace should expose ranged OMPT events under the 'openmp' category.
+    """The OTF2 trace must expose ranged OMPT events under the 'openmp' category.
 
     OTF2 is region-based (Enter/Leave) and cannot faithfully represent
     instantaneous OMPT notifications where start_timestamp == end_timestamp
-    (see generateOTF2.cpp). Such records are intentionally elided from OTF2.
+    (see generateOTF2.cpp); such records are intentionally elided.
 
-    The OMPT runtime hook is owned by the OpenMP runtime and can emit
-    shutdown callbacks after rocprofiler_stop_context returns, which on some
-    CI runners results in OTF2/perfetto/rocpd observing a few more records
-    than JSON/CSV. The assertion is therefore a superset check (OTF2 count
-    must be at least the JSON ranged-record count) rather than strict
-    equality.
+    Like perfetto/rocpd, OTF2 reads from a later snapshot of the OMPT tmp-file
+    buffer (``ompt_output.load_all()`` in tool.cpp) and therefore observes a
+    *strict superset* of the JSON ranged OMPT records, bounded by
+    ``MAX_LATE_RECORDS``.
     """
     otf2_ompt = otf2_data.loc[otf2_data["category"] == "openmp"]
     js_ompt = json_data["rocprofiler-sdk-tool"]["buffer_records"][OMPT_BUFFER_KEY]
@@ -332,6 +410,51 @@ def test_otf2_data(otf2_data, json_data):
         f"OTF2 openmp events ({len(otf2_ompt)}) is fewer than "
         f"ranged JSON OMPT record count ({len(js_ompt_ranged)}); "
         f"total OMPT records in JSON = {len(js_ompt)}"
+    )
+    divergence = len(otf2_ompt) - len(js_ompt_ranged)
+    assert divergence < MAX_LATE_RECORDS, (
+        f"OTF2/JSON-ranged divergence is {divergence} OMPT events, exceeding "
+        f"the bounded-divergence ceiling ({MAX_LATE_RECORDS})"
+    )
+
+
+def test_perfetto_matches_rocpd_count(pftrace_data, rocpd_conn):
+    """Strict cross-backend equality: perfetto's openmp slice count must equal
+    the rocpd OMPT row count (region + sample). Both backends read from the
+    same later snapshot of the OMPT tmp-file buffer in the same
+    ``generate_output(cleanup_mode)`` call, so any divergence between them
+    indicates a regression in one of the two writers.
+    """
+    pf_count = len(pftrace_data.loc[pftrace_data["category"] == "openmp"])
+
+    cur = rocpd_conn.cursor()
+    tables = _rocpd_tables(cur)
+    region_count, sample_count = _rocpd_ompt_row_counts(cur, tables)
+    rocpd_total = region_count + sample_count
+
+    assert pf_count == rocpd_total, (
+        f"perfetto and rocpd disagree on OMPT count: perfetto openmp={pf_count}, "
+        f"rocpd total={rocpd_total} (region={region_count} sample={sample_count}); "
+        f"these two backends share a snapshot and must always match"
+    )
+
+
+def test_otf2_matches_rocpd_region_count(otf2_data, rocpd_conn):
+    """Strict cross-backend equality: OTF2's openmp event count must equal the
+    rocpd OMPT region-table row count. OTF2 emits only ranged events
+    (instantaneous OMPT notifications go to rocpd_sample_* but cannot be
+    represented in OTF2's Enter/Leave model).
+    """
+    otf2_count = len(otf2_data.loc[otf2_data["category"] == "openmp"])
+
+    cur = rocpd_conn.cursor()
+    tables = _rocpd_tables(cur)
+    region_count, _ = _rocpd_ompt_row_counts(cur, tables)
+
+    assert otf2_count == region_count, (
+        f"OTF2 and rocpd-region disagree on ranged OMPT count: "
+        f"OTF2 openmp={otf2_count}, rocpd region={region_count}; "
+        f"these two views of the same snapshot must always match"
     )
 
 
