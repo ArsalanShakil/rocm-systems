@@ -22,6 +22,108 @@
 
 namespace hipFile {
 
+namespace {
+
+    using InternalStatus = BatchOperation::InternalStatus;
+
+    const char *name(hipFileStatus_t status) noexcept
+    {
+        switch (status) {
+            case hipFileWaiting:
+                return "hipFileWaiting";
+            case hipFilePending:
+                return "hipFilePending";
+            case hipFileComplete:
+                return "hipFileComplete";
+            case hipFileCanceled:
+                return "hipFileCanceled";
+            case hipFileInvalid:
+                return "hipFileInvalid";
+            case hipFileTimeout:
+                return "hipFileTimeout";
+            case hipFileFailed:
+                return "hipFileFailed";
+            default:
+                return "unknown hipFileStatus_t";
+        }
+    }
+
+    const char *name(InternalStatus status) noexcept
+    {
+        switch (status) {
+            case InternalStatus::Waiting:
+                return "hipFileWaiting";
+            case InternalStatus::Pending:
+                return "hipFilePending";
+            case InternalStatus::Running:
+                return "hipFileRunning";
+            case InternalStatus::Complete:
+                return "hipFileComplete";
+            case InternalStatus::Canceled:
+                return "hipFileCanceled";
+            case InternalStatus::Invalid:
+                return "hipFileInvalid";
+            case InternalStatus::Timeout:
+                return "hipFileTimeout";
+            case InternalStatus::Failed:
+                return "hipFileFailed";
+            default:
+                return "unknown InternalStatus";
+        }
+    }
+
+    hipFileStatus_t to_public(InternalStatus status) noexcept
+    {
+        switch (status) {
+            case InternalStatus::Waiting:
+                return hipFileWaiting;
+            case InternalStatus::Pending:
+            case InternalStatus::Running:
+                return hipFilePending;
+            case InternalStatus::Complete:
+                return hipFileComplete;
+            case InternalStatus::Canceled:
+                return hipFileCanceled;
+            case InternalStatus::Invalid:
+                return hipFileInvalid;
+            case InternalStatus::Timeout:
+                return hipFileTimeout;
+            case InternalStatus::Failed:
+                return hipFileFailed;
+            default:
+                return hipFileInvalid;
+        }
+    }
+
+    bool is_allowed_transition(InternalStatus from, InternalStatus to) noexcept
+    {
+        switch (from) {
+            case InternalStatus::Waiting:
+                return to == InternalStatus::Pending || to == InternalStatus::Invalid;
+            case InternalStatus::Pending:
+                return to == InternalStatus::Canceled || to == InternalStatus::Running;
+            case InternalStatus::Running:
+                return to == InternalStatus::Complete || to == InternalStatus::Failed ||
+                       to == InternalStatus::Timeout;
+            case InternalStatus::Canceled:
+                return to == InternalStatus::Canceled;
+            case InternalStatus::Complete:
+            case InternalStatus::Failed:
+            case InternalStatus::Invalid:
+            case InternalStatus::Timeout:
+                return false;
+        }
+        return false;
+    }
+
+}
+
+InvalidStateTransition::InvalidStateTransition(hipFileStatus_t from, hipFileStatus_t to)
+    : std::logic_error{std::string{"Invalid batch operation state transition: "} +
+                       status_name(from) + " -> " + status_name(to)}
+{
+}
+
 BatchOperation::BatchOperation(std::unique_ptr<const hipFileIOParams_t> params,
                                std::shared_ptr<IBuffer> _buffer, std::shared_ptr<IFile> _file)
     : io_params{std::move(params)}, buffer{_buffer}, file{_file}
@@ -81,6 +183,74 @@ BatchOperation::BatchOperation(std::unique_ptr<const hipFileIOParams_t> params,
         msg << ". Cookie: " << io_params->cookie;
         throw std::invalid_argument(msg.str());
     }
+}
+
+void
+BatchOperation::transition_to(InternalStatus next, ssize_t next_ret)
+{
+    if (!is_allowed_transition(status, next)) {
+        throw InvalidStateTransition{name(status), name(next)};
+    }
+
+    status = next;
+    ret    = next_ret;
+}
+
+void
+BatchOperation::transition_to(InternalStatus next)
+{
+    if (!is_allowed_transition(status, next)) {
+        throw InvalidStateTransition{name(status), name(next)};
+    }
+
+    status = next;
+}
+
+void
+BatchOperation::mark_pending()
+{
+    std::lock_guard<std::mutex> lock{state_mutex};
+
+    transition_to(InternalStatus::Pending);
+}
+
+void
+BatchOperation::try_cancel()
+{
+    std::lock_guard<std::mutex> lock{state_mutex};
+
+    try {
+        transition_to(InternalStatus::Canceled);
+    }
+    catch (...) {
+    }
+}
+
+hipFileStatus_t
+BatchOperation::get_status() const
+{
+    std::lock_guard<std::mutex> lock{state_mutex};
+    return to_public(status);
+}
+
+ssize_t
+BatchOperation::get_result() const
+{
+    std::lock_guard<std::mutex> lock{state_mutex};
+    return ret;
+}
+
+void
+BatchOperation::record_internal_error()
+{
+    std::lock_guard<std::mutex> lock{state_mutex};
+
+    if (status == InternalStatus::Canceled) {
+        return;
+    }
+
+    status = InternalStatus::Failed;
+    ret    = -hipFileInternalError;
 }
 
 BatchContext::BatchContext(unsigned _capacity) : capacity{_capacity}

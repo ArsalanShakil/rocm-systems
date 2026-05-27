@@ -8,6 +8,7 @@
 #include "hipfile.h"
 
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <stdexcept>
 #include <unordered_map>
@@ -28,6 +29,11 @@ struct InvalidBatchHandle : public std::invalid_argument {
     }
 };
 
+struct InvalidStateTransition : public std::logic_error {
+    InvalidStateTransition(hipFileStatus_t from, hipFileStatus_t to);
+    InvalidStateTransition(const char *from, const char *to);
+};
+
 /// @brief Represents a single IO Request
 class BatchOperation {
 public:
@@ -37,6 +43,24 @@ public:
     /// @param [in] file File corresponding params->fh
     BatchOperation(std::unique_ptr<const hipFileIOParams_t> params, std::shared_ptr<IBuffer> buffer,
                    std::shared_ptr<IFile> file);
+
+    /// @brief Mark the operation as accepted and ready to run.
+    void mark_pending();
+
+    /// @brief Cancel the operation if it is pending.
+    void cancel();
+
+    /// @brief Record an internal execution failure on the operation.
+    void record_internal_error();
+
+    /// @brief Return the current operation status.
+    hipFileStatus_t get_status() const;
+
+    /// @brief Return the operation result.
+    ssize_t get_result() const;
+
+    /// @brief Return whether the operation has reached a terminal status.
+    bool is_terminal() const override;
 
 private:
     /// @brief A copy of the params provided by the application.
@@ -48,6 +72,24 @@ private:
 
     /// @brief A reference to the specified registered File.
     const std::shared_ptr<const IFile> file;
+
+    /// @brief Protects status and ret.
+    mutable std::mutex state_mutex;
+
+    /// @brief Current operation status.
+    InternalStatus status{InternalStatus::Waiting};
+
+    /// @brief Result returned by hipFileRead or hipFileWrite.
+    ssize_t ret{0};
+
+    /// @brief Move to the next operation status. Caller must hold state_mutex.
+    void transition_to(InternalStatus next, ssize_t next_ret);
+
+    /// @brief Move to the next operation status. Caller must hold state_mutex.
+    void transition_to(InternalStatus next);
+
+    /// @brief Return whether an internal status is terminal.
+    static bool is_terminal_status(InternalStatus status) noexcept;
 };
 
 class IBatchContext {
