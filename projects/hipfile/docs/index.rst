@@ -40,6 +40,10 @@ hipFile is a part of the rocm-systems repository. The code can be found at `<htt
 
       * :doc:`Known issues <./known_issues>`
 
+  .. grid-item-card:: Troubleshooting
+
+      * :doc:`Troubleshooting <./troubleshooting>`
+
 To contribute to the documentation, refer to
 `Contributing to ROCm <https://rocm.docs.amd.com/en/latest/contribute/contributing.html>`_.
 

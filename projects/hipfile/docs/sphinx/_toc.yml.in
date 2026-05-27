@@ -30,6 +30,11 @@ subtrees:
   - file: known_issues.rst
     title: Known issues
 
+- caption: Troubleshooting
+  entries:
+  - file: troubleshooting.rst
+    title: Troubleshooting
+
 - caption: API reference
   entries:
   - file: api/errors.rst
