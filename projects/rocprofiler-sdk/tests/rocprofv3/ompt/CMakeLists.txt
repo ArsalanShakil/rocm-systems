@@ -48,13 +48,12 @@ set(ompt-tracing-env
     "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:rocprofiler-sdk::rocprofiler-sdk-shared-library>:$ENV{LD_LIBRARY_PATH}"
     )
 
-# OMPT tracing test
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-tracing
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace --stats -d
-        ${CMAKE_CURRENT_BINARY_DIR}/%tag%-trace -o out --output-format json csv pftrace
-        otf2 rocpd --log-level env --
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace --hip-trace --kernel-trace
+        --stats -d ${ompt-tracing-output-dir} -o out --output-format json csv pftrace otf2
+        rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 240
@@ -73,30 +72,36 @@ rocprofiler_add_integration_validate_test(
          -k
          "not test_granular_target_filter"
          --json-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_results.json
+         ${ompt-tracing-output-dir}/out_results.json
          --otf2-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_results.otf2
+         ${ompt-tracing-output-dir}/out_results.otf2
          --pftrace-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_results.pftrace
+         ${ompt-tracing-output-dir}/out_results.pftrace
          --csv-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_ompt_trace.csv
+         ${ompt-tracing-output-dir}/out_ompt_trace.csv
          --rocpd-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_results.db
+         ${ompt-tracing-output-dir}/out_results.db
          --stats-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace/out_ompt_stats.csv
+         ${ompt-tracing-output-dir}/out_ompt_stats.csv
+         --agent-input
+         ${ompt-tracing-output-dir}/out_agent_info.csv
     DISCOVERY_ARGS ${PYTEST_ARGS} -k "not test_granular_target_filter"
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"
     FIXTURES_REQUIRED rocprofv3-test-ompt-tracing
     DISABLED "${IS_DISABLED}")
 
+# Granular-target test: both OMPT execute tests use the same openmp-target binary so %tag%
+# would collide. Use a literal output directory that matches what the validate test reads
+# from.
+set(ompt-granular-target-output-dir
+    ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-granular-target-trace)
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-granular-target
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=target -d
-        ${CMAKE_CURRENT_BINARY_DIR}/%tag%-trace -o out --output-format json csv
-        --log-level env --
-        $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
+        ${ompt-granular-target-output-dir} -o out --output-format json csv --log-level env
+        -- $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 100
     LABELS "integration-tests;openmp-target"
@@ -110,13 +115,9 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS}
-         -k
-         test_granular_target_filter_only_target_ops
-         --json-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-granular-target-trace/out_results.json
-         --csv-input
-         ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-granular-target-trace/out_ompt_trace.csv
+    ARGS ${PYTEST_ARGS} -k test_granular_target_filter_only_target_ops --json-input
+         ${ompt-granular-target-output-dir}/out_results.json --csv-input
+         ${ompt-granular-target-output-dir}/out_ompt_trace.csv
     DISCOVERY_ARGS ${PYTEST_ARGS} -k test_granular_target_filter_only_target_ops
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"
