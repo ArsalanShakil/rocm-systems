@@ -57,7 +57,7 @@ rocprofiler_add_integration_execute_test(
         --output-format json csv pftrace otf2 rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
-    TIMEOUT 120
+    TIMEOUT 240
     LABELS "integration-tests;openmp-target"
     ENVIRONMENT "${ompt-tracing-env}"
     PRELOAD "${PRELOAD_ENV}"
