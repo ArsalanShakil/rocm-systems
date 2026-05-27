@@ -25,6 +25,11 @@ subtrees:
   - file: stats_collection.rst
     title: Collecting statistics
 
+- caption: Known issues
+  entries:
+  - file: known_issues.rst
+    title: Known issues
+
 - caption: API reference
   entries:
   - file: api/errors.rst

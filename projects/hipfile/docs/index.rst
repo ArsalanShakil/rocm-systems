@@ -36,6 +36,10 @@ hipFile is a part of the rocm-systems repository. The code can be found at `<htt
       * :doc:`RDMA <./api/rdma>`
       * :doc:`Other <./api/misc_api>`
 
+  .. grid-item-card:: Known issues
+
+      * :doc:`Known issues <./known_issues>`
+
 To contribute to the documentation, refer to
 `Contributing to ROCm <https://rocm.docs.amd.com/en/latest/contribute/contributing.html>`_.
 
