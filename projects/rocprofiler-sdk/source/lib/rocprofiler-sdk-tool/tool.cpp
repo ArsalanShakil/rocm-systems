@@ -2501,7 +2501,12 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
         ops.erase(std::unique(ops.begin(), ops.end()), ops.end());
         return ops;
     };
-    auto ompt_ops = resolve_ompt_ops(tool::get_config().ompt_trace_operations);
+    // Only parse the operation filter when OMPT tracing is actually enabled —
+    // otherwise a stray ROCPROF_OMPT_TRACE_OPERATIONS in the environment would
+    // emit spurious "unknown OMPT category" warnings for an unused feature.
+    auto ompt_ops = tool::get_config().ompt_trace
+                        ? resolve_ompt_ops(tool::get_config().ompt_trace_operations)
+                        : std::vector<rocprofiler_tracing_operation_t>{};
 
     for(auto&& itr : {buffer_service_config{tool::get_config().kernel_trace,
                                             ROCPROFILER_BUFFER_TRACING_KERNEL_DISPATCH,

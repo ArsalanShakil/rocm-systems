@@ -173,7 +173,7 @@ typedef enum rocprofiler_callback_tracing_kind_t  // NOLINT(performance-enum-siz
     ROCPROFILER_CALLBACK_TRACING_KERNEL_DISPATCH,    ///< Callbacks for kernel dispatches
     ROCPROFILER_CALLBACK_TRACING_MEMORY_COPY,        ///< @see ::rocprofiler_memory_copy_operation_t
     ROCPROFILER_CALLBACK_TRACING_RCCL_API,           ///< RCCL tracing
-    ROCPROFILER_CALLBACK_TRACING_OMPT,               ///< OMPT tracing
+    ROCPROFILER_CALLBACK_TRACING_OMPT,               ///< @see ::rocprofiler_ompt_operation_t
     ROCPROFILER_CALLBACK_TRACING_MEMORY_ALLOCATION,  ///< @see
                                                      ///< ::rocprofiler_memory_allocation_operation_t
     ROCPROFILER_CALLBACK_TRACING_RUNTIME_INITIALIZATION,  ///< Callback notifying that a runtime
@@ -207,7 +207,7 @@ typedef enum rocprofiler_buffer_tracing_kind_t  // NOLINT(performance-enum-size)
     ROCPROFILER_BUFFER_TRACING_SCRATCH_MEMORY,      ///< Buffer scratch memory reclamation info
     ROCPROFILER_BUFFER_TRACING_CORRELATION_ID_RETIREMENT,  ///< Correlation ID in no longer in use
     ROCPROFILER_BUFFER_TRACING_RCCL_API,                   ///< RCCL tracing
-    ROCPROFILER_BUFFER_TRACING_OMPT,                       ///< OMPT tracing
+    ROCPROFILER_BUFFER_TRACING_OMPT,                       ///< @see ::rocprofiler_ompt_operation_t
     ROCPROFILER_BUFFER_TRACING_MEMORY_ALLOCATION,          ///< @see
                                                    ///< ::rocprofiler_memory_allocation_operation_t
     ROCPROFILER_BUFFER_TRACING_RUNTIME_INITIALIZATION,  ///< Record indicating a runtime library has
@@ -406,10 +406,10 @@ typedef enum rocprofiler_runtime_library_t
     ROCPROFILER_HIP_LIBRARY       = (1 << 2),
     ROCPROFILER_MARKER_LIBRARY    = (1 << 3),
     ROCPROFILER_RCCL_LIBRARY      = (1 << 4),
-    ROCPROFILER_OMPT_LIBRARY      = (1 << 5),
-    ROCPROFILER_ROCDECODE_LIBRARY = (1 << 6),
-    ROCPROFILER_ROCJPEG_LIBRARY   = (1 << 7),
-    ROCPROFILER_LIBRARY_LAST      = ROCPROFILER_ROCJPEG_LIBRARY,
+    ROCPROFILER_ROCDECODE_LIBRARY = (1 << 5),
+    ROCPROFILER_ROCJPEG_LIBRARY   = (1 << 6),
+    ROCPROFILER_OMPT_LIBRARY      = (1 << 7),
+    ROCPROFILER_LIBRARY_LAST      = ROCPROFILER_OMPT_LIBRARY,
 } rocprofiler_runtime_library_t;
 
 /**
@@ -425,7 +425,6 @@ typedef enum rocprofiler_intercept_table_t
     ROCPROFILER_MARKER_CONTROL_TABLE = (1 << 4),
     ROCPROFILER_MARKER_NAME_TABLE    = (1 << 5),
     ROCPROFILER_RCCL_TABLE           = (1 << 6),
-    ROCPROFILER_OMPT_TABLE           = (1 << 7),
     ROCPROFILER_ROCDECODE_TABLE      = (1 << 7),
     ROCPROFILER_ROCJPEG_TABLE        = (1 << 8),
     ROCPROFILER_TABLE_LAST           = ROCPROFILER_ROCJPEG_TABLE,
@@ -441,9 +440,9 @@ typedef enum rocprofiler_runtime_initialization_operation_t  // NOLINT(performan
     ROCPROFILER_RUNTIME_INITIALIZATION_HIP,        ///< Application loaded HIP runtime
     ROCPROFILER_RUNTIME_INITIALIZATION_MARKER,     ///< Application loaded Marker (ROCTx) runtime
     ROCPROFILER_RUNTIME_INITIALIZATION_RCCL,       ///< Application loaded RCCL runtime
-    ROCPROFILER_RUNTIME_INITIALIZATION_OMPT,       ///< Application loaded OMPT runtime
     ROCPROFILER_RUNTIME_INITIALIZATION_ROCDECODE,  ///< Application loaded rocDecoder runtime
     ROCPROFILER_RUNTIME_INITIALIZATION_ROCJPEG,    ///< Application loaded rocJPEG runtime
+    ROCPROFILER_RUNTIME_INITIALIZATION_OMPT,       ///< Application loaded OMPT runtime
     ROCPROFILER_RUNTIME_INITIALIZATION_LAST,
 } rocprofiler_runtime_initialization_operation_t;
 

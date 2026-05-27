@@ -584,11 +584,22 @@ write_otf2(const output_config&                                          cfg,
                    itr.operation == ROCPROFILER_MARKER_CORE_RANGE_API_ID_roctxMarkA)
                     continue;
 
-                if(itr.start_timestamp == itr.end_timestamp) continue;
-
                 using value_type = common::mpl::unqualified_type_t<decltype(itr)>;
-                auto name        = buffer_names.at(itr.kind, itr.operation);
-                auto paradigm    = OTF2_PARADIGM_HIP;
+
+                // OTF2 is region-based (Enter/Leave); OMPT emits instantaneous
+                // notifications (e.g. thread_begin, device_initialize, dispatch)
+                // where start == end. Elide them here rather than emit a
+                // degenerate zero-width region. Other tracing domains
+                // (HIP/HSA/marker/RCCL/rocJPEG) do not legitimately produce
+                // start == end records, so we restrict this skip to OMPT.
+                if constexpr(std::is_same<value_type,
+                                          rocprofiler_buffer_tracing_ompt_record_t>::value)
+                {
+                    if(itr.start_timestamp == itr.end_timestamp) continue;
+                }
+
+                auto name     = buffer_names.at(itr.kind, itr.operation);
+                auto paradigm = OTF2_PARADIGM_HIP;
                 if constexpr(std::is_same<value_type,
                                           rocprofiler_buffer_tracing_marker_api_record_t>::value)
                 {
