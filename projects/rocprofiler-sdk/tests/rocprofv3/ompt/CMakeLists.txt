@@ -48,6 +48,8 @@ set(ompt-tracing-env
     "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:rocprofiler-sdk::rocprofiler-sdk-shared-library>:$ENV{LD_LIBRARY_PATH}"
     )
 
+set(ompt-tracing-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-trace)
+
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-tracing
     COMMAND
