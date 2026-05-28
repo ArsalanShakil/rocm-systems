@@ -8,9 +8,11 @@
 
 #include <atomic>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <random>
+#include <sys/resource.h>
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
@@ -102,6 +104,92 @@ inline void expectFullyUntracked(const ncclMemManager* m, ncclMemType_t mt)
     EXPECT_EQ(totalCounter(m, mt), 0u);
     EXPECT_EQ(m->numEntries, 0);
     EXPECT_EQ(m->entries, nullptr);
+}
+
+// Diagnostic dump invoked right before each real HIP allocation in
+// MemManagerRealMem.*. Tells us whether a tiny hipMalloc/hipMemCreate failure
+// is real GPU OOM (noisy neighbour, leaked previous run) or an unexpected
+// runtime reject (HIP bug). Writes to stdout AND stderr because the runner
+// (ProcessIsolatedTestRunner) captures stdout first then stderr in the parent,
+// so stdout dump lands right before the gtest failure line in CI logs.
+inline void logHipDiag(const char* where)
+{
+    int        dev    = -1;
+    hipError_t devErr = hipGetDevice(&dev);
+
+    int        devCount = -1;
+    hipError_t cntErr   = hipGetDeviceCount(&devCount);
+
+    size_t     freeMem = 0;
+    size_t     totalMem = 0;
+    hipError_t infoErr = hipMemGetInfo(&freeMem, &totalMem);
+
+    int rtVer  = 0;
+    int drvVer = 0;
+    (void)hipRuntimeGetVersion(&rtVer);
+    (void)hipDriverGetVersion(&drvVer);
+
+    hipDeviceProp_t prop    = {};
+    hipError_t      propErr = (dev >= 0) ? hipGetDeviceProperties(&prop, dev)
+                                         : hipErrorInvalidValue;
+
+    auto envOrUnset = [](const char* name) -> const char* {
+        const char* v = getenv(name);
+        return v ? v : "<unset>";
+    };
+
+    rlimit asLim     = {};
+    rlimit lockLim   = {};
+    getrlimit(RLIMIT_AS, &asLim);
+    getrlimit(RLIMIT_MEMLOCK, &lockLim);
+
+    char buf[2048];
+    int n = snprintf(buf, sizeof(buf),
+            "[ MEM DIAG ] %s\n"
+            "             pid=%d hip_rt=%d hip_drv=%d devCount=%d(err=%d) "
+            "dev=%d(err=%d) arch=%s(err=%d)\n"
+            "             hipMemGetInfo: err=%d free=%zu (%.2f GiB) "
+            "total=%zu (%.2f GiB)\n"
+            "             rlimit: AS cur=%zu max=%zu MEMLOCK cur=%zu max=%zu\n"
+            "             env: HIP_VISIBLE_DEVICES=%s ROCR_VISIBLE_DEVICES=%s "
+            "AMD_VISIBLE_DEVICES=%s\n"
+            "             env: HSA_NO_SCRATCH_RECLAIM=%s HSA_ENABLE_SDMA=%s "
+            "GPU_MAX_HEAP_SIZE=%s GPU_MAX_ALLOC_PERCENT=%s\n",
+            where,
+            static_cast<int>(getpid()), rtVer, drvVer,
+            devCount, static_cast<int>(cntErr),
+            dev, static_cast<int>(devErr),
+            (propErr == hipSuccess ? prop.gcnArchName : "?"),
+            static_cast<int>(propErr),
+            static_cast<int>(infoErr),
+            freeMem,  freeMem  / (1024.0 * 1024.0 * 1024.0),
+            totalMem, totalMem / (1024.0 * 1024.0 * 1024.0),
+            static_cast<size_t>(asLim.rlim_cur),
+            static_cast<size_t>(asLim.rlim_max),
+            static_cast<size_t>(lockLim.rlim_cur),
+            static_cast<size_t>(lockLim.rlim_max),
+            envOrUnset("HIP_VISIBLE_DEVICES"),
+            envOrUnset("ROCR_VISIBLE_DEVICES"),
+            envOrUnset("AMD_VISIBLE_DEVICES"),
+            envOrUnset("HSA_NO_SCRATCH_RECLAIM"),
+            envOrUnset("HSA_ENABLE_SDMA"),
+            envOrUnset("GPU_MAX_HEAP_SIZE"),
+            envOrUnset("GPU_MAX_ALLOC_PERCENT"));
+    (void)n;
+
+    fputs(buf, stdout);
+    fflush(stdout);
+    fputs(buf, stderr);
+    fflush(stderr);
+
+    // Also drop a per-process file so the diag survives even when CI pipes
+    // truncate or interleave stdout/stderr. Picked up via `cat /tmp/rccl_mem_diag_*`.
+    char path[128];
+    snprintf(path, sizeof(path), "/tmp/rccl_mem_diag_%d.log", static_cast<int>(getpid()));
+    if(FILE* fp = fopen(path, "a")) {
+        fputs(buf, fp);
+        fclose(fp);
+    }
 }
 } // namespace
 
@@ -750,6 +838,7 @@ TEST(MemManagerRealMem, Track_RealHipMalloc_Scratch)
 
         constexpr size_t kSize = 4096;
         void*            p     = nullptr;
+        logHipDiag("Track_RealHipMalloc_Scratch: before hipMalloc(4096)");
         ASSERT_EQ(hipMalloc(&p, kSize), hipSuccess);
         ASSERT_NE(p, nullptr);
 
@@ -785,6 +874,7 @@ TEST(MemManagerRealMem, Track_RealHipMalloc_Offload)
 
         constexpr size_t kSize = 16384;
         void*            p     = nullptr;
+        logHipDiag("Track_RealHipMalloc_Offload: before hipMalloc(16384)");
         ASSERT_EQ(hipMalloc(&p, kSize), hipSuccess);
 
         ASSERT_EQ(ncclMemTrack(comm->memManager, p, kSize, fakeHandle(), kFakeHandleType,
@@ -816,6 +906,7 @@ TEST(MemManagerRealMem, Track_RealHipMalloc_MultipleEntries)
         constexpr size_t kSize    = 1024;
         void*            ptrs[kN] = {};
 
+        logHipDiag("Track_RealHipMalloc_MultipleEntries: before 4x hipMalloc(1024)");
         for(int i = 0; i < kN; ++i) {
             ASSERT_EQ(hipMalloc(&ptrs[i], kSize), hipSuccess);
             ASSERT_EQ(ncclMemTrack(comm->memManager, ptrs[i], kSize, fakeHandle(),
@@ -911,6 +1002,7 @@ inline void AllocateVmmPosixFd(int dev, size_t requestedSize, VmmPosixAllocation
     size_t size = ((requestedSize + granularity - 1) / granularity) * granularity;
 
     hipMemGenericAllocationHandle_t handle = 0;
+    logHipDiag("AllocateVmmPosixFd: before hipMemCreate(POSIX_FD)");
     ASSERT_EQ(hipMemCreate(&handle, size, &prop, 0), hipSuccess);
 
     hipDeviceptr_t pdev = 0;
@@ -1071,6 +1163,7 @@ TEST(MemManagerRealMem, Untrack_FreesCpuBackup)
 
         // Simulate ncclCommSuspend attaching a host-side backup buffer.
         char* backup = nullptr;
+        logHipDiag("Untrack_FreesCpuBackup: before ncclCudaHostCalloc(4096)");
         ASSERT_EQ(ncclCudaHostCalloc(&backup, kSize), ncclSuccess);
         ASSERT_NE(backup, nullptr);
         comm->memManager->entries->cpuBackup = backup;
@@ -1138,6 +1231,7 @@ TEST(MemManagerRealMem, Destroy_FreesPopulatedEntries)
                                hipMemHandleTypePosixFileDescriptor, ncclMemScratch),
                   ncclSuccess);
         char* backup1 = nullptr;
+        logHipDiag("Destroy_FreesPopulatedEntries: before ncclCudaHostCalloc(4096)");
         ASSERT_EQ(ncclCudaHostCalloc(&backup1, kSize), ncclSuccess);
         comm->memManager->entries->cpuBackup = backup1;
         comm->memManager->cpuBackupUsage += kSize;
