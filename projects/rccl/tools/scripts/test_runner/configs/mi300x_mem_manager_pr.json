@@ -1,0 +1,116 @@
+{
+  "system_configurations": {
+    "name": "RCCL-Tests-MI300X-MemManager-PR",
+    "description": "PR-only config: MemManager + Suspend/Resume tests (single-process fixtures + MPI internal API + MPI public API). Use this in PR CI runs instead of the full mi300x_mellanox_ib.json sweep."
+  },
+  "paths": {
+    "workdir": "${WORKDIR:-$PWD}",
+    "rocm_path": "${ROCM_PATH:-/opt/rocm}",
+    "mpi_path": "${MPI_PATH:-/opt/ompi}"
+  },
+  "env_variables": {
+    "HSA_NO_SCRATCH_RECLAIM": "1",
+    "NCCL_SOCKET_IFNAME": "eth0,eth1",
+    "NCCL_IB_HCA": "^mlx5_1,mlx5_6",
+    "NCCL_DEBUG": "INFO"
+  },
+  "build_configuration": {
+    "install_flags": ["--debug", "-t", "-l", "--log-trace", "--enable-code-coverage", "--enable-mpi-tests", "--no_clean"],
+    "cmake_options": "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+    "parallel_jobs": 64
+  },
+  "test_configurations": {
+    "default": {
+      "env_variables": {
+        "NCCL_LAUNCH_MODE": "GROUP"
+      },
+      "rerun_env_variables": {
+        "NCCL_DEBUG": "INFO"
+      }
+    },
+
+    "mem_manager_fixtures_debug": {
+      "extends": "default",
+      "is_gtest": true,
+      "binary": "rccl-UnitTestsFixturesDebug",
+      "num_ranks": 1,
+      "num_nodes": 1,
+      "num_gpus": 8,
+      "timeout": 300,
+      "tests": [
+        {
+          "name": "MemManager_FixturesDebug",
+          "description": "MemManager pure-state, real-HIP, stats and allocator-wiring tests (CUMEM-gated subtests skip when NCCL_CUMEM_ENABLE=0; ROCm 6.4 CI does not enable CUMEM yet)",
+          "test_filter": "MemManagerTest.*:MemManagerRealMem.*:MemManagerStatsTest.*:MemManagerAllocator.*"
+        }
+      ]
+    },
+
+    "mem_manager_mpi": {
+      "extends": "default",
+      "is_gtest": true,
+      "binary": "rccl-UnitTestsMPI",
+      "num_ranks": 2,
+      "num_nodes": 1,
+      "num_gpus": 2,
+      "timeout": 300,
+      "env_variables": {
+        "NCCL_DEBUG": "INFO"
+      },
+      "tests": [
+        {
+          "name": "MemManager_AnyRanks",
+          "description": "Bootstrap-coupled internal Suspend/Resume tests on raw VMM (any rank count)",
+          "test_filter": "MemManagerAnyRanks.*"
+        },
+        {
+          "name": "MemManager_TwoRank",
+          "description": "Two-rank peer export/import internal Suspend/Resume tests on raw VMM",
+          "test_filter": "MemManagerTwoRank.*"
+        }
+      ]
+    },
+
+    "suspend_resume_public_api": {
+      "extends": "default",
+      "is_gtest": true,
+      "binary": "rccl-UnitTestsMPI",
+      "num_ranks": 2,
+      "num_nodes": 1,
+      "num_gpus": 2,
+      "timeout": 300,
+      "env_variables": {
+        "NCCL_DEBUG": "INFO"
+      },
+      "tests": [
+        { "name": "SuspendResume_Basic",                "description": "Basic public ncclCommSuspend/Resume cycle, multi-cycle, barrier sync",      "test_filter": "SuspendResumeBasic.*" },
+        { "name": "SuspendResume_MemStats",             "description": "ncclCommMemStats before/after Suspend; Total = Persist + Suspend conservation", "test_filter": "SuspendResumeMemStats.*" },
+        { "name": "SuspendResume_CollectiveIntegrity",  "description": "AllReduce/P2p auto-mark and rebuild after Suspend/Resume",                  "test_filter": "SuspendResumeCollectiveIntegrity.*" },
+        { "name": "SuspendResume_Lifecycle",            "description": "ncclCommDestroy on suspended communicator",                                  "test_filter": "SuspendResumeLifecycle.*" },
+        { "name": "SuspendResume_Group",                "description": "Atomic Suspend/Resume inside ncclGroupStart/End",                            "test_filter": "SuspendResumeGroup.*" },
+        { "name": "SuspendResume_ArgValidation",        "description": "Argument validation: zero/unknown flags, double-Suspend/Resume",            "test_filter": "SuspendResumeArgValidation.*" },
+        { "name": "SuspendResume_MemStatsValidation",   "description": "ncclCommMemStats argument validation",                                       "test_filter": "SuspendResumeMemStatsValidation.*" }
+      ]
+    }
+  },
+  "test_suites": [
+    {
+      "name": "MemManager - Fixtures (single-process, Debug build)",
+      "description": "MemManagerTest.* + MemManagerRealMem.* + MemManagerStatsTest.* + MemManagerAllocator.* from rccl-UnitTestsFixturesDebug",
+      "config": "mem_manager_fixtures_debug",
+      "enabled": true
+    },
+    {
+      "name": "MemManager - MPI (Internal API)",
+      "description": "Internal ncclCommMemSuspend/Resume on raw VMM, np=2 (MemManagerAnyRanks + MemManagerTwoRank)",
+      "config": "mem_manager_mpi",
+      "enabled": true
+    },
+    {
+      "name": "Suspend/Resume - Public API",
+      "description": "Public ncclCommSuspend/Resume/MemStats end-to-end (NCCL_CUMEM_ENABLE off on ROCm 6.4 CI; CUMEM-only subtests skip via GTEST_SKIP)",
+      "config": "suspend_resume_public_api",
+      "enabled": true
+    }
+  ]
+}
