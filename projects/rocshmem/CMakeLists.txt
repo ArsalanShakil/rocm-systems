@@ -245,6 +245,8 @@ if (NOT BUILD_TESTS_ONLY)
 
   if (USE_SDMA)
     find_package(hsakmt REQUIRED PATHS /opt/rocm)
+  endif()
+
   if(USE_ROCPROFILER_REGISTER)
     find_package(rocprofiler-register QUIET)
     if(NOT rocprofiler-register_FOUND)
