@@ -41,6 +41,10 @@ mul(T a, T b)
 }
 #pragma omp end declare target
 
+#ifndef ROCPROFILER_OPENMP_TARGET_INNER_ITERS
+#    define ROCPROFILER_OPENMP_TARGET_INNER_ITERS 1
+#endif
+
 template <typename T>
 void
 vmul(T* a, T* b, T* c, int N)
@@ -49,7 +53,7 @@ vmul(T* a, T* b, T* c, int N)
 #pragma omp teams distribute parallel for
     for(int i = 0; i < N; i++)
     {
-        for(int j = 0; j < 100000; ++j)
+        for(int j = 0; j < ROCPROFILER_OPENMP_TARGET_INNER_ITERS; ++j)
             c[i] = mul(a[i], b[i]);
     }
 }
