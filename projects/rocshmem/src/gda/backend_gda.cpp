@@ -624,8 +624,14 @@ void GDABackend::accumulate_ctx_device_stats() {
 }
 
 void GDABackend::accumulate_default_host_ctx_stats() {
-  if (default_host_ctx)
-    globalHostStats.accumulateStats(default_host_ctx->ctxHostStats);
+  globalHostStats.accumulateStats(default_host_ctx->ctxHostStats);
+}
+
+void GDABackend::reset_backend_stats() {
+  for (size_t i = 0; i < envvar::max_num_contexts; i++) {
+    CHECK_HIP(hipMemset(&ctx_array[i].ctxStats, 0, sizeof(ROCStats)));
+  }
+  default_host_ctx->ctxHostStats.resetStats();
 }
 
 
