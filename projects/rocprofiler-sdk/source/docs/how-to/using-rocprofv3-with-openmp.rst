@@ -96,8 +96,7 @@ The preceding files contain detailed profiling information about GPU kernel exec
 Tracing OpenMP runtime events with ``--ompt-trace``
 ====================================================
 
-The flags shown above capture HIP / HSA / kernel-dispatch / memory activity, but they do not record any OpenMP-level structure. To trace OpenMP itself, pass ``--ompt-trace`` (or ``ROCPROF_OMPT_TRACE=1``; it is also enabled implicitly by ``--sys-trace`` and ``--runtime-trace``). 
-This is primarily a host-side tracing facility — it records CPU-side OpenMP execution (thread lifecycle, parallel regions, work-sharing, tasks, sync regions, mutexes, dispatch) even for applications that never offload, and additionally records the host-side target-offload events (``target``, ``target_data_op``, ``target_submit``, ``device_initialize`` / ``device_load`` / ``device_finalize``) for offloading applications.
+The flags shown above capture HIP / HSA / kernel-dispatch / memory activity but not OpenMP-level structure. To trace OpenMP itself, pass ``--ompt-trace`` (or ``ROCPROF_OMPT_TRACE=1``; it is also enabled implicitly by ``--sys-trace`` and ``--runtime-trace``). This is a host-side facility: it records CPU-side OpenMP execution (thread lifecycle, parallel regions, work-sharing, tasks, sync regions, mutexes, dispatch) even for applications that never offload, plus host-side target-offload events (``target``, ``target_data_op``, ``target_submit``, ``device_initialize`` / ``device_load`` / ``device_finalize``) for offloading applications.
 
 .. code-block:: bash
 
@@ -108,25 +107,22 @@ This adds ``<pid>_ompt_trace.csv`` (plus corresponding entries in the JSON / Per
 Filtering by category
 ---------------------
 
-``--ompt-trace`` also accepts a comma-separated list of categories to record only a subset of operations. This is useful when an OMPT-instrumented runtime emits very high event volume (for example, when tracing fine-grained synchronization) and the user only cares about, say, target offload or parallel/task structure.
-
-The flag accepts a space-separated list of categories, matching the
-rocprofv3 house style used by ``--pmc``, ``--output-format``, ``--preload``,
-and similar multi-value tracing options.
+By default ``--ompt-trace`` records every OMPT operation. To cut down on high event volume (for example, fine-grained synchronization), pass a space-separated list of categories (``--ompt-trace <cat1> <cat2> ...``):
 
 .. code-block:: bash
 
-    # All OMPT operations (the default; equivalent to bare --ompt-trace,
-    # --ompt-trace all, or --ompt-trace=all)
+    # All OMPT operations (default; same as bare --ompt-trace or --ompt-trace=all)
     rocprofv3 --ompt-trace -- ./vector_add
 
-    # Only host parallel regions, tasks, and target offload (drops sync/mutex/etc.)
+    # Only host parallel regions, tasks, and target offload
     rocprofv3 --ompt-trace parallel task target -- ./vector_add
 
     # Only target-offload events, correlated with kernel dispatches
     rocprofv3 --ompt-trace target --kernel-trace -- ./vector_add
 
-Recognised categories: ``thread``, ``parallel``, ``task``, ``sync``, ``mutex``, ``target``, ``device``, ``error``, ``all``. Each category resolves to a fixed set of underlying OMPT operations (for example, ``parallel`` covers ``parallel_begin``, ``parallel_end``, ``implicit_task``, ``work``, ``dispatch``, ``reduction``, ``masked``; ``target`` covers ``target_emi``, ``target_data_op_emi``, ``target_submit_emi``). Equivalently, set ``ROCPROF_OMPT_TRACE_OPERATIONS=parallel,task,target`` in the environment — env vars use commas because they are single strings. Unknown tokens passed via the environment variable emit a runtime warning; the CLI rejects them at parse time and points at the space-separated syntax if a comma is found in a token.
+Recognised categories are ``thread``, ``parallel``, ``task``, ``sync``, ``mutex``, ``target``, ``device``, ``error``, and ``all``. Each resolves to a fixed set of OMPT operations (for example, ``parallel`` covers ``parallel_begin``/``parallel_end``/``implicit_task``/``work``/``dispatch``/``reduction``/``masked``; ``target`` covers ``target_emi``/``target_data_op_emi``/``target_submit_emi``). The CLI rejects unknown categories, and comma-separated tokens, at parse time.
+
+Equivalently, set ``ROCPROF_OMPT_TRACE_OPERATIONS=parallel,task,target`` in the environment (env vars use commas because they are single strings). When OMPT tracing is enabled, an unrecognised category in this variable is a fatal error.
 
 .. note::
 

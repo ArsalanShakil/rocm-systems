@@ -2435,11 +2435,6 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
         std::vector<rocprofiler_tracing_operation_t> operations = {};
     };
 
-    // Resolve the comma-separated category list from --ompt-trace (or from
-    // ROCPROF_OMPT_TRACE_OPERATIONS when the env-var path is used) into the
-    // explicit operation IDs that rocprofiler_configure_buffer_tracing_service
-    // expects. Returns an empty vector for the "all operations" case (the SDK
-    // treats num_operations==0 as "enable all").
     auto resolve_ompt_ops = [](const std::string& csv) {
         using ompt_ops_t                 = std::vector<rocprofiler_tracing_operation_t>;
         static const auto category_table = std::unordered_map<std::string_view, ompt_ops_t>{
@@ -2488,12 +2483,9 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
             auto it = category_table.find(tok);
             if(it == category_table.end())
             {
-                // rocprofv3.py validates --ompt-trace=<cat> on the CLI, but the
-                // env-var path (ROCPROF_OMPT_TRACE_OPERATIONS=...) bypasses
-                // that validator — warn so a typo is visible at runtime.
-                ROCP_WARNING << "ignoring unknown OMPT category '" << tok
-                             << "' (from --ompt-trace / ROCPROF_OMPT_TRACE_OPERATIONS)";
-                continue;
+                ROCP_FATAL << "unknown OMPT category '" << tok
+                           << "' in ROCPROF_OMPT_TRACE_OPERATIONS; valid categories: thread, "
+                              "parallel, task, sync, mutex, target, device, error";
             }
             ops.insert(ops.end(), it->second.begin(), it->second.end());
         }

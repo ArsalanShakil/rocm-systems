@@ -497,8 +497,8 @@ write_perfetto(
                                   itr.correlation_id.ancestor);
                 TRACE_EVENT_END(
                     sdk::perfetto_category<sdk::category::openmp>::name, track, itr.end_timestamp);
-                tracing_session->FlushBlocking();
             }
+        tracing_session->FlushBlocking();
 
         for(auto ditr : rocdecode_api_gen)
             for(auto itr : rocdecode_api_gen.get(ditr))

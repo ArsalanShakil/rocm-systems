@@ -391,6 +391,15 @@ class omptTraceArgAction(argparse.Action):
 
         # "all" is the natural superset and is equivalent to no filter
         if "all" in tokens:
+            extra = [t for t in tokens if t != "all"]
+            if extra:
+                warning(
+                    "--ompt-trace: 'all' already selects every category; ignoring "
+                    "additional categor{plural} {extra}".format(
+                        plural="ies" if len(extra) > 1 else "y",
+                        extra=" ".join(extra),
+                    )
+                )
             tokens = []
         setattr(args, self.dest, True)
         # The tool-side env var still uses comma separation (env vars are single
@@ -573,14 +582,13 @@ For attachment profiling of running processes:
         nargs="*",
         type=str,
         required=False,
+        default=None,
         metavar="CATEGORY",
         help=(
-            "For collecting OMPT (OpenMP Tools) Traces. Pass with no value or "
-            "'true'/'all' to collect every OMPT operation (default). Pass one "
-            "or more categories (space-separated, matching the style of --pmc "
-            "and --output-format) to filter, e.g. "
-            "'--ompt-trace parallel task target sync'. Categories: "
-            + " ".join(OMPT_TRACE_CATEGORIES)
+            "For collecting OMPT (OpenMP Tools) Traces. With no value (or "
+            "'true'/'all') collects every OMPT operation. Pass a space-separated "
+            "list of categories to filter, e.g. '--ompt-trace parallel task "
+            "target'. Categories: " + " ".join(OMPT_TRACE_CATEGORIES)
         ),
     )
     add_parser_bool_argument(
