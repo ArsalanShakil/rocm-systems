@@ -10,8 +10,8 @@ exclude: |
     # these projects have their own pre-commit-config.yaml
     | projects/amdsmi/
     | projects/rdc/
-    | projects/rocprofiler-compute/
     | projects/rocm-smi-lib/
+    | projects/rocprofiler-compute/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -38,6 +38,6 @@ repos:
 
   - repo: https://github.com/BlankSpruce/gersemi
     # gersemi replaces cmake-format and cmake-lint
-    rev: 0.22.1
+    rev: 0.25.1
     hooks:
       - id: gersemi
