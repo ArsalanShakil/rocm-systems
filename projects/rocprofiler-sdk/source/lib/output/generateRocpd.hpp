@@ -51,7 +51,8 @@ write_rocpd(
     const generator<tool_buffer_tracing_kfd_record_t>&                      kfd_gen,
     const generator<rocprofiler_buffer_tracing_rccl_api_record_t>&          rccl_api_gen,
     const generator<rocprofiler_buffer_tracing_rocdecode_api_ext_record_t>& rocdecode_api_gen,
-    const generator<tool_counter_record_t>&                                 counter_collection_gen);
+    const generator<tool_counter_record_t>&                                 counter_collection_gen,
+    const generator<rocprofiler_buffer_tracing_graph_launch_record_t>&      graph_launch_gen);
 
 // used in schema generation
 struct argument_info
