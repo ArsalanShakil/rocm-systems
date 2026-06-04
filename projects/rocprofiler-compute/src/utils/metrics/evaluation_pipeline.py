@@ -75,7 +75,7 @@ def create_sys_vars(sys_info: pd.Series) -> dict[str, int | float]:
         ("max_mclk", float, "max_mclk"),
         ("max_sclk", float, "max_sclk"),
         ("max_waves_per_cu", int, "max_waves_per_cu"),
-        ("num_hbm_channels", float, "num_hbm_channels"),
+        ("num_memory_channels", float, "num_memory_channels"),
         ("num_xcd", int, "num_xcd"),
         ("wave_size", int, "wave_size"),
     ]

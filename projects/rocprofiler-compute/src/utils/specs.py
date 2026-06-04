@@ -43,6 +43,27 @@ VERSION_LOC: list[str] = [
     "version-utils",
 ]
 
+# GPU architectures that are APUs (integrated graphics, no HBM, no XCDs,
+# no compute/memory partitioning).  Add new APU arch prefixes here.
+_APU_ARCH_PREFIXES: tuple[str, ...] = ("gfx115",)
+
+# Fields that are not applicable to APU architectures and should be hidden.
+_APU_HIDDEN_FIELDS: frozenset[str] = frozenset({
+    "compute_partition",
+    "memory_partition",
+    "num_xcd",
+})
+
+
+def is_apu_arch(gpu_arch: Optional[str]) -> bool:
+    """Return True if *gpu_arch* identifies an APU (e.g. gfx115x Strix Halo).
+
+    APUs have no HBM, no compute/memory partitioning, and no XCDs.
+    """
+    if not gpu_arch:
+        return False
+    return any(gpu_arch.startswith(prefix) for prefix in _APU_ARCH_PREFIXES)
+
 
 def run(cmd: list[str]) -> Optional[str]:
     """Run a command and return stdout, aborting on execution failures."""
@@ -157,6 +178,14 @@ def generate_machine_specs(
             sysinfo_norm = dict(sysinfo)
             gpu_arch = sysinfo_norm.get("gpu_arch")
             sysinfo_norm["gpu_arch"] = {"gfx1152": "gfx1151"}.get(gpu_arch, gpu_arch)
+            # Backward compat: rename legacy num_hbm_channels → num_memory_channels
+            if "num_hbm_channels" in sysinfo_norm and "num_memory_channels" not in sysinfo_norm:
+                sysinfo_norm["num_memory_channels"] = sysinfo_norm.pop("num_hbm_channels")
+                console_warning(
+                    "Loaded sysinfo contains legacy field 'num_hbm_channels'. "
+                    "It has been automatically remapped to 'num_memory_channels'. "
+                    "Re-profiling is recommended to update the stored sysinfo."
+                )
             return MachineSpecs(**sysinfo_norm)
         except KeyError:
             console_error(
@@ -245,7 +274,11 @@ def generate_machine_specs(
         specs.l2_banks,
         specs.compute_partition,
     )
-    specs.num_hbm_channels = str(specs.get_hbm_channels())
+    # Only compute memory channels when the SoC class has not already populated
+    # num_memory_channels (e.g. gfx1151_soc sets it directly from the LPDDR5X
+    # channel count; MI300 derives it from the NPS memory partition mode).
+    if specs.num_memory_channels is None:
+        specs.num_memory_channels = str(specs.get_memory_channels())
 
     specs.num_dies = mi_gpu_specs.get_num_dies(specs.gpu_arch, specs.gpu_model)
 
@@ -777,12 +810,29 @@ class MachineSpecs:
             "show_in_table": True,
         },
     )
-    num_hbm_channels: Optional[str] = field(
+    num_memory_channels: Optional[str] = field(
         default=None,
         metadata={
-            "doc": "Number of HBM channels",
-            "name": "HBM channels",
+            "doc": (
+                "The number of DRAM memory channels on the accelerators/GPUs in "
+                "the system. For HBM-based GPUs (e.g., MI series) this is the "
+                "number of HBM channels; for LPDDR5X-based APUs (e.g., gfx1151 "
+                "Strix Halo) this is the number of LPDDR5X channels."
+            ),
+            "name": "Memory Channels",
             "show_in_table": True,
+        },
+    )
+    num_gl1c: Optional[str] = field(
+        default=None,
+        metadata={
+            "doc": (
+                "The number of GL1 caches (Shader Arrays) on the GPU. "
+                "On RDNA 3.5 (gfx115x) there are 4 CUs per Shader Array. "
+                "Used for GL1 bandwidth ceiling calculations in analysis configs."
+            ),
+            "name": "Num GL1 Caches",
+            "show_in_table": False,
         },
     )
     num_dies: Optional[int] = field(
@@ -804,7 +854,14 @@ class MachineSpecs:
         },
     )
 
-    def get_hbm_channels(self) -> Optional[str]:
+    def get_memory_channels(self) -> Optional[str]:
+        """Return the number of DRAM memory channels.
+
+        For MI300-series GPUs the channel count depends on the NPS memory
+        partition mode. For other GPUs (including APUs) the SoC class is
+        expected to have already populated ``num_memory_channels`` directly;
+        this fallback returns ``total_l2_chan`` when no partition is active.
+        """
         if self.memory_partition and self.memory_partition.lower().startswith("nps"):
             hbmchannels = 128
             if self.memory_partition.lower() == "nps4":
@@ -819,13 +876,24 @@ class MachineSpecs:
         """Return class members as a dictionary."""
         data: dict[str, Any] = {}
         missing_required_fields: list[str] = []
+        _is_apu = is_apu_arch(self.gpu_arch)
 
         for class_field in fields(self):
             if not class_field.metadata.get("show_in_table", True):
                 continue
 
             name = class_field.name
+
+            # Hide APU-incompatible fields for APU architectures
+            if _is_apu and name in _APU_HIDDEN_FIELDS:
+                continue
+
             value = getattr(self, name)
+
+            # Format Chip ID as hexadecimal for display
+            if name == "gpu_chip_id" and isinstance(value, str) and value.isdigit():
+                value = f"0x{int(value):04X}"
+
             data[name] = value
 
             # Check for missing required fields
@@ -852,11 +920,19 @@ class MachineSpecs:
         has_description = False
         has_unit = False
 
+        _is_apu = is_apu_arch(self.gpu_arch)
+
         for class_field in fields(self):
             name = class_field.name
             if class_field.metadata.get("show_in_table", True):
+                # Hide APU-incompatible fields for APU architectures
+                if _is_apu and name in _APU_HIDDEN_FIELDS:
+                    continue
                 _data: dict[str, Any] = {}
                 value = getattr(self, name)
+                # Format Chip ID as hexadecimal for display
+                if name == "gpu_chip_id" and isinstance(value, str) and value.isdigit():
+                    value = f"0x{int(value):04X}"
                 if class_field.metadata:
                     # check out of table before any re-naming for pretty-printing
                     if (
