@@ -38,6 +38,7 @@ void flat_calculate_addresses(const FlatInst &inst, amdgpu::Wavefront &wf, Vecto
   uint64_t exec = wf.exec();
   d.lane_mask = exec;
   d.exec_mask = exec;
+  d.wf_size = wf.wf_size();
 
   // Compute signed 13-bit offset for GLOBAL/SCRATCH, unsigned 12-bit for FLAT.
   int64_t offset;
@@ -49,7 +50,7 @@ void flat_calculate_addresses(const FlatInst &inst, amdgpu::Wavefront &wf, Vecto
   }
 
   if (inst.seg == 1) {
-    // SCRATCH: address = scratch_base + VGPR[lane] (32-bit) + saddr + offset.
+    // SCRATCH: per-wave base + per-lane private slice + VGPR offset + saddr + immediate.
     uint64_t scratch_base = wf.scratch_base();
     uint32_t saddr_val = 0;
     if (inst.saddr != 0x7F) {
@@ -61,7 +62,8 @@ void flat_calculate_addresses(const FlatInst &inst, amdgpu::Wavefront &wf, Vecto
         continue;
       uint32_t vbase = wf.vgpr_alloc().base + inst.addr;
       uint32_t vaddr = cu.read_vgpr(vbase, lane);
-      d.per_lane_addr[lane] = scratch_base + vaddr + saddr_val + offset;
+      uint64_t lane_base = scratch_base + static_cast<uint64_t>(lane) * wf.scratch_lane_size();
+      d.per_lane_addr[lane] = lane_base + vaddr + saddr_val + offset;
     }
   } else if (inst.seg == 2) {
     // GLOBAL: saddr (64-bit SGPR pair) + VGPR (32-bit) + offset,

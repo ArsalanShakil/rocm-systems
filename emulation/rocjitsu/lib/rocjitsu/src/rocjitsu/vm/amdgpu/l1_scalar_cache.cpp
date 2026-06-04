@@ -5,6 +5,7 @@
 
 #include "rocjitsu/vm/amdgpu/l2_cache.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace rocjitsu {
@@ -39,16 +40,25 @@ void L1ScalarCache::ensure_line(uint64_t addr) {
 void L1ScalarCache::store(uint64_t addr, uint32_t num_dwords, const uint32_t *src) {
   for (uint32_t i = 0; i < num_dwords; ++i) {
     uint64_t ea = addr + i * 4;
-    ensure_line(ea); // read-allocate on miss
-
-    simdojo::CacheTag *tag = nullptr;
-    cache_.lookup(ea, &tag);
-    assert(tag != nullptr && "ensure_line must guarantee hit");
-
     uint8_t buf[4];
     std::memcpy(buf, &src[i], 4);
-    cache_.write_line(ea, buf, CacheStore::line_offset(ea), 4);
-    tag->dirty = true;
+    uint32_t copied = 0;
+    while (copied < sizeof(buf)) {
+      const uint64_t chunk_addr = ea + copied;
+      const uint32_t line_offset = CacheStore::line_offset(chunk_addr);
+      const uint32_t chunk =
+          std::min<uint32_t>(sizeof(buf) - copied, CacheStore::LINE_SIZE - line_offset);
+
+      ensure_line(chunk_addr); // read-allocate on miss
+
+      simdojo::CacheTag *tag = nullptr;
+      cache_.lookup(chunk_addr, &tag);
+      assert(tag != nullptr && "ensure_line must guarantee hit");
+
+      cache_.write_line(chunk_addr, buf + copied, line_offset, chunk);
+      tag->dirty = true;
+      copied += chunk;
+    }
   }
 }
 
@@ -62,11 +72,32 @@ void L1ScalarCache::writeback_all() {
 void L1ScalarCache::load(uint64_t addr, uint32_t num_dwords, uint32_t *dst) {
   for (uint32_t i = 0; i < num_dwords; ++i) {
     uint64_t ea = addr + i * 4;
+    uint8_t buf[4]{};
+    uint32_t copied = 0;
+    while (copied < sizeof(buf)) {
+      const uint64_t chunk_addr = ea + copied;
+      const uint32_t line_offset = CacheStore::line_offset(chunk_addr);
+      const uint32_t chunk =
+          std::min<uint32_t>(sizeof(buf) - copied, CacheStore::LINE_SIZE - line_offset);
+
+      ensure_line(chunk_addr);
+      cache_.read_line(chunk_addr, buf + copied, line_offset, chunk);
+      copied += chunk;
+    }
+    std::memcpy(&dst[i], buf, 4);
+  }
+}
+
+void L1ScalarCache::load_bytes(uint64_t addr, uint32_t num_bytes, uint8_t *dst) {
+  uint32_t copied = 0;
+  while (copied < num_bytes) {
+    uint64_t ea = addr + copied;
     ensure_line(ea);
 
-    uint8_t buf[4]{};
-    cache_.read_line(ea, buf, CacheStore::line_offset(ea), 4);
-    std::memcpy(&dst[i], buf, 4);
+    uint32_t line_offset = CacheStore::line_offset(ea);
+    uint32_t chunk = std::min(num_bytes - copied, CacheStore::LINE_SIZE - line_offset);
+    cache_.read_line(ea, dst + copied, line_offset, chunk);
+    copied += chunk;
   }
 }
 

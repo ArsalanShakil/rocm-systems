@@ -20,6 +20,7 @@ set(RJ_OBJECT_LIBS
     rocjitsu_isa_rdna3
     rocjitsu_isa_rdna3_5
     rocjitsu_isa_rdna4
+    rocjitsu_isa_gfx1250
     rocjitsu_isa_risc_v
     simdojo
     rocjitsu_vm
@@ -37,6 +38,7 @@ add_executable(
     config_test.cpp
     matmul_test.cpp
     vector_add_test.cpp
+    gfx1250_sim_test.cpp
     simdojo_sim_test.cpp
     simulated_driver_test.cpp
     decode_smoke_test.cpp

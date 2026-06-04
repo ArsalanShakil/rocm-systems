@@ -288,6 +288,12 @@ int SimulatedDriver::close() {
       }
     }
     allocations_.clear();
+    for (auto &[host_ptr, alloc] : retained_user_va_mappings_) {
+      (void)host_ptr;
+      if (mem)
+        mem->unmap_host_pages(alloc.gpu_va, alloc.size);
+    }
+    retained_user_va_mappings_.clear();
   }
 
   if (doorbell_page_ && doorbell_page_size_)
@@ -535,6 +541,7 @@ void *SimulatedDriver::mmap(void *addr, size_t length, int prot, int flags, off_
   }
 
   alloc.host_ptr = host_ptr;
+  retained_user_va_mappings_.erase(host_ptr);
 
   util::Logger::vm([&](auto &os) {
     os << std::format("mmap: gpu_va={:#x} host_ptr={:#x} size={} flags={:#x}"
@@ -579,6 +586,15 @@ int SimulatedDriver::munmap(void *addr, size_t length) {
       alloc.host_ptr = nullptr;
       return 0;
     }
+  }
+  auto retained_it = retained_user_va_mappings_.find(addr);
+  if (retained_it != retained_user_va_mappings_.end()) {
+    const auto alloc = retained_it->second;
+    if (auto *mem = soc_.memory())
+      mem->unmap_host_pages(alloc.gpu_va, alloc.size);
+    retained_user_va_mappings_.erase(retained_it);
+    syscall(SYS_munmap, addr, length);
+    return 0;
   }
   return -ENOENT;
 }
@@ -680,13 +696,13 @@ int SimulatedDriver::free_memory_ioctl(void *arg) {
         imported_dmabufs_.erase(dmabuf_it);
       }
     }
-    // For FMM (user_va) allocations, keep the host-page mapping alive until
-    // the process actually munmaps the VA. ROCR's caching allocator and
-    // PyTorch's block pool reuse freed handles without unmapping, so dropping
-    // the mapping here causes the GPU to read zeros on reuse.
-    if (alloc.host_ptr && !alloc.user_va) {
-      if (auto *mem = soc_.memory())
+    if (alloc.host_ptr) {
+      const bool fmm_user_va = alloc.user_va && !(alloc.flags & KFD_IOC_ALLOC_MEM_FLAGS_USERPTR);
+      if (fmm_user_va) {
+        retained_user_va_mappings_[alloc.host_ptr] = alloc;
+      } else if (auto *mem = soc_.memory()) {
         mem->unmap_host_pages(alloc.gpu_va, alloc.size);
+      }
     }
     allocations_.erase(it);
   }
@@ -922,8 +938,52 @@ int SimulatedDriver::svm_ioctl(void *arg) {
   if (args->op == KFD_IOCTL_SVM_OP_SET_ATTR) {
     SvmRange range{};
     range.size = args->size;
+    bool map_for_gpu = false;
+    bool unmap_for_gpu = false;
     for (uint32_t i = 0; i < args->nattr; ++i)
       range.attributes[attrs[i].type] = attrs[i].value;
+
+    for (uint32_t i = 0; i < args->nattr; ++i) {
+      switch (attrs[i].type) {
+      case KFD_IOCTL_SVM_ATTR_ACCESS:
+      case KFD_IOCTL_SVM_ATTR_ACCESS_IN_PLACE:
+        map_for_gpu = true;
+        break;
+      case KFD_IOCTL_SVM_ATTR_NO_ACCESS:
+        if (attrs[i].value == gpu_id_ || attrs[i].value == 0)
+          unmap_for_gpu = true;
+        break;
+      case KFD_IOCTL_SVM_ATTR_PREFETCH_LOC:
+        if (attrs[i].value == gpu_id_ || attrs[i].value == KFD_IOCTL_SVM_LOCATION_SYSMEM)
+          map_for_gpu = true;
+        break;
+      case KFD_IOCTL_SVM_ATTR_SET_FLAGS:
+        if (attrs[i].value & KFD_IOCTL_SVM_FLAG_GPU_ALWAYS_MAPPED)
+          map_for_gpu = true;
+        break;
+      default:
+        break;
+      }
+    }
+
+    constexpr uint64_t kPageMask = 0xFFFULL;
+    const uint64_t map_start = args->start_addr & ~kPageMask;
+    const uint64_t map_end = (args->start_addr + args->size + kPageMask) & ~kPageMask;
+    const uint64_t map_size = map_end - map_start;
+    if (map_size != 0) {
+      if (unmap_for_gpu) {
+        if (auto *mem = soc_.memory())
+          mem->unmap_host_pages(map_start, map_size);
+      } else if (map_for_gpu) {
+        void *host_ptr = reinterpret_cast<void *>(map_start);
+        long rc = syscall(SYS_mprotect, host_ptr, map_size, PROT_READ | PROT_WRITE);
+        if (rc == 0) {
+          if (auto *mem = soc_.memory())
+            mem->map_host_pages(map_start, host_ptr, map_size);
+        }
+      }
+    }
+
     svm_ranges_[args->start_addr] = std::move(range);
     return 0;
   }

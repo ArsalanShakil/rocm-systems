@@ -147,6 +147,8 @@ private:
 
   std::mutex alloc_mutex_;
   std::unordered_map<uint64_t, GpuAllocation> allocations_;
+  // FMM user-VA mappings outlive their KFD handles until userspace munmaps the VA.
+  std::unordered_map<void *, GpuAllocation> retained_user_va_mappings_;
   uint64_t next_handle_ = 1;
   uint64_t next_gpu_va_ = 0x100000000ULL;
 

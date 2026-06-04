@@ -6,8 +6,10 @@
 #include "rocjitsu/vm/amdgpu/l2_cache.h"
 #include "util/log.h"
 
+#include <algorithm>
 #include <bit>
 #include <cassert>
+#include <cstring>
 
 namespace rocjitsu {
 namespace amdgpu {
@@ -35,15 +37,22 @@ void L1VectorCache::read_bytes(uint64_t addr, uint8_t *dst, uint32_t size, Mtype
     return;
   }
 
-  if (mtype == Mtype::CC) {
-    // SC0/GLC: invalidate stale L1 line to force refetch from L2.
-    // On real hardware, coherently-cacheable loads re-validate against L2
-    // even on L1 hit, ensuring inter-CU stores are visible.
-    cache_.invalidate(addr);
-  }
+  uint32_t copied = 0;
+  while (copied < size) {
+    const uint64_t ea = addr + copied;
+    const uint32_t line_offset = CacheStore::line_offset(ea);
+    const uint32_t chunk = std::min(size - copied, LINE_SIZE - line_offset);
 
-  ensure_line(addr);
-  cache_.read_line(addr, dst, CacheStore::line_offset(addr), size);
+    // Functional execution can schedule dependent dispatches on different CUs or
+    // XCDs without modeling global cache probes. Stores are write-through below,
+    // so backing memory is authoritative; force each vector load to refill through
+    // L2 instead of reusing a clean line that may predate another CU's store.
+    cache_.invalidate(ea);
+
+    ensure_line(ea);
+    cache_.read_line(ea, dst + copied, line_offset, chunk);
+    copied += chunk;
+  }
 }
 
 void L1VectorCache::write_bytes(uint64_t addr, const uint8_t *src, uint32_t size, Mtype mtype,
@@ -68,23 +77,31 @@ void L1VectorCache::write_bytes(uint64_t addr, const uint8_t *src, uint32_t size
     return;
   }
 
-  ensure_line(addr);
-  cache_.write_line(addr, src, CacheStore::line_offset(addr), size);
+  uint32_t copied = 0;
+  while (copied < size) {
+    const uint64_t ea = addr + copied;
+    const uint32_t line_offset = CacheStore::line_offset(ea);
+    const uint32_t chunk = std::min(size - copied, LINE_SIZE - line_offset);
 
-  // Write through to L2 for all cacheable stores. This ensures partial writes
-  // from different CUs sharing the same L2 are properly merged at byte
-  // granularity via L2::write(), rather than full-line replacement via
-  // writeback_line() during L1 eviction/flush.
-  l2_->write(addr, src, size, mtype);
+    ensure_line(ea);
+    cache_.write_line(ea, src + copied, line_offset, chunk);
 
-  simdojo::CacheTag *tag = nullptr;
-  cache_.lookup(addr, &tag);
-  assert(tag != nullptr && "ensure_line must guarantee hit");
+    // Write through to L2 for all cacheable stores. This ensures partial writes
+    // from different CUs sharing the same L2 are properly merged at byte
+    // granularity via L2::write(), rather than full-line replacement via
+    // writeback_line() during L1 eviction/flush.
+    l2_->write(ea, src + copied, chunk, mtype);
 
-  // L1 line stays clean since L2 has the authoritative copy.
-  tag->coherence =
-      (mtype == Mtype::CC) ? simdojo::CoherenceState::SHARED : simdojo::CoherenceState::EXCLUSIVE;
-  tag->dirty = false;
+    simdojo::CacheTag *tag = nullptr;
+    cache_.lookup(ea, &tag);
+    assert(tag != nullptr && "ensure_line must guarantee hit");
+
+    // L1 line stays clean since L2 has the authoritative copy.
+    tag->coherence =
+        (mtype == Mtype::CC) ? simdojo::CoherenceState::SHARED : simdojo::CoherenceState::EXCLUSIVE;
+    tag->dirty = false;
+    copied += chunk;
+  }
 }
 
 void L1VectorCache::load(const uint64_t *addrs, uint64_t lane_mask, uint32_t elem_size,

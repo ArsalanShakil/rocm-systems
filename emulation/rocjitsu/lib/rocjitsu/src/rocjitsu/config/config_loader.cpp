@@ -78,6 +78,18 @@ uint32_t config_u32(const std::unordered_map<std::string, std::string> &cfg, con
   return static_cast<uint32_t>(std::stoul(it->second));
 }
 
+uint32_t default_sgprs_per_wf(rj_code_arch_t arch) {
+  if (arch == ROCJITSU_CODE_ARCH_RDNA4 || arch == ROCJITSU_CODE_ARCH_GFX1250)
+    return 128;
+  return 104;
+}
+
+uint32_t default_vgprs_per_wf(rj_code_arch_t arch) {
+  if (arch == ROCJITSU_CODE_ARCH_GFX1250)
+    return 1024;
+  return 256;
+}
+
 enum class TokType { NUMBER, IDENT, OP2, OP1, LPAREN, RPAREN, END_TOK };
 
 struct Tok {
@@ -426,12 +438,25 @@ std::unordered_map<std::string, FactoryFn> &factories() {
                                 rj_code_arch_t arch,
                                 amdgpu::GpuMemory *) -> std::unique_ptr<simdojo::Component> {
       auto cp = std::make_unique<amdgpu::CommandProcessor>(n);
-      // VGPR granularity: 8 for CDNA3/CDNA4 (GFX940+), 4 for earlier GFX9.
-      uint32_t gran =
-          (arch == ROCJITSU_CODE_ARCH_CDNA3 || arch == ROCJITSU_CODE_ARCH_CDNA4) ? 8 : 4;
+      // Matches llvm/lib/Target/AMDGPU/Utils/AMDGPUBaseInfo.cpp
+      // AMDGPUBaseInfo::getVGPREncodingGranule():
+      // gfx1250 has Feature1024AddressableVGPRs, so Wave32 descriptors encode
+      // VGPR counts in 16-register blocks; other RDNA Wave32 targets use 8.
+      // LLVM's AMDGPULowerVGPREncoding.cpp handles the separate gfx1250
+      // s_set_vgpr_msb high-bank indexing needed to access VGPRs above v255.
+      uint32_t gran = 4;
+      if (arch == ROCJITSU_CODE_ARCH_GFX1250)
+        gran = 16;
+      else if (arch == ROCJITSU_CODE_ARCH_CDNA3 || arch == ROCJITSU_CODE_ARCH_CDNA4 ||
+               arch == ROCJITSU_CODE_ARCH_RDNA1 || arch == ROCJITSU_CODE_ARCH_RDNA2 ||
+               arch == ROCJITSU_CODE_ARCH_RDNA3 || arch == ROCJITSU_CODE_ARCH_RDNA3_5 ||
+               arch == ROCJITSU_CODE_ARCH_RDNA4)
+        gran = 8;
       cp->set_vgpr_granularity(gran);
-      bool packed = (arch == ROCJITSU_CODE_ARCH_CDNA3 || arch == ROCJITSU_CODE_ARCH_CDNA4);
+      bool packed = (arch == ROCJITSU_CODE_ARCH_CDNA3 || arch == ROCJITSU_CODE_ARCH_CDNA4 ||
+                     arch == ROCJITSU_CODE_ARCH_GFX1250);
       cp->set_packed_tid(packed);
+      cp->set_gfx1250_sdma_packets(arch == ROCJITSU_CODE_ARCH_GFX1250);
       return cp;
     };
 
@@ -441,8 +466,8 @@ std::unordered_map<std::string, FactoryFn> &factories() {
       amdgpu::ComputeUnitCore::Config cc{};
       cc.arch = arch;
       cc.num_wf_slots = config_u32(cfg, "num_wf_slots", 10);
-      cc.sgprs_per_wf = config_u32(cfg, "sgprs_per_wf", 104);
-      cc.vgprs_per_wf = config_u32(cfg, "vgprs_per_wf", 256);
+      cc.sgprs_per_wf = config_u32(cfg, "sgprs_per_wf", default_sgprs_per_wf(arch));
+      cc.vgprs_per_wf = config_u32(cfg, "vgprs_per_wf", default_vgprs_per_wf(arch));
       cc.lds_size_kb = config_u32(cfg, "lds_size_kb", 160);
       cc.functional_quantum = config_u32(cfg, "functional_quantum", 0);
       return amdgpu::ComputeUnitCore::create(n, cc, mem, nullptr, mode);
@@ -700,6 +725,8 @@ rj_code_arch_t parse_arch(const std::string &arch_str) {
     return ROCJITSU_CODE_ARCH_RDNA3_5;
   if (arch_str == "rdna4")
     return ROCJITSU_CODE_ARCH_RDNA4;
+  if (arch_str == "gfx1250")
+    return ROCJITSU_CODE_ARCH_GFX1250;
   if (arch_str == "rv32i")
     return ROCJITSU_CODE_ARCH_RV32I;
   if (arch_str == "rv64i")
@@ -727,6 +754,8 @@ const char *arch_to_string(rj_code_arch_t arch) {
     return "rdna3_5";
   case ROCJITSU_CODE_ARCH_RDNA4:
     return "rdna4";
+  case ROCJITSU_CODE_ARCH_GFX1250:
+    return "gfx1250";
   case ROCJITSU_CODE_ARCH_RV32I:
     return "rv32i";
   case ROCJITSU_CODE_ARCH_RV64I:

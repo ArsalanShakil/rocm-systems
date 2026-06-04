@@ -33,6 +33,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             rocjitsu_isa_rdna3
             rocjitsu_isa_rdna3_5
             rocjitsu_isa_rdna4
+            rocjitsu_isa_gfx1250
             rocjitsu_isa_risc_v
             simdojo
             rocjitsu_vm
