@@ -34,10 +34,17 @@ target_sources(
     backend_gda.cpp
     ibv_wrapper.cpp
     gda_team.cpp
-    queue_pair.cpp
     numa_wrapper.cpp
     topology.cpp
 )
+
+if(GDA_GENERIC)
+target_sources(
+  ${PROJECT_NAME}
+  PRIVATE
+    queue_pair_generic.cpp
+)
+endif()
 
 add_subdirectory(mlx5)
 add_subdirectory(bnxt)
