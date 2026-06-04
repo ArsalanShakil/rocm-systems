@@ -1035,8 +1035,12 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   //! Find the number of streams required per device for packet engine mode
   //! This method analyzes segments to determine per-device stream requirements
   void FindStreamsReqPerDevForSegments();
-  //! Pre-compute segment-to-stream-index mapping and same-stream dep flags at instantiate
-  void PrecomputeStreamAssignment();
+  //! Round-robin stream assignment: spreads parallel segments evenly per dependency level
+  void RoundRobinStreamAssignment();
+  //! DFS stream assignment: preserves chain continuity, same algorithm as classic ScheduleOneNode
+  void DFSStreamAssignment();
+  //! Select stream assignment algorithm based on graph complexity
+  void SelectStreamAssignment();
   //! Get the parallel streams map for synchronization before destruction
   const std::unordered_map<int, std::vector<hip::Stream*>>& GetParallelStreams() const {
     return parallel_streams_;

@@ -244,27 +244,8 @@ void Graph::ScheduleOneNode(Node start, int stream_id) {
 // ================================================================================================
 hipError_t Graph::ScheduleNodes() {
   if (use_segment_scheduling_) {
-    // Segment packet scheduling logic
-    hipError_t result = ScheduleNodesIntoBatches();
-
-    // If ScheduleNodesIntoBatches returns hipErrorNotReady, it indicates
-    // a complex graph that would benefit from classic path, so fall back
-    if (result == hipErrorNotReady) {
-      ClPrint(amd::LOG_DETAIL_DEBUG, amd::LOG_CODE,
-              "[hipGraph] Falling back to classic scheduling for complex graph");
-      // Clear any partial segment data that might have been created
-      segments_.clear();
-      node_to_segment_id_.clear();
-      segments_per_level_.clear();
-      max_dependency_level_ = -1;
-      // Disable segment scheduling for this graph permanently
-      use_segment_scheduling_ = false;
-
-      // Continue to classic scheduling logic below
-    } else {
-      // Return success or actual error (not the special fallback indicator)
-      return result;
-    }
+    // Segment path: DFS or round-robin stream assignment selected in SelectStreamAssignment()
+    return ScheduleNodesIntoBatches();
   }
 
   // Classic scheduling logic
@@ -321,27 +302,6 @@ hipError_t Graph::ScheduleNodesIntoBatches() {
     ClPrint(amd::LOG_ERROR, amd::LOG_CODE,
             "[hipGraph] No valid segments created from execution paths");
     return hipErrorInvalidValue;
-  }
-
-  // Check if this is a complex graph that would benefit from classic path
-  // Complex graphs: 16+ segments with average segment length < 8
-  const size_t kSegmentSizeThreshold = 16;
-  const double kAvgSegmentLengthThreshold = 8.0;
-  if (segments_.size() >= kSegmentSizeThreshold && DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING != 2) {
-    size_t total_nodes = 0;
-    for (const auto& segment : segments_) {
-      total_nodes += segment.nodes.size();
-    }
-    double avg_segment_length = static_cast<double>(total_nodes) / segments_.size();
-
-    if (avg_segment_length < kAvgSegmentLengthThreshold) {
-      ClPrint(amd::LOG_INFO, amd::LOG_CODE,
-              "[hipGraph] Complex graph detected: %zu segments, avg length %.2f - "
-              "falling back to classic path for better performance",
-              segments_.size(), avg_segment_length);
-      // Return special status to indicate fallback to classic path
-      return hipErrorNotReady;
-    }
   }
 
   // Resolve segment dependencies and calculate dependency levels
@@ -1104,7 +1064,7 @@ void GraphExec::FindStreamsReqPerDevForSegments() {
 }
 
 // ================================================================================================
-void GraphExec::PrecomputeStreamAssignment() {
+void GraphExec::RoundRobinStreamAssignment() {
   // max_streams_dev_ holds the raw parallelism count per device as computed by
   // FindStreamsReqPerDev[ForSegments]() and capped in Init(). CreateStreams() handles
   // the -1 adjustment for the instantiation device internally, so the value here
@@ -1154,6 +1114,139 @@ void GraphExec::PrecomputeStreamAssignment() {
 }
 
 // ================================================================================================
+// DFS-based stream assignment for segment DAG — same algorithm as classic ScheduleOneNode
+// but operates on segments instead of individual nodes. Linear chains of segments stay
+// on the same stream; branches rotate to a new stream at each leaf.
+void GraphExec::DFSStreamAssignment() {
+  auto getPoolSize = [&](int dev_id) -> int {
+    auto it = max_streams_dev_.find(dev_id);
+    return (it != max_streams_dev_.end() && it->second > 0) ? it->second : 1;
+  };
+
+  // Reset all stream IDs
+  for (auto& seg : segments_) {
+    seg.stream_id = -1;
+  }
+
+  int sid = 0;
+
+  // Find root segments (no dependencies) — these are DFS entry points
+  std::vector<int> roots;
+  for (int i = 0; i < static_cast<int>(segments_.size()); ++i) {
+    if (segments_[i].segment_ids_dependencies.empty()) {
+      roots.push_back(i);
+    }
+  }
+
+  // Stack-based DFS over segment DAG — mirrors ScheduleOneNode exactly
+  std::vector<int> pending;
+  for (int i = static_cast<int>(roots.size()) - 1; i >= 0; --i) {
+    pending.push_back(roots[i]);
+  }
+
+  while (!pending.empty()) {
+    int cur_id = pending.back();
+    pending.pop_back();
+
+    if (cur_id < 0 || cur_id >= static_cast<int>(segments_.size())) continue;
+    auto& cur = segments_[cur_id];
+
+    // Skip if already assigned
+    if (cur.stream_id != -1) continue;
+
+    // Assign current segment to current stream, capped per device pool
+    int pool = getPoolSize(cur.dev_id);
+    cur.stream_id = sid % pool;
+
+    // Push unassigned successors in reverse order (preserve left-to-right)
+    bool end_of_branch = true;
+    for (int i = static_cast<int>(cur.segment_ids_edges.size()) - 1; i >= 0; --i) {
+      int edge_id = cur.segment_ids_edges[i];
+      if (edge_id >= 0 && edge_id < static_cast<int>(segments_.size()) &&
+          segments_[edge_id].stream_id == -1) {
+        pending.push_back(edge_id);
+        end_of_branch = false;
+      }
+    }
+
+    // Rotate stream at leaf — same as classic ScheduleOneNode
+    if (end_of_branch) {
+      sid = (sid + 1) % static_cast<int>(DEBUG_HIP_FORCE_GRAPH_QUEUES);
+    }
+  }
+
+  // Compute needs_completion_signal — same logic as RoundRobinStreamAssignment
+  for (auto& seg : segments_) {
+    seg.needs_completion_signal = false;
+    if (seg.segment_ids_edges.empty()) {
+      seg.needs_completion_signal = true;
+      continue;
+    }
+    for (int edge_id : seg.segment_ids_edges) {
+      if (edge_id >= 0 && edge_id < static_cast<int>(segments_.size())) {
+        const auto& edge_seg = segments_[edge_id];
+        if (edge_seg.dev_id != seg.dev_id || edge_seg.stream_id != seg.stream_id) {
+          seg.needs_completion_signal = true;
+          break;
+        }
+      }
+    }
+  }
+}
+
+// ================================================================================================
+// Select stream assignment algorithm:
+//   DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING == 2 → force DFS
+//   DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING == 3 → force round-robin
+//   otherwise (auto): complex graphs (16+ segs, avg length < 8) → DFS
+//                     simple/parallel graphs                     → round-robin
+void GraphExec::SelectStreamAssignment() {
+  // Forced modes via env var
+  if (DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING == 2) {
+    ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+            "[hipGraph] SelectStreamAssignment: forced DFS (%zu segs)", segments_.size());
+    DFSStreamAssignment();
+    return;
+  }
+  if (DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING == 3) {
+    ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+            "[hipGraph] SelectStreamAssignment: forced round-robin (%zu segs)", segments_.size());
+    RoundRobinStreamAssignment();
+    return;
+  }
+
+  // Auto selection based on graph complexity
+  const size_t kSegmentSizeThreshold = 16;
+  const double kAvgSegmentLengthThreshold = 8.0;
+
+  bool use_dfs = false;
+  if (segments_.size() >= kSegmentSizeThreshold) {
+    size_t total_nodes = 0;
+    for (const auto& seg : segments_) {
+      total_nodes += seg.nodes.size();
+    }
+    double avg = static_cast<double>(total_nodes) / segments_.size();
+    if (avg < kAvgSegmentLengthThreshold) {
+      use_dfs = true;
+      ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+              "[hipGraph] SelectStreamAssignment: complex graph (%zu segs, avg %.2f nodes) "
+              "→ DFS stream assignment",
+              segments_.size(), avg);
+    }
+  }
+
+  if (use_dfs) {
+    DFSStreamAssignment();
+  } else {
+    ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+            "[hipGraph] SelectStreamAssignment: simple/parallel graph (%zu segs) "
+            "→ round-robin stream assignment",
+            segments_.size());
+    RoundRobinStreamAssignment();
+  }
+}
+
+// ================================================================================================
 hipError_t GraphExec::Init() {
   hipError_t status = hipSuccess;
   // Set instantiation device ID early so Find functions can use it
@@ -1193,10 +1286,10 @@ hipError_t GraphExec::Init() {
   }
 
   if (use_segment_scheduling_) {
-    // Pre-compute stream assignment before packet capture so that BuildSyncPlan
+    // Select and apply stream assignment before packet capture so that BuildSyncPlan
     // (called inside CaptureAQLPackets) can see each segment's stream_id and
     // skip same-stream dependency barriers.
-    PrecomputeStreamAssignment();
+    SelectStreamAssignment();
 
     // For graph nodes capture AQL packets to dispatch them directly during graph launch.
     status = CaptureAQLPackets();
