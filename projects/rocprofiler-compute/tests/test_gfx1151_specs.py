@@ -18,8 +18,8 @@ the gfx115x_fixes PR.  Covers:
 from __future__ import annotations
 
 import argparse
-import sys
 import os
+import sys
 import types
 
 import pytest
@@ -60,18 +60,19 @@ _ensure_vendored_yaml()
 # Project imports — all pure-Python; no hardware required
 # ---------------------------------------------------------------------------
 try:
-    from src.utils.mi_gpu_spec import MIGPUSpecs, mi_gpu_specs
-    from src.utils.specs import MachineSpecs, is_apu_arch, _APU_HIDDEN_FIELDS
+    from src.utils.mi_gpu_spec import mi_gpu_specs
+    from src.utils.specs import _APU_HIDDEN_FIELDS, MachineSpecs, is_apu_arch
     from src.utils.utils_counter_defs import get_build_in_vars
 except ImportError:
-    from utils.mi_gpu_spec import MIGPUSpecs, mi_gpu_specs
-    from utils.specs import MachineSpecs, is_apu_arch, _APU_HIDDEN_FIELDS
+    from utils.mi_gpu_spec import mi_gpu_specs
+    from utils.specs import _APU_HIDDEN_FIELDS, MachineSpecs, is_apu_arch
     from utils.utils_counter_defs import get_build_in_vars
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_minimal_mspec(**kwargs) -> MachineSpecs:
     """Return a MachineSpecs instance with rocminfo_lines=None (no HW needed)
@@ -86,6 +87,7 @@ def make_minimal_mspec(**kwargs) -> MachineSpecs:
 # ===========================================================================
 # 1. mi_gpu_spec.yaml — gfx1151 registration
 # ===========================================================================
+
 
 class TestMIGPUSpecYamlGfx1151:
     """Verify the gfx1151 / Strix Halo entries exist in mi_gpu_spec.yaml."""
@@ -136,16 +138,16 @@ class TestMIGPUSpecYamlGfx1151:
         """gfx1151 perfmon_config must contain the standard GFX IP blocks."""
         config = mi_gpu_specs.get_perfmon_config("gfx1151")
         for block in ("SQ", "TA", "TD", "TCP", "TCC", "CPC", "CPF", "SPI", "GRBM"):
-            assert block in config, f"Block {block!r} missing from gfx1151 perfmon_config"
+            assert block in config, (
+                f"Block {block!r} missing from gfx1151 perfmon_config"
+            )
 
     def test_gfx1151_not_in_legacy_archs_but_returns_1(self):
         """Even though gfx1151 is NOT in LEGACY_ARCHS, the YAML n/a entry
         guarantees get_num_xcds returns 1 for compute_partition='N/A'.
         Verify both model-name and arch-name lookup paths."""
         # arch-based lookup path
-        result = mi_gpu_specs.get_num_xcds(
-            gpu_arch="gfx1151", compute_partition="N/A"
-        )
+        result = mi_gpu_specs.get_num_xcds(gpu_arch="gfx1151", compute_partition="N/A")
         assert result == 1
 
         # model-based lookup path
@@ -158,6 +160,7 @@ class TestMIGPUSpecYamlGfx1151:
 # ===========================================================================
 # 2. is_apu_arch() helper
 # ===========================================================================
+
 
 class TestIsApuArch:
     """Unit tests for specs.is_apu_arch()."""
@@ -191,6 +194,7 @@ class TestIsApuArch:
 # ===========================================================================
 # 3. MachineSpecs — Chip ID hexadecimal display
 # ===========================================================================
+
 
 class TestChipIdHexDisplay:
     """Chip ID must be shown as 0x<HEX> in --specs output."""
@@ -244,6 +248,7 @@ class TestChipIdHexDisplay:
 # ===========================================================================
 # 4. MachineSpecs — APU field hiding
 # ===========================================================================
+
 
 class TestApuFieldHiding:
     """compute_partition, memory_partition, num_xcd must be hidden for APU."""
@@ -320,12 +325,14 @@ class TestApuFieldHiding:
 # 5. MachineSpecs — num_memory_channels rename + get_memory_channels
 # ===========================================================================
 
+
 class TestNumMemoryChannels:
     """num_hbm_channels was renamed to num_memory_channels."""
 
     def test_num_memory_channels_field_exists(self):
         """MachineSpecs must have a num_memory_channels field."""
         from dataclasses import fields as dc_fields
+
         field_names = {f.name for f in dc_fields(MachineSpecs)}
         assert "num_memory_channels" in field_names
         assert "num_hbm_channels" not in field_names, (
@@ -335,6 +342,7 @@ class TestNumMemoryChannels:
     def test_num_memory_channels_metadata_name(self):
         """Display name for num_memory_channels must be 'Memory Channels'."""
         from dataclasses import fields as dc_fields
+
         for f in dc_fields(MachineSpecs):
             if f.name == "num_memory_channels":
                 assert f.metadata.get("name") == "Memory Channels"
@@ -407,17 +415,20 @@ class TestNumMemoryChannels:
 # 6. MachineSpecs — num_gl1c field
 # ===========================================================================
 
+
 class TestNumGl1cField:
     """num_gl1c must exist but must NOT appear in the --specs table."""
 
     def test_num_gl1c_field_exists(self):
         from dataclasses import fields as dc_fields
+
         field_names = {f.name for f in dc_fields(MachineSpecs)}
         assert "num_gl1c" in field_names
 
     def test_num_gl1c_not_shown_in_table(self):
         """num_gl1c has show_in_table=False so it must not appear in repr or DF."""
         from dataclasses import fields as dc_fields
+
         for f in dc_fields(MachineSpecs):
             if f.name == "num_gl1c":
                 assert f.metadata.get("show_in_table") is False
@@ -444,6 +455,7 @@ class TestNumGl1cField:
 # ===========================================================================
 # 7. soc_gfx1151 — SoC class initialisation
 # ===========================================================================
+
 
 class TestSocGfx1151:
     """Tests for the gfx1151_soc class (no hardware required)."""
@@ -541,6 +553,7 @@ class TestSocGfx1151:
 # 8. num_memory_channels — utils_counter_defs + evaluation_pipeline
 # ===========================================================================
 
+
 class TestParserNumMemoryChannels:
     """Verify num_memory_channels is used (not num_hbm_channels) in
     utils_counter_defs.get_build_in_vars() and
@@ -564,6 +577,7 @@ class TestParserNumMemoryChannels:
             from utils.metrics.evaluation_pipeline import create_sys_vars as _csv
 
         import inspect
+
         source = inspect.getsource(_csv)
         assert "num_memory_channels" in source, (
             "create_sys_vars() does not reference num_memory_channels"

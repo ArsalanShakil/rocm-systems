@@ -179,8 +179,13 @@ def generate_machine_specs(
             gpu_arch = sysinfo_norm.get("gpu_arch")
             sysinfo_norm["gpu_arch"] = {"gfx1152": "gfx1151"}.get(gpu_arch, gpu_arch)
             # Backward compat: rename legacy num_hbm_channels → num_memory_channels
-            if "num_hbm_channels" in sysinfo_norm and "num_memory_channels" not in sysinfo_norm:
-                sysinfo_norm["num_memory_channels"] = sysinfo_norm.pop("num_hbm_channels")
+            if (
+                "num_hbm_channels" in sysinfo_norm
+                and "num_memory_channels" not in sysinfo_norm
+            ):
+                sysinfo_norm["num_memory_channels"] = sysinfo_norm.pop(
+                    "num_hbm_channels"
+                )
                 console_warning(
                     "Loaded sysinfo contains legacy field 'num_hbm_channels'. "
                     "It has been automatically remapped to 'num_memory_channels'. "
@@ -444,14 +449,6 @@ class MachineSpecs:
             "doc": "The version of the machine specification file format.",
             "name": "MachineSpecs Version",
             "intable": False,
-            "show_in_table": True,
-        },
-    )
-    timestamp: Optional[str] = field(
-        default=None,
-        metadata={
-            "doc": "The time (in local system time) when data was collected",
-            "name": "Timestamp",
             "show_in_table": True,
         },
     )
