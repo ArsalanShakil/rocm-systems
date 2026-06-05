@@ -46,6 +46,7 @@ from amdsmi_init import *
 from BDF import BDF
 
 import amdsmi_cli_exceptions
+from amdsmi_cli_exceptions import AmdSmiPermissionDeniedException
 
 
 class AMDSMIHelpers:
@@ -1705,6 +1706,18 @@ class AMDSMIHelpers:
         bytes_value = pages * page_size
         return bytes_value / (1024**3)
 
+    def user_choice_exception(self, msg=None):
+        if len(sys.argv) > 2:
+            cmd = " ".join(sys.argv[1:3])
+        elif len(sys.argv) == 2:
+            cmd = sys.argv[1]
+        else:
+            cmd = "unknown"
+
+        if msg is None:
+            msg = "Confirmation not given. Exiting without setting value"
+        raise AmdSmiPermissionDeniedException(cmd, self.get_output_format(), msg)
+
     def confirm_out_of_spec_warning(self, auto_respond=False):
         """Print the warning for running outside of specification and prompt user to accept the terms.
 
@@ -1730,7 +1743,7 @@ class AMDSMIHelpers:
         if user_input in ["y", "Y", "yes", "Yes", "YES"]:
             return
         else:
-            sys.exit("Confirmation not given. Exiting without setting value")
+            self.user_choice_exception()
 
     def confirm_changing_memory_partition_gpu_reload_warning(self, auto_respond=False):
         """Print the warning for running outside of specification and prompt user to accept the terms.
@@ -1769,8 +1782,8 @@ class AMDSMIHelpers:
             print("")
             return
         else:
-            print("Confirmation not given. Exiting without setting value")
-            sys.exit(1)
+            msg = f"Confirmation not given. Exiting without setting value"
+            self.user_choice_exception(msg)
 
     def is_valid_profile(self, profile):
         profile_presets = (
@@ -3117,19 +3130,18 @@ class AMDSMIHelpers:
                         "sensor": power_type_key,
                         "requested_power_cap": self.unit_format(logger, requested_power_cap, "W"),
                         "current_power_cap": self.unit_format(logger, current_power_cap, "W"),
-                        "message": f"{power_type_key} power cap is already set to {requested_power_cap}W",
+                        "message": f"{power_type_key} power cap is already set to {requested_power_cap} W",
                     }
-                return f"{power_type_key} power cap is already set to {requested_power_cap}W"
+                return f"{power_type_key} power cap is already set to {requested_power_cap} W"
             elif current_power_cap == 0:
-                if logger.is_json_format() or logger.is_csv_format():
-                    return {
-                        "status": "error",
-                        "sensor": power_type_key,
-                        "requested_power_cap": self.unit_format(logger, requested_power_cap, "W"),
-                        "current_power_cap": self.unit_format(logger, current_power_cap, "W"),
-                        "message": f"Unable to set {power_type_key} power cap to {requested_power_cap}W, current value is {current_power_cap}W",
-                    }
-                return f"Unable to set {power_type_key} power cap to {requested_power_cap}W, current value is {current_power_cap}W"
+                error_msg = f"Unable to set {power_type_key} power cap to {current_power_cap} W"
+                output_format = self.get_output_format()
+                raise amdsmi_cli_exceptions.AmdSmiInvalidParameterValueException(
+                    sys.argv[1] if len(sys.argv) > 1 else "unknown",
+                    None,
+                    output_format,
+                    hint=error_msg,
+                )
             elif not (
                 min_power_cap < requested_power_cap <= max_power_cap and requested_power_cap > 0
             ):
@@ -3141,34 +3153,30 @@ class AMDSMIHelpers:
                     sys.argv[1] if len(sys.argv) > 1 else "unknown",
                     f"{requested_power_cap}W",
                     self.get_output_format(),
-                    hint=f"Power cap must be between {min_cap_display}W and {max_power_cap}W",
+                    hint=f"Power cap must be between {min_cap_display}W and {max_power_cap} W",
                 )
             # Set the power cap
             new_power_cap = self.convert_SI_unit(
                 requested_power_cap, AMDSMIHelpers.SI_Unit.BASE, AMDSMIHelpers.SI_Unit.MICRO
             )
             amdsmi_interface.amdsmi_set_power_cap(device_handle, power_type, new_power_cap)
+            msg = f"Successfully set {power_type_key} power cap to {requested_power_cap} W"
             if logger.is_json_format() or logger.is_csv_format():
                 return {
                     "status": "success",
                     "sensor": power_type_key,
                     "power_cap": self.unit_format(logger, requested_power_cap, "W"),
-                    "message": f"Successfully set {power_type_key} power cap to {requested_power_cap}W",
+                    "message": msg,
                 }
-            return f"Successfully set {power_type_key} power cap to {requested_power_cap}W"
+            return msg
         except amdsmi_exception.AmdSmiLibraryException as e:
             if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                 raise PermissionError("Command requires elevation") from e
-            error_msg = f"[{e.get_error_info(detailed=False)}] Unable to set {power_type_key} power cap to {requested_power_cap}W"
-            if logger.is_json_format() or logger.is_csv_format():
-                return {
-                    "status": "error",
-                    "sensor": power_type_key,
-                    "requested_power_cap": self.unit_format(logger, requested_power_cap, "W"),
-                    "error": e.get_error_info(detailed=False),
-                    "message": error_msg,
-                }
-            return error_msg
+            error_msg = f"[{e.get_error_info(detailed=False)}] Unable to set {power_type_key} power cap to {requested_power_cap} W"
+            output_format = self.get_output_format()
+            raise amdsmi_cli_exceptions.AmdSmiInvalidParameterValueException(
+                sys.argv[1] if len(sys.argv) > 1 else "unknown", None, output_format, error_msg
+            )
 
     def prompt_reboot(self):
         """Prompt user to reboot and execute if confirmed

@@ -37,11 +37,12 @@ sys.path.insert(0, python_lib_path)
 
 try:
     from amdsmi import amdsmi_interface, amdsmi_exception
+    import amdsmi_cli_exceptions
 except ImportError as e:
-    print(f"Unhandled import error: {e}")
     print("Failed to import the amdsmi Python library. Ensure it is installed in Python.")
     print(f"Alternatively, verify that the library is in the path:\n{python_lib_path}")
-    sys.exit(1)
+    msg = f"Unhandled import error: {e}"
+    raise amdsmi_cli_exceptions.AmdSmiImportException(msg)
 
 # Using basic python logging for user errors and development
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.ERROR)  # User level logging
@@ -132,11 +133,11 @@ def amdsmi_cli_init():
     init_thread.join(timeout=_INIT_TIMEOUT_SEC)
 
     if init_thread.is_alive():
-        logging.error(
-            "amdsmi_init() timed out after %ds. The GPU driver may be unresponsive.",
-            _INIT_TIMEOUT_SEC,
-        )
-        sys.exit(2)
+        error_code = amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_TIMEOUT
+        msg = f"amdsmi_init() timed out after {_INIT_TIMEOUT_SEC}s. The GPU driver may be unresponsive."
+        logging.error(msg)
+        print(f"{msg} Error code: {error_code}", file=sys.stderr)
+        sys.exit(error_code)
 
     if isinstance(
         init_result["exception"],
@@ -152,10 +153,11 @@ def amdsmi_cli_init():
             )
             or init_flag == 0
         ):
-            logging.error(
-                "Drivers not loaded (amdgpu, amd_hsmp, ionic, rdma drivers not found in modules)"
-            )
-            sys.exit(-1)
+            msg = "Drivers not loaded (amdgpu, amd_hsmp, ionic, rdma drivers not found in modules)"
+            logging.error(msg)
+            error_code = amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_DRIVER_NOT_LOADED
+            print(f"{msg}. Error code: {error_code}", file=sys.stderr)
+            sys.exit(error_code)
         else:
             raise e
     elif init_result["exception"] is not None:

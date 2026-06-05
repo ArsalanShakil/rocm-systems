@@ -26,6 +26,7 @@ import sys
 from amdsmi_helpers import AMDSMIHelpers
 from amdsmi_logger import AMDSMILogger
 from amdsmi import amdsmi_exception, amdsmi_interface
+from amdsmi_cli_exceptions import AmdSmiInvalidCommandException
 
 from subcommands import (
     BadPagesCommands,
@@ -192,7 +193,9 @@ class AMDSMICommands(
             version_args.cpu_version = False
             version_args.nic_version = False
             self.version(version_args)
-            sys.exit(-1)
+            output_format = self.helpers.get_output_format()
+            command = sys.argv[1] if len(sys.argv) > 1 else "unknown"
+            raise AmdSmiInvalidCommandException(command, output_format)
 
     def profile(self, args):
         """Not applicable to linux baremetal"""
@@ -253,9 +256,13 @@ class AMDSMICommands(
                     pass
 
         except ImportError as e:
+            error_code = 192
             logging.error(f"Could not import ROCm-SMI compatibility module: {e}")
             logging.error("Make sure amdsmi_rocm_smi_compat.py is in the amdsmi_cli directory")
-            print("ERROR: ROCm-SMI compatibility mode not available")
+            print(
+                f"ERROR: ROCm-SMI compatibility mode not available. Error code: {error_code}",
+                file=sys.stderr,
+            )
         except Exception as e:
             logging.error(f"Error in ROCm-SMI compatibility mode: {e}")
             print(f"ERROR: {e}")

@@ -277,23 +277,21 @@ class MetricCommands:
                 )
                 gpu_metric_version_str = json.dumps(gpu_metric_version_info, indent=4)
                 logging.debug(
-                    "GPU Metrics table Version for GPU %s | %s", gpu_id, gpu_metric_version_str
+                    f"GPU Metrics table Version for GPU {gpu_id} | {gpu_metric_version_str}"
                 )
             except amdsmi_exception.AmdSmiLibraryException as e:
                 logging.debug(
-                    "#1 - Unable to load GPU Metrics table version for %s | %s",
-                    gpu_id,
-                    e.get_error_info(),
+                    f"#1 - Unable to load GPU Metrics table version for {gpu_id} | {e.get_error_info()}"
                 )
 
             try:
                 # Get GPU Metrics table
                 gpu_metric_debug_info = amdsmi_interface.amdsmi_get_gpu_metrics_info(args.gpu)
                 gpu_metric_str = json.dumps(gpu_metric_debug_info, indent=4)
-                logging.debug("GPU Metrics table for GPU %s | %s", gpu_id, str(gpu_metric_str))
+                logging.debug(f"GPU Metrics table for GPU {gpu_id} | {str(gpu_metric_str)}")
             except amdsmi_exception.AmdSmiLibraryException as e:
                 logging.debug(
-                    "#2 - Unable to load GPU Metrics table for %s | %s", gpu_id, e.get_error_info()
+                    f"#2 - Unable to load GPU Metrics table for {gpu_id} | {e.get_error_info()}"
                 )
 
         logging.debug(f"Metric Arg information for GPU {gpu_id} on {self.helpers.os_info()}")
@@ -315,7 +313,7 @@ class MetricCommands:
             gpu_metric = amdsmi_interface.amdsmi_get_gpu_metrics_info(args.gpu)
         except amdsmi_exception.AmdSmiLibraryException as e:
             logging.debug(
-                "#3 - Unable to load GPU Metrics table for %s | %s", gpu_id, e.get_error_info()
+                f"#3 - Unable to load GPU Metrics table for {gpu_id} | {e.get_error_info()}"
             )
             gpu_metric = amdsmi_interface._NA_amdsmi_get_gpu_metrics_info()
 
@@ -348,7 +346,7 @@ class MetricCommands:
 
                 try:
                     pcie_metric = amdsmi_interface.amdsmi_get_pcie_info(args.gpu)["pcie_metric"]
-                    logging.debug("PCIE Metric for %s | %s", gpu_id, pcie_metric)
+                    logging.debug(f"PCIE Metric for {gpu_id} | {pcie_metric}")
 
                     pcie_dict["width"] = pcie_metric["pcie_width"]
 
@@ -370,9 +368,7 @@ class MetricCommands:
                             pcie_dict["replay_count"] = pcie_replay
                         except amdsmi_exception.AmdSmiLibraryException as e:
                             logging.debug(
-                                "Failed to get sysfs pcie replay counter on gpu %s | %s",
-                                gpu_id,
-                                e.get_error_info(),
+                                f"Failed to get sysfs pcie replay counter on gpu {gpu_id} | {e.get_error_info()}"
                             )
 
                     pcie_dict["l0_to_recovery_count"] = pcie_metric["pcie_l0_to_recovery_count"]
@@ -403,7 +399,7 @@ class MetricCommands:
                             }
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get pcie link status for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get pcie link status for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -435,7 +431,7 @@ class MetricCommands:
                     pcie_dict["max_packet_size"] = pcie_bw["max_pkt_sz"]
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get pcie bandwidth for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get pcie bandwidth for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
         if "usage" in current_platform_args:
@@ -516,7 +512,7 @@ class MetricCommands:
                     values_dict["usage"] = engine_usage
                 except Exception as e:
                     values_dict["usage"] = "N/A"
-                    logging.debug("Failed to get gpu activity for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get gpu activity for gpu {gpu_id} | {e}")
         if "power" in current_platform_args:
             if args.power:
                 power_dict = {
@@ -551,7 +547,7 @@ class MetricCommands:
 
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get power info for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get power info for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -564,9 +560,7 @@ class MetricCommands:
                         power_dict["power_management"] = "DISABLED"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get power management status for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get power management status for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -578,7 +572,7 @@ class MetricCommands:
                         else:
                             power_dict["throttle_status"] = "UNTHROTTLED"
                 except Exception as e:
-                    logging.debug("Failed to get throttle status for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get throttle status for gpu {gpu_id} | {e}")
 
                 values_dict["power"] = power_dict
         if "clock" in current_platform_args:
@@ -668,7 +662,7 @@ class MetricCommands:
                                 else:
                                     clocks[gfx_index]["clk_locked"] = "DISABLED"
                 except Exception as e:
-                    logging.debug("Failed to get current_gfxclks for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_gfxclks for gpu {gpu_id} | {e}")
 
                 # Populate MEM clock value
                 try:
@@ -678,7 +672,7 @@ class MetricCommands:
                             self.logger, current_mem_clock, clock_unit
                         )
                 except Exception as e:
-                    logging.debug("Failed to get current_uclk for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_uclk for gpu {gpu_id} | {e}")
 
                 # Populate VCLK clock values
                 try:
@@ -694,7 +688,7 @@ class MetricCommands:
                                 self.logger, current_vclk_clock, clock_unit
                             )
                 except Exception as e:
-                    logging.debug("Failed to get current_vclk0s for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_vclk0s for gpu {gpu_id} | {e}")
 
                 # Populate DCLK clock values
                 try:
@@ -710,7 +704,7 @@ class MetricCommands:
                                 self.logger, current_dclk_clock, clock_unit
                             )
                 except Exception as e:
-                    logging.debug("Failed to get current_dclk0s for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_dclk0s for gpu {gpu_id} | {e}")
 
                 # Populate FCLK clock value; fclk not present in gpu_metrics so use amdsmi_get_clk_freq
                 try:
@@ -725,7 +719,7 @@ class MetricCommands:
                         self.logger, current_fclk_clock, clock_unit
                     )
                 except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
-                    logging.debug("Failed to get fclk info for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get fclk info for gpu {gpu_id} | {e}")
 
                 # Populate SOCCLK clock value
                 try:
@@ -736,7 +730,7 @@ class MetricCommands:
                             self.logger, current_socclk_clock, clock_unit
                         )
                 except KeyError as e:
-                    logging.debug("Failed to get current_socclk for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_socclk for gpu {gpu_id} | {e}")
 
                 try:
                     current_uclk_aid = gpu_metric.get("current_uclk_aid", "N/A")
@@ -748,7 +742,7 @@ class MetricCommands:
                             for index, clk in enumerate(current_uclk_aid)
                         }
                 except Exception as e:
-                    logging.debug("Failed to get current_uclk_aid for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_uclk_aid for gpu {gpu_id} | {e}")
 
                 try:
                     current_socclks_mid = gpu_metric.get("current_socclks_mid", "N/A")
@@ -760,7 +754,7 @@ class MetricCommands:
                             for index, clk in enumerate(current_socclks_mid)
                         }
                 except Exception as e:
-                    logging.debug("Failed to get current_socclks_mid for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get current_socclks_mid for gpu {gpu_id} | {e}")
 
                 # Populate the max and min clock values from sysfs.
                 # Min and Max values are per clock type, not per clock engine.
@@ -786,7 +780,7 @@ class MetricCommands:
                         # Add the clk_deep_sleep
                         clocks[gfx_index]["deep_sleep"] = gfx_clock_info_dict["clk_deep_sleep"]
                 except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
-                    logging.debug("Failed to get gfx clock info for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get gfx clock info for gpu {gpu_id} | {e}")
 
                 # MEM min and max clocks
                 try:
@@ -804,7 +798,7 @@ class MetricCommands:
                         # Add the clk_deep_sleep
                         clocks["mem_0"]["deep_sleep"] = mem_clock_info_dict["clk_deep_sleep"]
                 except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
-                    logging.debug("Failed to get mem clock info for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get mem clock info for gpu {gpu_id} | {e}")
 
                 # VCLK min and max clocks
                 try:
@@ -833,7 +827,7 @@ class MetricCommands:
                             ]
                 except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
                     # Log a debug message if retrieving VCLK clock information fails
-                    logging.debug("Failed to get vclk clock info for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get vclk clock info for gpu {gpu_id} | {e}")
 
                 # DCLK min and max clocks
                 try:
@@ -861,7 +855,7 @@ class MetricCommands:
                                 "clk_deep_sleep"
                             ]
                 except (KeyError, amdsmi_exception.AmdSmiLibraryException) as e:
-                    logging.debug("Failed to get dclk clock info for gpu %s | %s", gpu_id, e)
+                    logging.debug(f"Failed to get dclk clock info for gpu {gpu_id} | {e}")
 
                 # FCLK min and max clocks
                 try:
@@ -879,9 +873,7 @@ class MetricCommands:
                         # Add the clk_deep_sleep
                         clocks["fclk_0"]["deep_sleep"] = fclk_clk_info_dict["clk_deep_sleep"]
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    logging.debug(
-                        "Failed to get fclk info for gpu %s | %s", gpu_id, e.get_error_info()
-                    )
+                    logging.debug(f"Failed to get fclk info for gpu {gpu_id} | {e}")
 
                 # SOCCLK min and max clocks
                 try:
@@ -899,9 +891,7 @@ class MetricCommands:
                         # Add the clk_deep_sleep
                         clocks["socclk_0"]["deep_sleep"] = socclk_clk_info_dict["clk_deep_sleep"]
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    logging.debug(
-                        "Failed to get socclk info for gpu %s | %s", gpu_id, e.get_error_info()
-                    )
+                    logging.debug(f"Failed to get socclk info for gpu {gpu_id} | {e}")
 
                 # Iterate over each clock and its data to determine if deep sleep is enabled
                 # based on the comparison between the current clock value and the minimum clock value.
@@ -934,7 +924,7 @@ class MetricCommands:
                         else:
                             clock_data["deep_sleep"] = "DISABLED"
                     except Exception as e:
-                        logging.debug("Failed to get deep sleep status for gpu %s | %s", gpu_id, e)
+                        logging.debug(f"Failed to get deep sleep status for gpu {gpu_id} | {e}")
 
                 values_dict["clock"] = clocks
         if "temperature" in current_platform_args:
@@ -948,9 +938,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     temperature_edge_current = "N/A"
                     logging.debug(
-                        "Failed to get current edge temperature for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get current edge temperature for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -962,9 +950,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     temperature_edge_limit = "N/A"
                     logging.debug(
-                        "Failed to get edge temperature limit for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get edge temperature limit for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 # If edge limit is reporting 0 then set the current edge temp to N/A
@@ -980,9 +966,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     temperature_hotspot_current = "N/A"
                     logging.debug(
-                        "Failed to get current hotspot temperature for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get current hotspot temperature for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -994,9 +978,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     temperature_vram_current = "N/A"
                     logging.debug(
-                        "Failed to get current vram temperature for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get current vram temperature for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 temperatures = {
@@ -1130,7 +1112,7 @@ class MetricCommands:
                     ecc_count["cache_correctable_count"] = "N/A"
                     ecc_count["cache_uncorrectable_count"] = "N/A"
                     logging.debug(
-                        "Failed to get total ecc count for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get total ecc count for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 if ecc_count["total_correctable_count"] != "N/A":
@@ -1149,10 +1131,7 @@ class MetricCommands:
                         ecc_count["cache_correctable_count"] = "N/A"
                         ecc_count["cache_uncorrectable_count"] = "N/A"
                         logging.debug(
-                            "Failed to get cache ecc count for gpu %s at block %s | %s",
-                            gpu_id,
-                            umc_block,
-                            e.get_error_info(),
+                            f"Failed to get cache ecc count for gpu {gpu_id} at block {umc_block} | {e.get_error_info()}"
                         )
 
                 values_dict["ecc"] = ecc_count
@@ -1186,19 +1165,14 @@ class MetricCommands:
                                         "deferred_count": "N/A",
                                     }
                                     logging.debug(
-                                        "Failed to get ecc count for gpu %s at block %s | %s",
-                                        gpu_id,
-                                        gpu_block,
-                                        e.get_error_info(),
+                                        f"Failed to get ecc count for gpu {gpu_id} at block {gpu_block} | {e.get_error_info()}"
                                     )
 
                     values_dict["ecc_blocks"] = ecc_dict
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["ecc_blocks"] = "N/A"
                     logging.debug(
-                        "Failed to get ecc block features for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get ecc block features for gpu {gpu_id} | {e.get_error_info()}"
                     )
         if "fan" in current_platform_args:
             if args.fan:
@@ -1209,7 +1183,7 @@ class MetricCommands:
                     fan_dict["speed"] = fan_speed
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get fan speed for gpu %s | %s", args.gpu, e.get_error_info()
+                        f"Failed to get fan speed for gpu {args.gpu} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1226,7 +1200,7 @@ class MetricCommands:
                     fan_dict["usage"] = fan_usage
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get fan max speed for gpu %s | %s", args.gpu, e.get_error_info()
+                        f"Failed to get fan max speed for gpu {args.gpu} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1234,7 +1208,7 @@ class MetricCommands:
                     fan_dict["rpm"] = fan_rpm
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get fan rpms for gpu %s | %s", args.gpu, e.get_error_info()
+                        f"Failed to get fan rpms for gpu {args.gpu} | {e.get_error_info()}"
                     )
 
                 values_dict["fan"] = fan_dict
@@ -1252,7 +1226,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     od_volt = "N/A"  # Value not used, but needs to not be a dict
                     logging.debug(
-                        "Failed to get voltage curve for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get voltage curve for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 # Populate voltage point values
@@ -1297,9 +1271,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["overdrive"] = "N/A"
                     logging.debug(
-                        "Failed to get gpu overdrive level for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get gpu overdrive level for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1313,9 +1285,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["mem_overdrive"] = "N/A"
                     logging.debug(
-                        "Failed to get mem overdrive level for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get mem overdrive level for gpu {gpu_id} | {e.get_error_info()}"
                     )
         if "perf_level" in current_platform_args:
             if args.perf_level:
@@ -1325,7 +1295,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["perf_level"] = "N/A"
                     logging.debug(
-                        "Failed to get perf level for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get perf level for gpu {gpu_id} | {e.get_error_info()}"
                     )
         if "xgmi_err" in current_platform_args:
             if args.xgmi_err:
@@ -1339,9 +1309,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["xgmi_err"] = "N/A"
                     logging.debug(
-                        "Failed to get xgmi error status for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get xgmi error status for gpu {gpu_id} | {e.get_error_info()}"
                     )
         if "voltage" in current_platform_args:
             if args.voltage:
@@ -1360,7 +1328,7 @@ class MetricCommands:
                     except amdsmi_exception.AmdSmiLibraryException as e:
                         voltage_dict[volt_type] = "N/A"
                         logging.debug(
-                            "Failed to get voltage for gpu %s | %s", gpu_id, e.get_error_info()
+                            f"Failed to get voltage for gpu {gpu_id} | {e.get_error_info()}"
                         )
                 values_dict["voltage"] = voltage_dict
         if "energy" in current_platform_args:
@@ -1384,7 +1352,7 @@ class MetricCommands:
                 except amdsmi_interface.AmdSmiLibraryException as e:
                     values_dict["energy"] = "N/A"
                     logging.debug(
-                        "Failed to get energy usage for gpu %s | %s", args.gpu, e.get_error_info()
+                        f"Failed to get energy usage for gpu {args.gpu} | {e.get_error_info()}"
                     )
         if "mem_usage" in current_platform_args:
             if args.mem_usage:
@@ -1408,9 +1376,7 @@ class MetricCommands:
                     memory_usage["total_vram"] = total_vram // (1024 * 1024)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get total VRAM memory for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get total VRAM memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1420,9 +1386,7 @@ class MetricCommands:
                     memory_usage["total_visible_vram"] = total_visible_vram // (1024 * 1024)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get total VIS VRAM memory for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get total VIS VRAM memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1432,7 +1396,7 @@ class MetricCommands:
                     memory_usage["total_gtt"] = total_gtt // (1024 * 1024)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get total GTT memory for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get total GTT memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 # Used VRAM
@@ -1444,7 +1408,7 @@ class MetricCommands:
 
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get used VRAM memory for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get used VRAM memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1454,9 +1418,7 @@ class MetricCommands:
                     memory_usage["used_visible_vram"] = used_visible_vram // (1024 * 1024)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get used VIS VRAM memory for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get used VIS VRAM memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
@@ -1466,7 +1428,7 @@ class MetricCommands:
                     memory_usage["used_gtt"] = used_gtt // (1024 * 1024)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get used GTT memory for gpu %s | %s", gpu_id, e.get_error_info()
+                        f"Failed to get used GTT memory for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 # Free VRAM
@@ -1647,9 +1609,7 @@ class MetricCommands:
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     values_dict["throttle"] = throttle_status
                     logging.debug(
-                        "Failed to get violation status' for gpu %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get violation status' for gpu {gpu_id} | {e.get_error_info()}"
                     )
 
                 for key, value in throttle_status.items():
@@ -1925,9 +1885,7 @@ class MetricCommands:
                 static_dict["power_metrics"]["socket power"] = f"{soc_pow:.3f} W"
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["power_metrics"]["socket power"] = "N/A"
-                logging.debug(
-                    "Failed to get socket power for cpu %s | %s", cpu_id, e.get_error_info()
-                )
+                logging.debug(f"Failed to get socket power for cpu {cpu_id} | {e.get_error_info()}")
 
             try:
                 soc_pwr_limit = amdsmi_interface.amdsmi_get_cpu_socket_power_cap(args.cpu)
@@ -1938,7 +1896,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["power_metrics"]["socket power limit"] = "N/A"
                 logging.debug(
-                    "Failed to get socket power limit for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get socket power limit for cpu {cpu_id} | {e.get_error_info()}"
                 )
 
             try:
@@ -1952,9 +1910,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["power_metrics"]["socket max power limit"] = "N/A"
                 logging.debug(
-                    "Failed to get max socket power limit for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get max socket power limit for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_prochot:
             static_dict["prochot"] = {}
@@ -1964,7 +1920,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["prochot"]["prochot_status"] = "N/A"
                 logging.debug(
-                    "Failed to get prochot status for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get prochot status for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_freq_metrics:
             static_dict["freq_metrics"] = {}
@@ -1974,9 +1930,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["freq_metrics"]["fclkmemclk"] = "N/A"
                 logging.debug(
-                    "Failed to get current fclkmemclk freq for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get current fclkmemclk freq for cpu {cpu_id} | {e.get_error_info()}"
                 )
 
             try:
@@ -1985,7 +1939,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["freq_metrics"]["cclkfreqlimit"] = "N/A"
                 logging.debug(
-                    "Failed to get current cclk freq for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get current cclk freq for cpu {cpu_id} | {e.get_error_info()}"
                 )
 
             try:
@@ -1996,9 +1950,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["freq_metrics"]["soc_current_active_freq_limit"] = "N/A"
                 logging.debug(
-                    "Failed to get socket current freq limit for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get socket current freq limit for cpu {cpu_id} | {e.get_error_info()}"
                 )
 
             try:
@@ -2007,7 +1959,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["freq_metrics"]["soc_freq_range"] = "N/A"
                 logging.debug(
-                    "Failed to get socket freq range for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get socket freq range for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_c0_res:
             static_dict["c0_residency"] = {}
@@ -2016,9 +1968,7 @@ class MetricCommands:
                 static_dict["c0_residency"]["residency"] = residency
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["c0_residency"]["residency"] = "N/A"
-                logging.debug(
-                    "Failed to get C0 residency for cpu %s | %s", cpu_id, e.get_error_info()
-                )
+                logging.debug(f"Failed to get C0 residency for cpu {cpu_id} | {e.get_error_info()}")
         if args.cpu_lclk_dpm_level:
             static_dict["socket_dpm"] = {}
             try:
@@ -2029,9 +1979,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["socket_dpm"]["dpml_level_range"] = "N/A"
                 logging.debug(
-                    "Failed to get socket dpm level range for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get socket dpm level range for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_pwr_svi_telemetry_rails:
             static_dict["svi_telemetry_all_rails"] = {}
@@ -2041,9 +1989,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["c0_residency"]["residency"] = "N/A"
                 logging.debug(
-                    "Failed to get svi telemetry all rails for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get svi telemetry all rails for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_io_bandwidth:
             static_dict["io_bandwidth"] = {}
@@ -2054,9 +2000,7 @@ class MetricCommands:
                 static_dict["io_bandwidth"]["band_width"] = bandwidth
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["io_bandwidth"]["band_width"] = "N/A"
-                logging.debug(
-                    "Failed to get io bandwidth for cpu %s | %s", cpu_id, e.get_error_info()
-                )
+                logging.debug(f"Failed to get io bandwidth for cpu {cpu_id} | {e.get_error_info()}")
         if args.cpu_xgmi_bandwidth:
             static_dict["xgmi_bandwidth"] = {}
             try:
@@ -2069,7 +2013,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["xgmi_bandwidth"]["band_width"] = "N/A"
                 logging.debug(
-                    "Failed to get xgmi bandwidth for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get xgmi bandwidth for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_pwr_eff_mode:
             static_dict["pwr_eff_mode"] = {}
@@ -2097,9 +2041,7 @@ class MetricCommands:
                 static_dict["pwr_eff_mode"]["util"] = "N/A"
                 static_dict["pwr_eff_mode"]["ppt_limit"] = "N/A"
                 logging.debug(
-                    "Failed to get power efficiency mode for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get power efficiency mode for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_metrics_ver:
             static_dict["metric_version"] = {}
@@ -2109,9 +2051,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["metric_version"]["version"] = "N/A"
                 logging.debug(
-                    "Failed to get metrics table version for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get metrics table version for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_metrics_table:
             static_dict["metrics_table"] = {}
@@ -2133,7 +2073,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["metrics_table"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get metrics table for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get metrics table for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_socket_energy:
             static_dict["socket_energy"] = {}
@@ -2143,7 +2083,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["socket_energy"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get socket energy for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get socket energy for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_ddr_bandwidth:
             static_dict["ddr_bandwidth"] = {}
@@ -2153,7 +2093,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["ddr_bandwidth"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get ddr bandwidth for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get ddr bandwidth for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_temp:
             static_dict["cpu_temp"] = {}
@@ -2163,7 +2103,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["cpu_temp"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get cpu temperature for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get cpu temperature for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_dimm_temp_range_rate:
             static_dict["dimm_temp_range_rate"] = {}
@@ -2175,9 +2115,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["dimm_temp_range_rate"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get dimm temperature range and refresh rate for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get dimm temperature range and refresh rate for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_dimm_pow_consumption:
             static_dict["dimm_pow_consumption"] = {}
@@ -2189,9 +2127,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["dimm_pow_consumption"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get dimm temperature range and refresh rate for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get dimm temperature range and refresh rate for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_dimm_thermal_sensor:
             static_dict["dimm_thermal_sensor"] = {}
@@ -2203,9 +2139,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["dimm_thermal_sensor"]["response"] = "N/A"
                 logging.debug(
-                    "Failed to get dimm temperature range and refresh rate for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get dimm temperature range and refresh rate for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_xgmi_pstate_range:
             static_dict["xgmi_pstate_range"] = {}
@@ -2217,7 +2151,7 @@ class MetricCommands:
                 static_dict["xgmi_pstate_range"]["min_pstate"] = "N/A"
                 static_dict["xgmi_pstate_range"]["max_pstate"] = "N/A"
                 logging.debug(
-                    "Failed to get xgmi pstate range for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get xgmi pstate range for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_railisofreq_policy:
             static_dict["railisofreq_policy"] = {}
@@ -2229,9 +2163,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["railisofreq_policy"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get cpurailiso frequency policy for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get cpurailiso frequency policy for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_dfcstate_ctrl:
             static_dict["dfcstate_ctrl"] = {}
@@ -2241,9 +2173,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["dfcstate_ctrl"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get dfcstate control status for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get dfcstate control status for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_pc6_enable:
             static_dict["pc6_enable"] = {}
@@ -2253,7 +2183,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["pc6_enable"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get PC6 enable status for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get PC6 enable status for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_cc6_enable:
             static_dict["cc6_enable"] = {}
@@ -2263,7 +2193,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["cc6_enable"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get CC6 enable status for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get CC6 enable status for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_dimm_sb_reg:
             static_dict["dimm_sb_reg"] = {}
@@ -2287,9 +2217,7 @@ class MetricCommands:
                 static_dict["dimm_sb_reg"]["RegSpace"] = args.cpu_dimm_sb_reg[0][3]
                 static_dict["dimm_sb_reg"]["Data"] = "N/A"
                 logging.debug(
-                    "Failed to read DIMM sideband register for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to read DIMM sideband register for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_tdelta:
             static_dict["tdelta"] = {}
@@ -2299,9 +2227,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["tdelta"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get thermal delta (TDELTA) for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get thermal delta (TDELTA) for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_svi3_vr_controller_temp:
             static_dict["svi3_vr_controller_temp"] = {}
@@ -2326,9 +2252,7 @@ class MetricCommands:
                 static_dict["svi3_vr_controller_temp"]["RAIL_INDEX"] = "N/A"
                 static_dict["svi3_vr_controller_temp"]["TEMPERATURE"] = "N/A"
                 logging.debug(
-                    "Failed to get SVI3 VR controller temperature for cpu %s | %s",
-                    cpu_id,
-                    e.get_error_info(),
+                    f"Failed to get SVI3 VR controller temperature for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_enabled_commands:
             static_dict["enabled_commands"] = {}
@@ -2360,7 +2284,7 @@ class MetricCommands:
                 static_dict["enabled_commands"]["WRITE_ENABLED_COMMANDS_BITMASK1"] = "N/A"
                 static_dict["enabled_commands"]["WRITE_ENABLED_COMMANDS_BITMASK2"] = "N/A"
                 logging.debug(
-                    "Failed to get enabled commands for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get enabled commands for cpu {cpu_id} | {e.get_error_info()}"
                 )
         if args.cpu_sdps_limit:
             static_dict["sdps_limit"] = {}
@@ -2373,7 +2297,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["sdps_limit"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get socket SDPS limit for cpu %s | %s", cpu_id, e.get_error_info()
+                    f"Failed to get socket SDPS limit for cpu {cpu_id} | {e.get_error_info()}"
                 )
 
         multiple_devices_csv_override = False
@@ -2477,7 +2401,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["boost_limit"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get core boost limit for core %s | %s", core_id, e.get_error_info()
+                    f"Failed to get core boost limit for core {core_id} | {e.get_error_info()}"
                 )
         if args.core_curr_active_freq_core_limit:
             static_dict["curr_active_freq_core_limit"] = {}
@@ -2488,9 +2412,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["curr_active_freq_core_limit"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get current active frequency core for core %s | %s",
-                    core_id,
-                    e.get_error_info(),
+                    f"Failed to get current active frequency core for core {core_id} | {e.get_error_info()}"
                 )
         if args.core_energy:
             static_dict["core_energy"] = {}
@@ -2500,7 +2422,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["core_energy"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get core energy for core %s | %s", core_id, e.get_error_info()
+                    f"Failed to get core energy for core {core_id} | {e.get_error_info()}"
                 )
 
         if args.core_ccd_power:
@@ -2511,9 +2433,7 @@ class MetricCommands:
                 static_dict["ccd_power"]["value"] = f"{power:.3f} W"
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["ccd_power"]["value"] = "N/A"
-                logging.debug(
-                    "Failed to get CCD power for core %s | %s", core_id, e.get_error_info()
-                )
+                logging.debug(f"Failed to get CCD power for core {core_id} | {e.get_error_info()}")
 
         if args.core_floor_limit:
             static_dict["floor_limit"] = {}
@@ -2523,7 +2443,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["floor_limit"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get core floor limit for core %s | %s", core_id, e.get_error_info()
+                    f"Failed to get core floor limit for core {core_id} | {e.get_error_info()}"
                 )
 
         if args.core_eff_floor_limit:
@@ -2536,9 +2456,7 @@ class MetricCommands:
             except amdsmi_exception.AmdSmiLibraryException as e:
                 static_dict["eff_floor_limit"]["value"] = "N/A"
                 logging.debug(
-                    "Failed to get core effective floor limit for core %s | %s",
-                    core_id,
-                    e.get_error_info(),
+                    f"Failed to get core effective floor limit for core {core_id} | {e.get_error_info()}"
                 )
 
         multiple_devices_csv_override = False
@@ -2662,9 +2580,9 @@ class MetricCommands:
         try:
             nic_metric_info = amdsmi_interface.amdsmi_get_nic_metrics_info(args.nic)
             nic_metric_str = json.dumps(nic_metric_info, indent=4)
-            logging.debug("NIC Metrics table for %s | %s", nic_id, nic_metric_str)
+            logging.debug(f"NIC Metrics table for {nic_id} | {nic_metric_str}")
         except amdsmi_exception.AmdSmiLibraryException as e:
-            logging.debug("Unable to load NIC Metrics table for %s | %s", nic_id, e.err_info)
+            logging.debug(f"Unable to load NIC Metrics table for {nic_id} | {e.err_info}")
 
         logging.debug(f"Metric Arg information for NIC {nic_id} on {self.helpers.os_info()}")
         logging.debug(f"Args:   {current_platform_args}")
@@ -2871,9 +2789,9 @@ class MetricCommands:
         try:
             switch_metric_info = amdsmi_interface.amdsmi_get_switch_metrics_info(args.switch)
             switch_metric_str = json.dumps(switch_metric_info, indent=4)
-            logging.debug("SWITCH Metrics table for %s | %s", switch_id, switch_metric_str)
+            logging.debug(f"SWITCH Metrics table for {switch_id} | {switch_metric_str}")
         except amdsmi_exception.AmdSmiLibraryException as e:
-            logging.debug("Unable to load SWITCH Metrics table for %s | %s", switch_id, e.err_info)
+            logging.debug(f"Unable to load SWITCH Metrics table for {switch_id} | {e.err_info}")
 
         logging.debug(f"Metric Arg information for SWITCH {switch_id} on {self.helpers.os_info()}")
         logging.debug(f"Args:   {current_platform_args}")

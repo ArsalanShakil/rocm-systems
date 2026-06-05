@@ -107,18 +107,14 @@ class PartitionCommands:
                         .replace(" ", "")
                     )
                     logging.debug(
-                        "Failed to get accelerator partition profile for GPU %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get accelerator partition profile for GPU {gpu_id} | {e.get_error_info()}"
                     )
                 try:
                     current_mem_cap = amdsmi_interface.amdsmi_get_gpu_memory_partition(gpu)
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     current_mem_cap = "N/A"
                     logging.debug(
-                        "Failed to get current memory partition capabilities for GPU %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get current memory partition capabilities for GPU {gpu_id} | {e.get_error_info()}"
                     )
 
                 if profile_type == 0:
@@ -174,9 +170,7 @@ class PartitionCommands:
                     current_memory_partition = memory_partition_config["mp_mode"]
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     logging.debug(
-                        "Failed to get current memory partition for GPU %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get current memory partition for GPU {gpu_id} | {e.get_error_info()}"
                     )
 
                 tabular_output_dict = {
@@ -259,9 +253,7 @@ class PartitionCommands:
                     num_partitions = 0
                     current_accelerator_type = "N/A"
                     logging.debug(
-                        "Failed to get accelerator partition profile for GPU %s | %s",
-                        gpu_id,
-                        e.get_error_info(),
+                        f"Failed to get accelerator partition profile for GPU {gpu_id} | {e.get_error_info()}"
                     )
 
                 try:
