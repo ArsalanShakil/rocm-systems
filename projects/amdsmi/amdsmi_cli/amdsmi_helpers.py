@@ -1717,7 +1717,7 @@ class AMDSMIHelpers:
         if msg is None:
             msg = "Confirmation not given. Exiting without setting value"
         raise AmdSmiPermissionDeniedException(cmd, self.get_output_format(), msg)
-        
+
     def read_pending_gtt_pages(self):
         """Read the pending GTT pages_limit written by `amd-smi set --gtt`.
 
