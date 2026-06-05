@@ -350,7 +350,7 @@ class Parser:
                     f'Expected 2 operands for {operator}, got {len(operands)}'
                 )
             if '.' in operands[0]:
-                return f'{operands[0].split('.')[0]}_.{operands[1]}'
+                return f"{operands[0].split('.')[0]}_.{operands[1]}"
             return f'{operands[0]}.{operands[1]}'
 
         if operator in ('.within', '.notwithin'):

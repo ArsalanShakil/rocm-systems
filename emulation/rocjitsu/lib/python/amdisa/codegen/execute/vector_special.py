@@ -832,14 +832,14 @@ def _scale_unpack_element_raw(fmt: str) -> list[str]:
         return [
             '    auto read_scaled_src = [&](uint32_t index) -> float {',
             f'      uint32_t raw = (src_payload >> (index * 4u)) & {mask};',
-            f'      return {_scale_decode_call(fmt, 'raw')};',
+            f"      return {_scale_decode_call(fmt, 'raw')};",
             '    };',
         ]
     if bits == 8:
         return [
             '    auto read_scaled_src = [&](uint32_t index) -> float {',
             f'      uint32_t raw = static_cast<uint32_t>((src_payload >> (index * 8u)) & {mask});',
-            f'      return {_scale_decode_call(fmt, 'raw')};',
+            f"      return {_scale_decode_call(fmt, 'raw')};",
             '    };',
         ]
     return [
@@ -851,7 +851,7 @@ def _scale_unpack_element_raw(fmt: str) -> list[str]:
         '      if (shift > 26u)',
         '        raw |= src_words[word + 1u] << (32u - shift);',
         f'      raw &= {mask};',
-        f'      return {_scale_decode_call(fmt, 'raw')};',
+        f"      return {_scale_decode_call(fmt, 'raw')};",
         '    };',
     ]
 
@@ -960,7 +960,7 @@ def gen_vector_cvt_scale(
         L.append(f'    for (uint32_t index = 0; index < {count}u; ++index) {{')
         L.append('      float value = read_scaled_input(index) * scale;')
         L.append(
-            f'      pack_scaled_dst(index, {_scale_encode_call(out_fmt, 'value')});'
+            f"      pack_scaled_dst(index, {_scale_encode_call(out_fmt, 'value')});"
         )
         L.append('    }')
         L.append(f'    for (uint32_t word = 0; word < {out_words}u; ++word)')
