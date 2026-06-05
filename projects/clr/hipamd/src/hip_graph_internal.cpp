@@ -186,95 +186,6 @@ std::vector<std::pair<Node, Node>> Graph::GetEdges() const {
 }
 
 // ================================================================================================
-void Graph::ScheduleOneNode(Node start, int stream_id) {
-  if (!start) return;
-
-  // stack of pending nodes for DFS
-  std::vector<Node> pending;
-  pending.push_back(start);
-
-  int sid = stream_id;
-
-  while (!pending.empty()) {
-    Node cur = pending.back();
-    pending.pop_back();
-
-    // Skip if already scheduled
-    if (cur->stream_id_ != -1) {
-      continue;
-    }
-
-    // Schedule current node on this branch's stream
-    cur->stream_id_ = sid;
-
-    max_streams_ = std::max(max_streams_, sid + 1);
-    streams_dev_ids_[sid].insert(cur->dev_id_);
-
-    // Process child graph separately, since, there is no connection
-    if (cur->GetType() == hipGraphNodeTypeGraph) {
-      auto cgn   = reinterpret_cast<hip::ChildGraphNode*>(cur);
-      auto child = cgn->GetChildGraph();
-      // Use same scheduling logic(classic or segment) as parent graph for child graph
-      child->SetSegmentScheduling(use_segment_scheduling_);
-      hipError_t status = child->ScheduleNodes();
-      (void)status;
-      max_streams_ = std::max(max_streams_, child->max_streams_);
-      cgn->GraphExec::TopologicalOrder();
-    }
-
-    const auto& edges = cur->GetEdges();
-    bool end_of_branch = true;
-
-    // To preserve left-to-right behavior, push siblings in reverse so the earlier
-    // edges get processed first.
-    for (int i = static_cast<int>(edges.size()) - 1; i >= 0; --i) {
-      Node e = edges[static_cast<size_t>(i)];
-      if (e->stream_id_ != -1) continue;
-      pending.push_back(e);
-      end_of_branch = false;
-    }
-
-    if (end_of_branch) {
-      // Finished one depth traversal (one branch). Rotate for the next sibling/branch.
-      sid = (sid + 1) % DEBUG_HIP_FORCE_GRAPH_QUEUES;
-    }
-  }
-}
-
-// ================================================================================================
-hipError_t Graph::ScheduleNodes() {
-  // Classic scheduling logic
-  memset(&roots_[0], 0, sizeof(Node) * roots_.size());
-  max_streams_ = 0;
-
-  int stream_id = 0;
-  for (auto node : vertices_) {
-    if (node->stream_id_ == -1) {
-      ScheduleOneNode(node, stream_id);
-      // Find the root nodes
-      if ((node->GetDependencies().size() == 0) && (node->stream_id_ != 0)) {
-        // Fill in only the first in the sequence
-        if (roots_[node->stream_id_] == nullptr) {
-          roots_[node->stream_id_] = node;
-        }
-      }
-      // 1. Each extra root will get a new stream from the pool
-      // 2. Streams will be recycled if the number of roots > streams
-      stream_id = (stream_id + 1) % DEBUG_HIP_FORCE_GRAPH_QUEUES;
-    }
-  }
-
-  // Topological order is only needed for original scheduling
-  GraphExec* graphExec = dynamic_cast<GraphExec*>(this);
-  if (graphExec && !graphExec->TopologicalOrder()) {
-    ClPrint(amd::LOG_ERROR, amd::LOG_CODE, "[hipGraph] TopologicalOrder failed - invalid graph");
-    return hipErrorInvalidValue;
-  }
-
-  return hipSuccess;
-}
-
-// ================================================================================================
 hipError_t Graph::ScheduleNodesIntoBatches() {
   // Handle empty graph case - valid, nothing to schedule
   if (GetNodeCount() == 0) {
@@ -1109,9 +1020,8 @@ void GraphExec::RoundRobinStreamAssignment() {
 }
 
 // ================================================================================================
-// DFS-based stream assignment for segment DAG — same algorithm as classic ScheduleOneNode
-// but operates on segments instead of individual nodes. Linear chains of segments stay
-// on the same stream; branches rotate to a new stream at each leaf.
+// DFS-based stream assignment for segment DAG.
+// Linear chains of segments stay on the same stream; branches rotate to a new stream at each leaf.
 void GraphExec::DFSStreamAssignment() {
   auto getPoolSize = [&](int dev_id) -> int {
     auto it = max_streams_dev_.find(dev_id);
@@ -1133,7 +1043,7 @@ void GraphExec::DFSStreamAssignment() {
     }
   }
 
-  // Stack-based DFS over segment DAG — mirrors ScheduleOneNode exactly
+  // Stack-based DFS over segment DAG
   std::vector<int> pending;
   for (int i = static_cast<int>(roots.size()) - 1; i >= 0; --i) {
     pending.push_back(roots[i]);
@@ -1164,7 +1074,7 @@ void GraphExec::DFSStreamAssignment() {
       }
     }
 
-    // Rotate stream at leaf — same as classic ScheduleOneNode
+    // Rotate stream at leaf
     if (end_of_branch) {
       sid = (sid + 1) % static_cast<int>(DEBUG_HIP_FORCE_GRAPH_QUEUES);
     }
@@ -1249,16 +1159,10 @@ hipError_t GraphExec::Init() {
 
   // create extra stream to avoid queue collision with the default execution stream
   if (max_streams_ >= 1) {
-    if (use_segment_scheduling_) {
-      // For packet engine: analyze segments to determine per-device stream requirements
-      FindStreamsReqPerDevForSegments();
-    } else {
-      // For classic scheduling: use stream-to-device mappings
-      FindStreamsReqPerDev();
-    }
+    FindStreamsReqPerDevForSegments();
 
     // Cap per-device stream counts to the hardware queue limit and compute the total.
-    // This must happen before PrecomputeStreamAssignment() reads max_streams_dev_ so
+    // This must happen before SelectStreamAssignment() reads max_streams_dev_ so
     // both stream creation and stream-id assignment see the same capped values.
     uint32_t total_streams = 0;
     for (auto& [dev_id, count] : max_streams_dev_) {
@@ -1280,15 +1184,13 @@ hipError_t GraphExec::Init() {
     }
   }
 
-  if (use_segment_scheduling_) {
-    // Select and apply stream assignment before packet capture so that BuildSyncPlan
-    // (called inside CaptureAQLPackets) can see each segment's stream_id and
-    // skip same-stream dependency barriers.
-    SelectStreamAssignment();
+  // Select and apply stream assignment before packet capture so that BuildSyncPlan
+  // (called inside CaptureAQLPackets) can see each segment's stream_id and
+  // skip same-stream dependency barriers.
+  SelectStreamAssignment();
 
-    // For graph nodes capture AQL packets to dispatch them directly during graph launch.
-    status = CaptureAQLPackets();
-  }
+  // For graph nodes capture AQL packets to dispatch them directly during graph launch.
+  status = CaptureAQLPackets();
 
   static_cast<ReferenceCountedObject*>(hip::getCurrentDevice())->retain();
   return status;
@@ -1301,7 +1203,7 @@ void GraphExec::GetKernelArgSizeForGraph(std::unordered_map<int, size_t>& kernAr
   // Calculate the kernel argument size required for all graph kernel nodes
   // when GPU packet capture is enabled
 
-  if (use_segment_scheduling_ && !segments_.empty()) {
+  if (!segments_.empty()) {
     for (const auto& segment : segments_) {
       // Handle child graph segments - skip node iteration, process recursively
       if (segment.child_graph_ptr != nullptr) {
@@ -2428,9 +2330,9 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
     this->retain();
   }
 
-  // Get the first node based on scheduling mode
+  // Get the first node
   Node firstNode = nullptr;
-  if (use_segment_scheduling_ && !segments_.empty() && !segments_[0].nodes.empty()) {
+  if (!segments_.empty() && !segments_[0].nodes.empty()) {
     firstNode = segments_[0].nodes[0];
   } else if (!topoOrder_.empty()) {
     firstNode = topoOrder_[0];
@@ -2477,7 +2379,7 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
   launch_stream->vdev()->AcquireQueueWithPreference();
   UpdateStreams(launch_stream);
 
-  if (use_segment_scheduling_ && instantiateDeviceId_ == launch_stream->DeviceId()) {
+  if (instantiateDeviceId_ == launch_stream->DeviceId()) {
     // If the graph has kernels that does device side allocation,  during packet capture, heap is
     // allocated because heap pointer has to be added to the AQL packet, and initialized during
     // graph launch.
