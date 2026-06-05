@@ -119,6 +119,26 @@ def test_gfx1250_helper_blocks_emit_hwreg_and_scaled_wmma_hooks():
     )
 
 
+def test_gfx1250_vopd_template_uses_dx9_zero_and_fma(tmp_path):
+    codegen = object.__new__(CodeGenerator)
+    codegen.isa_spec = SimpleNamespace(
+        arch_name='gfx1250',
+        profile=Gfx1250Profile(),
+    )
+    codegen.out_path = str(tmp_path)
+
+    codegen.gen_vopd()
+    cpp = (tmp_path / 'gfx1250' / 'vopd.cpp').read_text()
+
+    assert 'case 3:\n              case 7:' not in cpp
+    assert 'if (lhs == 0.0f || rhs == 0.0f)' in cpp
+    fma_start = cpp.index('case 19: {')
+    fma_case = cpp[fma_start : cpp.index('case 20:', fma_start)]
+    assert 'std::fma(std::bit_cast<float>(src0),' in fma_case
+    assert 'std::bit_cast<float>(src1),' in fma_case
+    assert 'std::bit_cast<float>(src2))' in fma_case
+
+
 def test_bf16_mad_mix_half_updates_read_destination_operand():
     codegen = object.__new__(CodeGenerator)
     codegen.semantics = SimpleNamespace(

@@ -33,6 +33,7 @@ RJ_DIAGNOSTIC_POP
 #include <array>
 #include <atomic>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -226,6 +227,27 @@ amdgpu::Wavefront *dispatch_one_wave(Gfx1250Sim &sim, const uint32_t *code, size
   return sim.cu()->wf(0);
 }
 
+constexpr uint32_t make_vmov_b32(uint8_t vdst) {
+  return 0x7E0002FFu | (static_cast<uint32_t>(vdst) << 17);
+}
+
+constexpr uint16_t vopd_src0_vgpr(uint16_t reg) { return 256 + reg; }
+
+constexpr std::array<uint32_t, 3> make_vopd3(uint16_t opx, uint16_t opy, uint16_t srcx0,
+                                             uint16_t srcy0, uint8_t vsrcx1, uint8_t vsrcx2,
+                                             uint8_t vdstx, uint8_t vsrcy1, uint8_t vsrcy2,
+                                             uint8_t vdsty, uint8_t negx = 0, uint8_t negy = 0) {
+  return {
+      0xCF000000u | ((static_cast<uint32_t>(opx) & 0x3Fu) << 18) |
+          ((static_cast<uint32_t>(opy) & 0x3Fu) << 12) | (static_cast<uint32_t>(srcx0) & 0x1FFu),
+      (static_cast<uint32_t>(srcy0) & 0x1FFu) | ((static_cast<uint32_t>(negx) & 0x7u) << 9) |
+          ((static_cast<uint32_t>(negy) & 0x7u) << 12) | (static_cast<uint32_t>(vsrcx1) << 16) |
+          (static_cast<uint32_t>(vsrcx2) << 24),
+      static_cast<uint32_t>(vdstx) | (static_cast<uint32_t>(vsrcy1) << 8) |
+          (static_cast<uint32_t>(vsrcy2) << 16) | (static_cast<uint32_t>(vdsty) << 24),
+  };
+}
+
 void write_wave_sgpr(amdgpu::ComputeUnitCore &cu, amdgpu::Wavefront &wf, uint32_t reg,
                      uint32_t value) {
   cu.write_sgpr(wf.sgpr_alloc().base + reg, value);
@@ -401,6 +423,8 @@ TEST(Gfx1250ConfigTest, ConfigLoadsTopology) {
   EXPECT_EQ(cu->config().sgprs_per_wf, kGfx1250ScalarSlots);
   EXPECT_EQ(cu->config().vgprs_per_wf, kGfx1250Wave32VgprAllocation);
   EXPECT_EQ(soc->xcd(0)->command_processor()->vgpr_granularity(), kGfx1250VgprEncodingGranule);
+  EXPECT_EQ(soc->xcd(0)->command_processor()->sdma_packet_dialect(),
+            amdgpu::SdmaPacketDialect::Gfx1250);
 }
 
 TEST(Gfx1250SdmaTest, PollMem64WaitsForFull64BitCondition) {
@@ -1592,6 +1616,59 @@ TEST(Gfx1250SimulationTest, VMovrelsReadsM0RelativeVgpr) {
   const uint32_t vb = wf->vgpr_alloc().base;
   for (uint32_t lane = 0; lane < wf->wf_size(); ++lane)
     EXPECT_EQ(sim.cu()->read_vgpr(vb + 1, lane), 99u) << "lane " << lane;
+}
+
+TEST(Gfx1250SimulationTest, VopdMulDx9ZeroOverridesNanProducts) {
+  constexpr auto dx9_mul = make_vopd3(7, 7, vopd_src0_vgpr(0), vopd_src0_vgpr(0), 1, 0, 4, 2, 0, 5);
+  constexpr auto ieee_mul =
+      make_vopd3(3, 3, vopd_src0_vgpr(0), vopd_src0_vgpr(0), 1, 0, 6, 2, 0, 7);
+
+  const uint32_t code[] = {
+      make_vmov_b32(0), 0x7FC00000u, // quiet NaN
+      make_vmov_b32(1), 0x00000000u, // +0.0f
+      make_vmov_b32(2), 0x80000000u, // -0.0f
+      dx9_mul[0],       dx9_mul[1],  dx9_mul[2],     ieee_mul[0],
+      ieee_mul[1],      ieee_mul[2], S_ENDPGM_GFX12,
+  };
+
+  Gfx1250Sim sim;
+  amdgpu::Wavefront *wf = dispatch_one_wave(sim, code, std::size(code), 16);
+  ASSERT_NE(wf, nullptr);
+
+  const uint32_t vb = wf->vgpr_alloc().base;
+  for (uint32_t lane = 0; lane < wf->wf_size(); ++lane) {
+    EXPECT_EQ(sim.cu()->read_vgpr(vb + 4, lane), 0x00000000u) << "lane " << lane;
+    EXPECT_EQ(sim.cu()->read_vgpr(vb + 5, lane), 0x00000000u) << "lane " << lane;
+    EXPECT_TRUE(std::isnan(std::bit_cast<float>(sim.cu()->read_vgpr(vb + 6, lane))))
+        << "lane " << lane;
+    EXPECT_TRUE(std::isnan(std::bit_cast<float>(sim.cu()->read_vgpr(vb + 7, lane))))
+        << "lane " << lane;
+  }
+}
+
+TEST(Gfx1250SimulationTest, VopdFmaUsesSingleRounding) {
+  constexpr uint32_t kSrc0 = 0x3F800001u;
+  constexpr uint32_t kSrc1 = 0x3F7FFFFFu;
+  constexpr uint32_t kSrc2 = 0xBF800000u;
+  constexpr auto fma = make_vopd3(19, 19, vopd_src0_vgpr(0), vopd_src0_vgpr(0), 1, 2, 4, 1, 2, 5);
+  const uint32_t expected = std::bit_cast<uint32_t>(std::fma(
+      std::bit_cast<float>(kSrc0), std::bit_cast<float>(kSrc1), std::bit_cast<float>(kSrc2)));
+  ASSERT_EQ(expected, 0x337FFFFEu);
+
+  const uint32_t code[] = {
+      make_vmov_b32(0), kSrc0,  make_vmov_b32(1), kSrc1,          make_vmov_b32(2), kSrc2,
+      fma[0],           fma[1], fma[2],           S_ENDPGM_GFX12,
+  };
+
+  Gfx1250Sim sim;
+  amdgpu::Wavefront *wf = dispatch_one_wave(sim, code, std::size(code), 16);
+  ASSERT_NE(wf, nullptr);
+
+  const uint32_t vb = wf->vgpr_alloc().base;
+  for (uint32_t lane = 0; lane < wf->wf_size(); ++lane) {
+    EXPECT_EQ(sim.cu()->read_vgpr(vb + 4, lane), expected) << "lane " << lane;
+    EXPECT_EQ(sim.cu()->read_vgpr(vb + 5, lane), expected) << "lane " << lane;
+  }
 }
 
 TEST(Gfx1250SimulationTest, VopdFmacUsesDestinationAccumulator) {

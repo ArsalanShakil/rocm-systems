@@ -11,6 +11,10 @@
 
 namespace rocjitsu::detail {
 
+bool fits_in_bounds(uint64_t offset, uint64_t size, size_t limit) {
+  return offset <= limit && size <= limit - offset;
+}
+
 std::vector<char> read_file_bytes(std::string_view path) {
   std::string path_str(path);
   std::ifstream file(path_str, std::ios::binary | std::ios::ate);

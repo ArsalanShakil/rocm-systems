@@ -18,11 +18,9 @@ RJ_DIAGNOSTIC_POP
 #include <atomic>
 #include <cassert>
 #include <chrono>
-#include <cstdio>
 #include <cstring>
 #include <elf.h>
 #include <format>
-#include <fstream>
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -69,36 +67,6 @@ uint32_t read_memory_u32(GpuMemory *memory, uint64_t addr) {
   for (uint32_t i = 0; i < sizeof(value); ++i)
     value |= static_cast<uint32_t>(memory->read8(addr + i)) << (i * 8);
   return value;
-}
-
-void map_readable_host_pages(GpuMemory *memory, uint64_t base, size_t size) {
-  if (!memory || base == 0 || size == 0)
-    return;
-
-  const uint64_t end = size > (std::numeric_limits<uint64_t>::max() - base)
-                           ? std::numeric_limits<uint64_t>::max()
-                           : base + size;
-  std::ifstream maps("/proc/self/maps");
-  std::string line;
-  while (std::getline(maps, line)) {
-    unsigned long long region_start = 0;
-    unsigned long long region_end = 0;
-    char perms[5] = {};
-    if (std::sscanf(line.c_str(), "%llx-%llx %4s", &region_start, &region_end, perms) != 3)
-      continue;
-    if (perms[0] != 'r')
-      continue;
-
-    uint64_t overlap_start = std::max<uint64_t>(base, region_start);
-    uint64_t overlap_end = std::min<uint64_t>(end, region_end);
-    if (overlap_start >= overlap_end)
-      continue;
-
-    constexpr uint64_t kPageMask = 0xFFFULL;
-    uint64_t map_start = overlap_start & ~kPageMask;
-    uint64_t map_end = (overlap_end + kPageMask) & ~kPageMask;
-    memory->map_host_pages(map_start, reinterpret_cast<void *>(map_start), map_end - map_start);
-  }
 }
 
 bool sgpr_count_is_descriptor_encoded(rj_code_arch_t arch, uint32_t sgpr_gran) {
@@ -611,27 +579,6 @@ void CommandProcessor::process_aql_packet(const hsa_kernel_dispatch_packet_t &pk
   uint32_t sgprs = sgpr_count_is_descriptor_encoded(arch, sgpr_gran) ? (sgpr_gran + 1) * 8 : 0;
   uint32_t user_sgprs = AMDHSA_BITS_GET(kd.compute_pgm_rsrc2, COMPUTE_PGM_RSRC2_USER_SGPR_COUNT);
   uint64_t entry_pc = pkt.kernel_object + static_cast<uint64_t>(kd.kernel_code_entry_byte_offset);
-
-  // For host-accessible (KFD) dispatches, the kernel code and kernarg are in
-  // host memory. Register them in GpuMemory so the CU's instruction fetch
-  // and SMEM loads can access them.
-  if (host_accessible && memory_) {
-    // Register the code region (kernel object + margin for the code body).
-    // Use the VRAM allocation size if available; fallback to 2MB for large code objects.
-    uint64_t code_base = pkt.kernel_object & ~0xFFFULL; // Page-align down.
-    constexpr size_t CODE_MAP_SIZE = 2 << 20;           // 2MB to cover large code objects.
-    map_readable_host_pages(memory_, code_base, CODE_MAP_SIZE);
-
-    // Register the kernarg region. Map enough pages to cover the full kernarg
-    // buffer. PyTorch reduction kernels can have kernarg buffers exceeding 4KB
-    // (TensorIterator packs many pointers, strides, and flags).
-    uint64_t karg = reinterpret_cast<uint64_t>(pkt.kernarg_address);
-    if (karg != 0) {
-      uint64_t karg_base = karg & ~0xFFFULL;
-      constexpr size_t KARG_MAP_SIZE = 8 * 4096; // 32KB covers large kernarg buffers.
-      map_readable_host_pages(memory_, karg_base, KARG_MAP_SIZE);
-    }
-  }
 
   uint32_t wg_size =
       static_cast<uint32_t>(pkt.workgroup_size_x) * pkt.workgroup_size_y * pkt.workgroup_size_z;
@@ -1269,7 +1216,7 @@ void CommandProcessor::process_sdma_ring(HwQueue &queue, uint64_t read_idx, uint
       break;
     }
     case sdma::OP_COPY: {
-      if (gfx1250_sdma_packets_ && sub_op == sdma::SUBOP_COPY_LINEAR &&
+      if (uses_gfx1250_sdma_packets() && sub_op == sdma::SUBOP_COPY_LINEAR &&
           (header & ((1u << 30) | (1u << 31)))) {
         if (rpos + sdma::COPY_LINEAR_WAITSIGNAL_GFX1250_SIZE > wpos) {
           rpos = wpos;
@@ -1358,7 +1305,7 @@ void CommandProcessor::process_sdma_ring(HwQueue &queue, uint64_t read_idx, uint
       break;
     }
     case sdma::OP_FENCE: {
-      if (gfx1250_sdma_packets_ && sub_op == sdma::SUBOP_FENCE_64B) {
+      if (uses_gfx1250_sdma_packets() && sub_op == sdma::SUBOP_FENCE_64B) {
         if (rpos + sdma::FENCE_64B_GFX1250_SIZE > wpos) {
           rpos = wpos;
           continue;
@@ -1389,7 +1336,7 @@ void CommandProcessor::process_sdma_ring(HwQueue &queue, uint64_t read_idx, uint
       break;
     }
     case sdma::OP_POLL_REGMEM: {
-      if (gfx1250_sdma_packets_ && sub_op == sdma::SUBOP_POLL_MEM_64B) {
+      if (uses_gfx1250_sdma_packets() && sub_op == sdma::SUBOP_POLL_MEM_64B) {
         if (rpos + sdma::POLL_MEM_64B_GFX1250_SIZE > wpos) {
           rpos = wpos;
           continue;
@@ -1513,7 +1460,7 @@ void CommandProcessor::process_sdma_ring(HwQueue &queue, uint64_t read_idx, uint
       break;
     }
     case sdma::OP_GCR:
-      pkt_dwords = gfx1250_sdma_packets_ ? sdma::GCR_GFX1250_SIZE : sdma::GCR_SIZE;
+      pkt_dwords = uses_gfx1250_sdma_packets() ? sdma::GCR_GFX1250_SIZE : sdma::GCR_SIZE;
       break;
     case sdma::OP_HDP_FLUSH:
       pkt_dwords = 1;

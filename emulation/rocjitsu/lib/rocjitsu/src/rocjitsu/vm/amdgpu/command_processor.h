@@ -61,6 +61,11 @@ struct HwQueue {
   bool is_sdma = false;
 };
 
+enum class SdmaPacketDialect {
+  Legacy,
+  Gfx1250,
+};
+
 /// @brief AMDGPU command processor that dispatches wavefronts to compute units.
 ///
 /// @details Distributes AQL dispatch packets across the registered compute units in
@@ -81,7 +86,8 @@ public:
   void set_vgpr_granularity(uint32_t g) { vgpr_granularity_ = g; }
   uint32_t vgpr_granularity() const { return vgpr_granularity_; }
   void set_packed_tid(bool v) { packed_tid_ = v; }
-  void set_gfx1250_sdma_packets(bool v) { gfx1250_sdma_packets_ = v; }
+  void set_sdma_packet_dialect(SdmaPacketDialect dialect) { sdma_packet_dialect_ = dialect; }
+  SdmaPacketDialect sdma_packet_dialect() const { return sdma_packet_dialect_; }
   void set_doorbell_base(void *base);
 
   using InterruptCallback = std::function<void(uint32_t event_id)>;
@@ -177,6 +183,10 @@ private:
     return false;
   }
 
+  bool uses_gfx1250_sdma_packets() const {
+    return sdma_packet_dialect_ == SdmaPacketDialect::Gfx1250;
+  }
+
   GpuMemory *memory_ = nullptr;
   std::atomic<void *> doorbell_base_{nullptr};
   std::vector<HwQueue> hw_queues_;
@@ -190,7 +200,9 @@ private:
   uint32_t workgroup_id_offset_ = 0;
   uint32_t vgpr_granularity_ = 8;
   bool packed_tid_ = false;
-  bool gfx1250_sdma_packets_ = false;
+  // Gfx1250 SDMA GCR keeps the same opcode but changes packet size/layout, so
+  // the decoder cannot infer this dialect from the packet header alone.
+  SdmaPacketDialect sdma_packet_dialect_ = SdmaPacketDialect::Legacy;
   uint32_t next_dispatch_id_ = 1;
   size_t total_dispatched_ = 0;
 

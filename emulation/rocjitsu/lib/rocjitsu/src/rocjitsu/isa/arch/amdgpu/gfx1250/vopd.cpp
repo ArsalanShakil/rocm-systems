@@ -152,10 +152,16 @@ uint32_t Vopd::execute_slot(const Slot &slot, amdgpu::Wavefront &wf, uint32_t la
                             std::bit_cast<float>(src1));
     return std::bit_cast<uint32_t>(result);
   }
-  case 3:
-  case 7: {
+  case 3: {
     float result = std::bit_cast<float>(src0) * std::bit_cast<float>(src1);
     return std::bit_cast<uint32_t>(result);
+  }
+  case 7: {
+    float lhs = std::bit_cast<float>(src0);
+    float rhs = std::bit_cast<float>(src1);
+    if (lhs == 0.0f || rhs == 0.0f)
+      return std::bit_cast<uint32_t>(0.0f);
+    return std::bit_cast<uint32_t>(lhs * rhs);
   }
   case 4: {
     float result = std::bit_cast<float>(src0) + std::bit_cast<float>(src1);
@@ -190,8 +196,8 @@ uint32_t Vopd::execute_slot(const Slot &slot, amdgpu::Wavefront &wf, uint32_t la
   case 18:
     return bitop2(src0, src1, slot.src2_imm);
   case 19: {
-    float result =
-        std::bit_cast<float>(src0) * std::bit_cast<float>(src1) + std::bit_cast<float>(src2);
+    float result = std::fma(std::bit_cast<float>(src0), std::bit_cast<float>(src1),
+                            std::bit_cast<float>(src2));
     return std::bit_cast<uint32_t>(result);
   }
   case 20:

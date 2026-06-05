@@ -49,9 +49,7 @@ bool is_executable_section(const Elf64_Shdr &shdr) {
   return shdr.sh_type == SHT_PROGBITS && (shdr.sh_flags & SHF_EXECINSTR) != 0;
 }
 
-bool fits_in_bounds(uint64_t offset, uint64_t size, size_t limit) {
-  return offset <= limit && size <= limit - offset;
-}
+using detail::fits_in_bounds;
 
 rj_code_target_id_t target_from_machine_flags(uint32_t flags) {
   uint32_t mach = flags & EF_AMDGPU_MACH;

@@ -456,7 +456,9 @@ std::unordered_map<std::string, FactoryFn> &factories() {
       bool packed = (arch == ROCJITSU_CODE_ARCH_CDNA3 || arch == ROCJITSU_CODE_ARCH_CDNA4 ||
                      arch == ROCJITSU_CODE_ARCH_GFX1250);
       cp->set_packed_tid(packed);
-      cp->set_gfx1250_sdma_packets(arch == ROCJITSU_CODE_ARCH_GFX1250);
+      cp->set_sdma_packet_dialect(arch == ROCJITSU_CODE_ARCH_GFX1250
+                                      ? amdgpu::SdmaPacketDialect::Gfx1250
+                                      : amdgpu::SdmaPacketDialect::Legacy);
       return cp;
     };
 

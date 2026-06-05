@@ -50,17 +50,8 @@ private:
 
 bool is_elf(const Elf64_Ehdr &ehdr) { return !std::memcmp(ehdr.e_ident, EI_MAGIC, EI_MAGIC_SIZE); }
 
-bool fits_in_bounds(uint64_t offset, uint64_t size, size_t limit) {
-  return offset <= limit && size <= limit - offset;
-}
-
-template <typename T> bool read_value(const char *data, size_t size, size_t &offset, T &value) {
-  if (!fits_in_bounds(offset, sizeof(T), size))
-    return false;
-  std::memcpy(&value, data + offset, sizeof(T));
-  offset += sizeof(T);
-  return true;
-}
+using detail::fits_in_bounds;
+using detail::read_value;
 
 } // namespace
 
