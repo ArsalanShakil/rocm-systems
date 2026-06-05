@@ -10679,7 +10679,7 @@ VSwapB16Vop1::VSwapB16Vop1(const MachineInst *inst)
     : Vop1("v_swap_b16_e32", reinterpret_cast<const OpEncoding *>(inst),
            make_exec_fn<VSwapB16Vop1>()),
       vdst(16, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
-      src0(16, OperandType::OPR_SRC_VGPR, reinterpret_cast<const OpEncoding *>(inst)->src0) {
+      src0(16, OperandType::OPR_SRC_VGPR, reinterpret_cast<const OpEncoding *>(inst)->src0, true) {
   src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
   dst_operands_[1] = &src0;

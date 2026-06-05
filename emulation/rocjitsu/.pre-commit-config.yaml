@@ -1,6 +1,11 @@
 # Goal: consolidate into a single root .pre-commit-config.yaml for all
 # projects in rocm-systems. This per-project config is a stepping stone.
 
+exclude: |
+  (?x)
+    # generated DBT tables can exceed the generic large-file hook limit
+    emulation/rocjitsu/lib/rocjitsu/src/rocjitsu/code/dbt/generated/.*_gfx1250_to_rdna4\.h
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

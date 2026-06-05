@@ -38,6 +38,7 @@ std::optional<Packed16VgprSource> packed_16bit_vgpr_source(bool packed_16bit_sou
     return Packed16VgprSource{static_cast<uint32_t>(ev - 384), 16};
   return std::nullopt;
 }
+
 } // namespace
 
 Operand::Operand(int size_bits, OperandType opr_type, int encoding_value, bool packed_16bit_source)

@@ -74,6 +74,28 @@ if(HAS_DEVICE_KERNELS)
 endif()
 rj_configure_target(rocjitsu_tests TEST)
 
+set(RJ_IREE_GFX1250_VALIDATION_DIR
+    "${CMAKE_SOURCE_DIR}/../../../iree-gfx1250-validation"
+    CACHE PATH
+    "Path to the workspace IREE gfx1250 validation artifact bundle"
+)
+if(EXISTS "${RJ_IREE_GFX1250_VALIDATION_DIR}/instruction_audit.json")
+    target_compile_definitions(
+        rocjitsu_tests
+        PRIVATE IREE_GFX1250_VALIDATION_DIR="${RJ_IREE_GFX1250_VALIDATION_DIR}"
+    )
+    message(
+        STATUS
+        "IREE gfx1250 artifact translation test enabled (${RJ_IREE_GFX1250_VALIDATION_DIR})"
+    )
+else()
+    message(
+        STATUS
+        "IREE gfx1250 artifact translation test will skip "
+        "(missing ${RJ_IREE_GFX1250_VALIDATION_DIR})"
+    )
+endif()
+
 include(GoogleTest)
 gtest_discover_tests(rocjitsu_tests)
 
@@ -245,6 +267,7 @@ if(HSA_RUNTIME64)
         set(HAS_DBT_VECTOR_ADD_GPU FALSE)
         set(HAS_CDNA3_GPU FALSE)
         set(HAS_RDNA4_GPU FALSE)
+        set(HAS_GFX1201_GPU FALSE)
         if(ROCM_AGENT_ENUM)
             execute_process(
                 COMMAND ${ROCM_AGENT_ENUM}
@@ -264,6 +287,9 @@ if(HSA_RUNTIME64)
             endif()
             if(_agent_rc EQUAL 0 AND _agents MATCHES "gfx120[01]")
                 set(HAS_RDNA4_GPU TRUE)
+            endif()
+            if(_agent_rc EQUAL 0 AND _agents MATCHES "gfx1201")
+                set(HAS_GFX1201_GPU TRUE)
             endif()
         endif()
 
@@ -295,6 +321,34 @@ if(HSA_RUNTIME64)
         add_dependencies(hsa_translate_test device_kernels)
         rj_configure_target(hsa_translate_test TEST)
 
+        add_executable(hsa_hooks_test dbt/hsa_hooks_test.cpp)
+        target_include_directories(
+            hsa_hooks_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/lib/rocjitsu/include
+                ${CMAKE_SOURCE_DIR}/lib/rocjitsu/src
+                ${CMAKE_SOURCE_DIR}/lib/util/include
+                ${RJ_HSA_INCLUDE_DIR}
+        )
+        target_link_libraries(
+            hsa_hooks_test
+            PRIVATE
+                ${RJ_OBJECT_LIBS}
+                ${HSA_RUNTIME64}
+                GTest::gtest
+                GTest::gtest_main
+        )
+        target_link_options(
+            hsa_hooks_test
+            PRIVATE -Wl,-rpath,${RJ_HSA_LIBRARY_DIR}
+        )
+        target_compile_definitions(
+            hsa_hooks_test
+            PRIVATE HAS_HOST_AMDGPU=1 KERNEL_DIR="${KERNEL_OUTPUT_DIR}"
+        )
+        add_dependencies(hsa_hooks_test device_kernels rocjitsu_hooks)
+        rj_configure_target(hsa_hooks_test TEST)
+
         if(HAS_DBT_VECTOR_ADD_GPU)
             add_test(
                 NAME "HsaTranslateTest.TranslateAndDispatchVectorAdd"
@@ -312,6 +366,34 @@ if(HSA_RUNTIME64)
                 "(no supported DBT GPU)"
             )
         endif()
+
+        if(HAS_RDNA4_GPU AND HAS_GFX1250_DEVICE_KERNELS)
+            add_test(
+                NAME "HsaTranslateTest.TranslateAndDispatchGfx1250VectorAdd"
+                COMMAND hsa_translate_test --gtest_filter=*Gfx1250VectorAdd*
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            )
+            set_tests_properties(
+                "HsaTranslateTest.TranslateAndDispatchGfx1250VectorAdd"
+                PROPERTIES TIMEOUT 60
+            )
+            message(
+                STATUS
+                "HSA translate gfx1250 vector_add test enabled (RDNA4 GPU detected)"
+            )
+        else()
+            message(
+                STATUS
+                "HSA translate gfx1250 vector_add test built but NOT registered with CTest "
+                "(no RDNA4 GPU or gfx1250 fixture)"
+            )
+        endif()
+
+        message(
+            STATUS
+            "HSA hooks test built but NOT registered with CTest "
+            "(CDNA4 MFMA hook smoke needs MFMA scalar/inline operand lowering)"
+        )
 
         if(HAS_RDNA4_GPU)
             add_test(

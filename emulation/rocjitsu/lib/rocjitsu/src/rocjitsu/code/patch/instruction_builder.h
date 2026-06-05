@@ -20,6 +20,8 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
+#include <vector>
 
 #include "rocjitsu/code/rj_code.h"
 
@@ -29,8 +31,16 @@ namespace rocjitsu {
 inline constexpr uint32_t kSoppEncodingPrefix = 0x17F;
 inline constexpr uint32_t kSop1EncodingPrefix = 0x17D;
 inline constexpr uint32_t kSop2EncodingPrefix = 0x2;
+inline constexpr uint32_t kSopcEncodingPrefix = 0x17E;
 inline constexpr uint16_t kScalarPositiveInlineBase = 128;
 inline constexpr uint16_t kDelayAluSaluDep1 = 9;
+inline constexpr uint16_t kWaitAluDepctrVaSdst0 = 0xF19F;
+inline constexpr uint16_t kWaitAluDepctrVaVdst0 = 0x0F9F;
+inline constexpr uint16_t kWaitAluDepctrVaVcc0 = 0xFF9D;
+inline constexpr uint16_t kWaitAluDepctrVmVsrc0 = 0xFF83;
+inline constexpr uint16_t kWaitAluDepctrVaVdstVmVsrc0 =
+    kWaitAluDepctrVaVdst0 & kWaitAluDepctrVmVsrc0;
+inline constexpr uint16_t kWaitAluDepctrSaSdst0 = 0xFF9E;
 
 /// @brief Pack a SOPP instruction word from its constituent fields.
 ///
@@ -52,6 +62,12 @@ inline constexpr uint16_t kDelayAluSaluDep1 = 9;
                                                   uint32_t ssrc1) {
   return (kSop2EncodingPrefix << 30) | ((op & 0x7Fu) << 23) | ((sdst & 0x7Fu) << 16) |
          ((ssrc1 & 0xFFu) << 8) | (ssrc0 & 0xFFu);
+}
+
+/// @brief Pack a SOPC instruction word from its constituent fields.
+[[nodiscard]] inline constexpr uint32_t pack_sopc(uint32_t op, uint32_t ssrc0, uint32_t ssrc1) {
+  return (kSopcEncodingPrefix << 23) | ((op & 0x7Fu) << 16) | ((ssrc1 & 0xFFu) << 8) |
+         (ssrc0 & 0xFFu);
 }
 
 /// @brief Scalar source operand encoding for a non-negative inline integer.
@@ -119,6 +135,77 @@ inline constexpr uint16_t kDelayAluSaluDep1 = 9;
   return pack_sopp(sopp_op_branch(arch), static_cast<uint16_t>(offset_dwords));
 }
 
+/// @brief Build a PC-relative long branch through s_getpc_b64/s_setpc_b64.
+///
+/// @details This clobbers @p sgpr_pair and @p sgpr_pair + 1, so callers must
+/// only use a pair known to be dead at the branch site.
+[[nodiscard]] inline std::vector<uint32_t>
+build_s_setpc_long_branch(uint64_t getpc_pc, uint64_t target, uint16_t sgpr_pair) {
+  if (sgpr_pair >= 127 ||
+      getpc_pc > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 4) ||
+      target > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+    return {};
+
+  const int64_t delta = static_cast<int64_t>(target) - (static_cast<int64_t>(getpc_pc) + 4);
+  const auto delta_bits = static_cast<uint64_t>(delta);
+  const uint32_t delta_lo = static_cast<uint32_t>(delta_bits & 0xFFFF'FFFFu);
+  const uint32_t delta_hi = static_cast<uint32_t>(delta_bits >> 32);
+
+  constexpr uint8_t kOpSAddCoU32 = 0;
+  constexpr uint8_t kOpSAddCoCiU32 = 4;
+  constexpr uint8_t kOpSGetPcB64 = 71;
+  constexpr uint8_t kOpSSetPcB64 = 72;
+  return {
+      pack_sop1(kOpSGetPcB64, sgpr_pair, 0),
+      pack_sop2(kOpSAddCoU32, sgpr_pair, sgpr_pair, 255),
+      delta_lo,
+      pack_sop2(kOpSAddCoCiU32, static_cast<uint16_t>(sgpr_pair + 1u),
+                static_cast<uint16_t>(sgpr_pair + 1u), 255),
+      delta_hi,
+      pack_sop1(kOpSSetPcB64, 0, sgpr_pair),
+  };
+}
+
+/// @brief Build a PC-relative long branch that preserves the incoming SCC.
+///
+/// @details The ordinary long branch uses scalar add-with-carry instructions to
+/// materialize the target PC, which clobber SCC. Use this form when a cave body
+/// must return with branch-like semantics, preserving the SCC value produced by
+/// the cave body for any later scalar condition or carry consumer.
+[[nodiscard]] inline std::vector<uint32_t>
+build_s_setpc_long_branch_preserving_scc(uint64_t getpc_pc, uint64_t target, uint16_t sgpr_pair,
+                                         uint16_t scc_sgpr) {
+  if (sgpr_pair >= 127 || scc_sgpr >= 127 || scc_sgpr == sgpr_pair || scc_sgpr == sgpr_pair + 1u ||
+      getpc_pc > static_cast<uint64_t>(std::numeric_limits<int64_t>::max() - 8) ||
+      target > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+    return {};
+
+  const uint64_t actual_getpc_pc = getpc_pc + sizeof(uint32_t);
+  const int64_t delta = static_cast<int64_t>(target) - (static_cast<int64_t>(actual_getpc_pc) + 4);
+  const auto delta_bits = static_cast<uint64_t>(delta);
+  const uint32_t delta_lo = static_cast<uint32_t>(delta_bits & 0xFFFF'FFFFu);
+  const uint32_t delta_hi = static_cast<uint32_t>(delta_bits >> 32);
+
+  constexpr uint8_t kOpSAddCoU32 = 0;
+  constexpr uint8_t kOpSAddCoCiU32 = 4;
+  constexpr uint8_t kOpSCselectB32 = 48;
+  constexpr uint8_t kOpSCmpLgU32 = 7;
+  constexpr uint8_t kOpSGetPcB64 = 71;
+  constexpr uint8_t kOpSSetPcB64 = 72;
+  return {
+      pack_sop2(kOpSCselectB32, scc_sgpr, scalar_positive_inline_u32(1),
+                scalar_positive_inline_u32(0)),
+      pack_sop1(kOpSGetPcB64, sgpr_pair, 0),
+      pack_sop2(kOpSAddCoU32, sgpr_pair, sgpr_pair, 255),
+      delta_lo,
+      pack_sop2(kOpSAddCoCiU32, static_cast<uint16_t>(sgpr_pair + 1u),
+                static_cast<uint16_t>(sgpr_pair + 1u), 255),
+      delta_hi,
+      pack_sopc(kOpSCmpLgU32, scc_sgpr, scalar_positive_inline_u32(0)),
+      pack_sop1(kOpSSetPcB64, 0, sgpr_pair),
+  };
+}
+
 /// @brief Encode an s_nop instruction for the given target ISA.
 ///
 /// @param cycles  Number of additional stall cycles (0-based).
@@ -133,6 +220,12 @@ build_s_nop(uint16_t cycles = 0, rj_code_arch_t arch = ROCJITSU_CODE_ARCH_RDNA4)
 [[nodiscard]] inline constexpr uint32_t build_s_delay_alu(uint16_t simm16, rj_code_arch_t) {
   constexpr uint8_t kSoppDelayAlu = 7;
   return pack_sopp(kSoppDelayAlu, simm16);
+}
+
+/// @brief Encode s_wait_alu for the given target ISA.
+[[nodiscard]] inline constexpr uint32_t build_s_wait_alu(uint16_t simm16, rj_code_arch_t) {
+  constexpr uint8_t kSoppWaitAlu = 8;
+  return pack_sopp(kSoppWaitAlu, simm16);
 }
 
 /// @brief Encode s_mov_b32 for the given target ISA.
