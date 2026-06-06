@@ -203,7 +203,7 @@ release(cstring, ROC_GLOBAL_CU_MASK, "",                                      \
         "Each active bit represents using one CU (e.g., 0xf enables only 4 CUs)") \
 release(size_t, PAL_PREPINNED_MEMORY_SIZE, 64,                                \
         "Size in KBytes of prepinned memory")                                 \
-release(bool, AMD_CPU_AFFINITY, true,                                         \
+release(bool, AMD_CPU_AFFINITY, false,                                         \
         "Prefer GPU-local NUMA CPU affinity when the application has not set a CPU mask") \
 release(bool, AMD_GRAPH_CPU_AFFINITY, false,                                  \
         "Scope GPU-local NUMA CPU affinity to each hipGraph launch (set on "  \
