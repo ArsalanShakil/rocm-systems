@@ -68,6 +68,7 @@ def test_gfx1250_profile_enables_generator_backed_quirks():
     assert profile.use_hwreg_helpers
     assert profile.hwreg_wave_sched_mode_id == 26
     assert profile.generate_scaled_wmma_vop3px2
+    assert profile.vop3_cmp_sdst_size_bits == 32
 
 
 def test_rdna4_profile_keeps_gfx1250_quirks_disabled():
@@ -78,6 +79,20 @@ def test_rdna4_profile_keeps_gfx1250_quirks_disabled():
     assert not profile.use_hwreg_helpers
     assert profile.hwreg_wave_sched_mode_id is None
     assert not profile.generate_scaled_wmma_vop3px2
+    assert profile.vop3_cmp_sdst_size_bits == 32
+
+
+def test_rdna4_vop3_compare_sdst_uses_wave32_mask_size():
+    codegen = object.__new__(CodeGenerator)
+    codegen.isa_spec = SimpleNamespace(profile=Rdna4Profile())
+    sem = SimpleNamespace(semantic_class='vector_cmp')
+
+    dst = SimpleNamespace(is_output=True, name='vdst', operand_type='OPR_SREG')
+    src = SimpleNamespace(is_output=False, name='src0', operand_type='OPR_SRC')
+
+    assert codegen._operand_size_override('ENC_VOP3', dst, sem) == '32'
+    assert codegen._operand_size_override('ENC_VOPC', dst, sem) is None
+    assert codegen._operand_size_override('ENC_VOP3', src, sem) is None
 
 
 def test_packed_16bit_source_gate_is_limited_to_e32_16bit_sources():

@@ -46,6 +46,7 @@ add_executable(
     shared_infra_test.cpp
     transcendental_test.cpp
     analysis/liveness_test.cpp
+    analysis/waitcheck_test.cpp
     patch/spill_manager_test.cpp
     dbt/translate_test.cpp
     mtype_flags_test.cpp
@@ -86,6 +87,16 @@ add_dependencies(rj_dbt_translate_smoke_test rj_dbt_translate)
 add_test(
     NAME "RjDbtTranslate.Smoke"
     COMMAND rj_dbt_translate_smoke_test $<TARGET_FILE:rj_dbt_translate>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+add_executable(rj_waitcheck_smoke_test tools/rj_waitcheck_smoke_test.cpp)
+target_link_libraries(rj_waitcheck_smoke_test PRIVATE GTest::gtest)
+rj_configure_target(rj_waitcheck_smoke_test TEST)
+add_dependencies(rj_waitcheck_smoke_test rj_waitcheck)
+add_test(
+    NAME "RjWaitcheck.Smoke"
+    COMMAND rj_waitcheck_smoke_test $<TARGET_FILE:rj_waitcheck>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -209,6 +220,33 @@ if(HSA_RUNTIME64)
         PROPERTIES SKIP_REGULAR_EXPRESSION "\\[  SKIPPED \\]"
     )
     message(STATUS "HSA init test enabled (found ${HSA_RUNTIME64})")
+
+    add_executable(
+        waitcheck_preload_smoke_test
+        tools/waitcheck_preload_smoke_test.cpp
+    )
+    target_include_directories(
+        waitcheck_preload_smoke_test
+        PRIVATE ${RJ_HSA_INCLUDE_DIR} ${HSA_INCLUDE_DIR}
+    )
+    target_link_libraries(
+        waitcheck_preload_smoke_test
+        PRIVATE ${HSA_RUNTIME64} GTest::gtest
+    )
+    target_link_options(
+        waitcheck_preload_smoke_test
+        PRIVATE -Wl,-rpath,${RJ_HSA_LIBRARY_DIR}
+    )
+    rj_configure_target(waitcheck_preload_smoke_test TEST)
+    add_dependencies(waitcheck_preload_smoke_test rocjitsu_waitcheck_shim)
+    add_test(
+        NAME "WaitcheckPreload.Smoke"
+        COMMAND
+            ${CMAKE_COMMAND} -E env
+            LD_PRELOAD=$<TARGET_FILE:rocjitsu_waitcheck_shim>
+            $<TARGET_FILE:waitcheck_preload_smoke_test>
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
 
     # --- HSA translate test: CDNA4→RDNA4 on-device verification ---
     # Requires both compiled device kernels AND an RDNA4 GPU on the host.

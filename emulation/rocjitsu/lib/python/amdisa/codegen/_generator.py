@@ -240,14 +240,17 @@ class CodeGenerator:
         self.gen_test_encodings()
 
     def _supports_generated_vopd(self) -> bool:
-        return self.isa_spec.arch_name == 'gfx1250' and self.isa_spec.profile.has_vopd
+        return (
+            self.isa_spec.arch_name in ('rdna4', 'gfx1250')
+            and self.isa_spec.profile.has_vopd
+        )
 
     def gen_vopd(self) -> None:
-        """Generate gfx1250 VOPD dual-issue decoder/executor files.
+        """Generate VOPD dual-issue decoder/executor files.
 
         VOPD is skipped by the normal XML instruction generation because it
         uses a dual-slot encoding with bespoke operand packing. Keeping the
-        target-specific C++ body here lets the same regeneration path recreate
+        target-specific C++ body here lets the same regeneration path create
         the VOPD files and the generated decoder hook together.
         """
         if not self._supports_generated_vopd():
@@ -259,6 +262,11 @@ class CodeGenerator:
         out_dir = os.path.join(self.out_path, arch)
         os.makedirs(out_dir, exist_ok=True)
         guard = f'ROCJITSU_ISA_ARCH_AMDGPU_{arch.upper()}_VOPD_H_'
+        vopd3_src_type = (
+            'OperandType::OPR_SRC_SIMPLE'
+            if arch == 'gfx1250'
+            else 'OperandType::OPR_SRC'
+        )
 
         header = textwrap.dedent('''
             // Copyright (c) 2026 Advanced Micro Devices, Inc.
@@ -339,7 +347,8 @@ class CodeGenerator:
             #endif // @GUARD@
             ''').lstrip().replace('@ARCH@', arch).replace('@GUARD@', guard)
 
-        impl = textwrap.dedent('''
+        impl = (
+            textwrap.dedent('''
             // Copyright (c) 2026 Advanced Micro Devices, Inc.
             // SPDX-License-Identifier: MIT
             //
@@ -354,6 +363,7 @@ class CodeGenerator:
             #include <cmath>
             #include <format>
             #include <string>
+            #include <string_view>
 
             namespace rocjitsu {
             namespace @ARCH@ {
@@ -364,7 +374,7 @@ class CodeGenerator:
                               uint16_t encoded) {
               if (use_literal && encoded == 255)
                 return Operand(bits, OperandType::OPR_SIMM32, static_cast<int>(literal));
-              return Operand(bits, vopd3 ? OperandType::OPR_SRC_SIMPLE : OperandType::OPR_SRC,
+              return Operand(bits, vopd3 ? @VOPD3_SRC_TYPE@ : OperandType::OPR_SRC,
                              encoded);
             }
 
@@ -406,11 +416,21 @@ class CodeGenerator:
                 return "v_dual_max_num_f32";
               case 11:
                 return "v_dual_min_num_f32";
+              case 12:
+                if (std::string_view("@ARCH@") == "rdna4")
+                  return "v_dual_dot2acc_f32_f16";
+                return "v_dual_unknown";
+              case 13:
+                if (std::string_view("@ARCH@") == "rdna4")
+                  return "v_dual_dot2acc_f32_bf16";
+                return "v_dual_unknown";
               case 16:
                 return "v_dual_add_nc_u32";
               case 17:
                 return "v_dual_lshlrev_b32";
               case 18:
+                if (std::string_view("@ARCH@") == "rdna4")
+                  return "v_dual_and_b32";
                 return "v_dual_bitop2_b32";
               case 19:
                 return "v_dual_fma_f32";
@@ -547,6 +567,8 @@ class CodeGenerator:
               case 17:
                 return src1 << (src0 & 31u);
               case 18:
+                if (std::string_view("@ARCH@") == "rdna4")
+                  return src0 & src1;
                 return bitop2(src0, src1, slot.src2_imm);
               case 19: {
                 float result = std::fma(std::bit_cast<float>(src0),
@@ -709,6 +731,8 @@ class CodeGenerator:
                 break;
               case 18:
                 out += operand_list(*slot.dst, *slot.src0, *slot.src1);
+                if (std::string_view("@ARCH@") == "rdna4")
+                  break;
                 out += std::format(" bitop3:0x{:02x}", slot.src2_imm & 0xFF);
                 break;
               case 19:
@@ -745,7 +769,11 @@ class CodeGenerator:
 
             } // namespace @ARCH@
             } // namespace rocjitsu
-            ''').lstrip().replace('@ARCH@', arch)
+            ''')
+            .lstrip()
+            .replace('@ARCH@', arch)
+            .replace('@VOPD3_SRC_TYPE@', vopd3_src_type)
+        )
 
         with open(os.path.join(out_dir, 'vopd.h'), 'w') as f:
             f.write(header)
@@ -1232,6 +1260,26 @@ class CodeGenerator:
             sem.operation in self._READS_DST_OPS
             or sem.semantic_class in self._READS_DST_CLASSES
         )
+
+    def _operand_size_override(
+        self,
+        enc_name: str,
+        opnd: Operand,
+        sem: InstructionSemantics | None,
+    ) -> str | None:
+        """Return a target-specific generated operand size override."""
+        if (
+            sem is not None
+            and sem.semantic_class
+            in ('vector_cmp', 'vector_cmpx', 'vector_cmp_class', 'vector_cmpx_class')
+            and enc_name.upper() == 'ENC_VOP3'
+            and opnd.is_output
+            and opnd.name in ('vdst', 'sdst')
+            and opnd.operand_type.upper() == 'OPR_SREG'
+            and self.isa_spec.profile.vop3_cmp_sdst_size_bits is not None
+        ):
+            return str(self.isa_spec.profile.vop3_cmp_sdst_size_bits)
+        return None
 
     _VGPR_MSB_SRC_ROLES = ('Src0', 'Src1', 'Src2')
 
@@ -4240,9 +4288,13 @@ class CodeGenerator:
                     )
                     operand_size_exprs: dict[str, str] = {}
                     for opnd in inst.operands:
-                        opnd_size_expr = self._gfx1250_matrix_fmt_operand_size_expr(
-                            gfx1250_f8f6f4_shape, opnd.name
+                        opnd_size_expr = self._operand_size_override(
+                            enc.enc_name, opnd, inst_sem
                         )
+                        if opnd_size_expr is None:
+                            opnd_size_expr = self._gfx1250_matrix_fmt_operand_size_expr(
+                                gfx1250_f8f6f4_shape, opnd.name
+                            )
                         if opnd_size_expr is None:
                             opnd_size_expr = str(opnd.size)
                         operand_size_exprs[opnd.name] = opnd_size_expr

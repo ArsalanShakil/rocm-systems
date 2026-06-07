@@ -46,6 +46,8 @@ applications.
   topology, programs, and simulation parameters.
 - **Public C API** - stable `rj_*` C API (`rj_code_*`, `rj_vm_*`) with reference-counted
   opaque handles.
+- **Waitcheck** - object-code wait-hazard checker with an offline CLI and an
+  HSA `LD_PRELOAD` shim. See [docs/waitcheck/README.md](docs/waitcheck/README.md).
 
 ## Project layout
 

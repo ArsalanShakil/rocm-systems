@@ -86,9 +86,23 @@ public:
   static std::vector<std::unique_ptr<BasicBlock>> build(const CodeObject &co, Decoder &decoder,
                                                         std::span<const uint64_t> extra_leaders);
 
+  /// @brief Build basic blocks reachable from externally-known entry offsets.
+  ///
+  /// @details Unlike build(), this does not decode every byte in .text. It is
+  /// useful for library code objects where executable sections contain
+  /// inter-function padding that is not valid instruction encoding.
+  ///
+  /// @param[in] co Code object to analyze.
+  /// @param[in] decoder Decoder for the target ISA.
+  /// @param[in] entry_offsets Byte offsets to use as CFG roots.
+  /// @returns Ordered list of reachable basic blocks with their decoded instructions.
+  static std::vector<std::unique_ptr<BasicBlock>>
+  build_reachable(const CodeObject &co, Decoder &decoder, std::span<const uint64_t> entry_offsets);
+
 private:
   void add_instruction(std::unique_ptr<Instruction> inst);
   void add_successor(BasicBlock &successor);
+  static void add_successor_edges(std::vector<std::unique_ptr<BasicBlock>> &section_blocks);
 
   uint64_t start_offset_;
   uint32_t size_ = 0;

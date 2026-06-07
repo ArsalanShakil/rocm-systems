@@ -252,7 +252,7 @@ install(TARGETS rocjitsu_shared LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(
-        TARGETS rocjitsu_kmd_shim
+        TARGETS rocjitsu_kmd_shim rocjitsu_waitcheck_shim
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
     install(TARGETS rocjitsu_bin RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

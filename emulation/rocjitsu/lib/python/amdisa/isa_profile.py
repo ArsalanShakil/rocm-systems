@@ -260,6 +260,17 @@ class IsaProfile(ABC):
         return False
 
     @property
+    def vop3_cmp_sdst_size_bits(self) -> int | None:
+        """Explicit VOP3 compare destination width, if target-specific.
+
+        Older targets model the compare mask as a 64-bit SGPR pair in the ISA
+        XML. GFX12 VOP3 compares use a 32-bit scalar destination for the active
+        wave32 mask, so generated operand metadata must not claim the adjacent
+        SGPR is also defined.
+        """
+        return None
+
+    @property
     def waitcnt_decode(self) -> str:
         """Return C++ code block that decodes a WAITCNT immediate into
         vmcnt, expcnt, and lgkmcnt local variables.
@@ -1285,6 +1296,10 @@ class Rdna4Profile(_AmdgpuProfileBase):
     @property
     def has_vopd(self) -> bool:
         return True
+
+    @property
+    def vop3_cmp_sdst_size_bits(self) -> int | None:
+        return 32
 
     @property
     def coherency_model(self) -> MemoryCoherencyModel:
