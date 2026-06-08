@@ -9,8 +9,10 @@ RecordFunction backend. Backends interact only through _push_scope,
 _pop_scope, and the helpers defined here.
 """
 
+import importlib
 import inspect
 import os
+import sys
 import threading
 from functools import wraps
 from pathlib import Path
@@ -52,6 +54,50 @@ def set_python_tier_io(
     global _range_push, _range_pop
     _range_push = push
     _range_pop = pop
+
+
+# Python tier (roctx rangePush/rangePop) initialization, shared by all
+# backends so any single backend can emit markers on its own.
+_python_tier_ready: bool = False
+roctx_candidate_paths: list[str] = []
+
+
+def _prime_roctx_sys_path() -> None:
+    """Prepend ROCm Python site directories so roctx is importable."""
+    global roctx_candidate_paths
+    rocm_root = os.environ.get("ROCM_PATH", "/opt/rocm")
+    py = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    roctx_candidate_paths = [
+        f"{rocm_root}/lib/{py}/site-packages",
+        f"{rocm_root}/libexec/rocprofiler-sdk/python",
+    ]
+    for candidate in roctx_candidate_paths:
+        if candidate not in sys.path:
+            sys.path.insert(0, candidate)
+
+
+def ensure_python_tier() -> bool:
+    """Configure the Python tier from roctx once. Returns True if available."""
+    global _python_tier_ready
+    if _python_tier_ready or _range_push is not _missing_range_push:
+        return True
+    _prime_roctx_sys_path()
+    try:
+        roctx_mod = importlib.import_module("roctx")
+    except ImportError:
+        return False
+    set_python_tier_io(roctx_mod.rangePush, roctx_mod.rangePop)
+    _python_tier_ready = True
+    return True
+
+
+def get_python_tier_io() -> tuple[
+    Optional[Callable[[str], None]], Optional[Callable[[], None]]
+]:
+    """Return the configured (rangePush, rangePop), or (None, None)."""
+    if _range_push is _missing_range_push:
+        return None, None
+    return _range_push, _range_pop
 
 
 def set_native_tier_hook(hook: Optional[NativeTierHook]) -> None:

@@ -21,14 +21,28 @@ from utils.utils_analysis import (
 )
 from utils.utils_common import validate_roofline_csv
 
+# Maps each inject_roctx backend to its analyze CLI attributes and label.
+_BACKEND_CLI = {
+    "torch": {
+        "filter_attr": "torch_operator",
+        "list_attr": "list_torch_operators",
+        "label": "PyTorch",
+    },
+    "triton": {
+        "filter_attr": "triton_operator",
+        "list_attr": "list_triton_operators",
+        "label": "Triton",
+    },
+}
 
-def parse_torch_operator_patterns(args: argparse.Namespace) -> list[str]:
-    """Extract and flatten --torch-operator patterns from args.
 
-    Returns ``["**"]`` when ``--torch-operator`` is given with no arguments,
-    which matches all operators.  Returns ``[]`` when the flag is absent.
+def parse_operator_patterns(args: argparse.Namespace, attr: str) -> list[str]:
+    """Extract and flatten operator glob patterns from ``args.<attr>``.
+
+    Returns ``["**"]`` when the flag is given with no arguments (match all),
+    and ``[]`` when the flag is absent.
     """
-    raw = getattr(args, "torch_operator", None)
+    raw = getattr(args, attr, None)
     if raw is None:
         return []
     pattern_list: list[str] = []
@@ -41,6 +55,11 @@ def parse_torch_operator_patterns(args: argparse.Namespace) -> list[str]:
     if not pattern_list:
         pattern_list = ["**"]
     return pattern_list
+
+
+def parse_torch_operator_patterns(args: argparse.Namespace) -> list[str]:
+    """Return the ``--torch-operator`` filter patterns."""
+    return parse_operator_patterns(args, "torch_operator")
 
 
 class cli_analysis(OmniAnalyze_Base):
@@ -126,22 +145,14 @@ class cli_analysis(OmniAnalyze_Base):
             workload.dfs[parser.PMC_KERNEL_TOP_TABLE_ID] = kernel_top_df
             workload.dfs[parser.PMC_DISPATCH_INFO_TABLE_ID] = dispatch_info_df
 
-            if getattr(args, "list_torch_operators", False):
-                consolidated_df, api_trace_path = process_api_trace_output(path_info[0])
-                if consolidated_df.empty:
-                    tty.list_torch_operators(path_info[0], {})
+            for backend, cli in _BACKEND_CLI.items():
+                if getattr(args, cli["list_attr"], False):
+                    self.list_operators(path_info[0], kernel_top_df, backend)
                     sys.exit(0)
 
-                write_api_trace_consolidated_csv(consolidated_df, api_trace_path)
-                call_trees = build_call_trees_with_kernel_ids(
-                    consolidated_df=consolidated_df,
-                    kernel_top_df=kernel_top_df,
-                )
-                tty.list_torch_operators(path_info[0], call_trees)
-                sys.exit(0)
-
-            if getattr(args, "torch_operator", None) is not None:
-                self.apply_torch_operator_filter(args, workload, path_info[0])
+            for backend, cli in _BACKEND_CLI.items():
+                if getattr(args, cli["filter_attr"], None) is not None:
+                    self.apply_operator_filter(args, workload, path_info[0], backend)
 
             # create the loaded table
             gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
@@ -165,8 +176,9 @@ class cli_analysis(OmniAnalyze_Base):
         gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
         arch_config = self._arch_configs[gpu_arch]
 
-        if getattr(args, "torch_operator", None) is not None:
-            self.handle_torch_operator(args, workload)
+        for backend, cli in _BACKEND_CLI.items():
+            if getattr(args, cli["filter_attr"], None) is not None:
+                self.handle_operator(args, workload, backend)
 
         if args.list_stats:
             tty.show_kernel_stats(
@@ -257,15 +269,66 @@ class cli_analysis(OmniAnalyze_Base):
                 roof_plot=roof_plot,
             )
 
+    @staticmethod
+    def _filter_by_backend(consolidated_df: pd.DataFrame, backend: str) -> pd.DataFrame:
+        """Return the rows attributed to ``backend``.
+
+        When the Backend column is absent, rows are treated as the torch
+        backend.
+        """
+        if "Backend" in consolidated_df.columns:
+            return consolidated_df[consolidated_df["Backend"] == backend].copy()
+        if backend == "torch":
+            return consolidated_df.copy()
+        return consolidated_df.iloc[0:0].copy()
+
+    def list_operators(
+        self,
+        workload_path: str,
+        kernel_top_df: pd.DataFrame,
+        backend: str,
+    ) -> None:
+        """Render the operator call tree for a single backend."""
+        label = _BACKEND_CLI[backend]["label"]
+        consolidated_df, api_trace_path = process_api_trace_output(workload_path)
+        if consolidated_df.empty:
+            tty.list_torch_operators(workload_path, {}, framework_label=label)
+            return
+
+        # Write the full consolidated trace before narrowing to the backend.
+        write_api_trace_consolidated_csv(consolidated_df, api_trace_path)
+        backend_df = self._filter_by_backend(consolidated_df, backend)
+        if backend_df.empty:
+            tty.list_torch_operators(workload_path, {}, framework_label=label)
+            return
+
+        call_trees = build_call_trees_with_kernel_ids(
+            consolidated_df=backend_df,
+            kernel_top_df=kernel_top_df,
+        )
+        tty.list_torch_operators(workload_path, call_trees, framework_label=label)
+
     def apply_torch_operator_filter(
         self, args: argparse.Namespace, workload: schema.Workload, workload_path: str
     ) -> None:
-        """Set workload.filter_kernel_ids based on --torch-operator patterns.
+        """Apply the torch operator filter."""
+        self.apply_operator_filter(args, workload, workload_path, "torch")
+
+    def apply_operator_filter(
+        self,
+        args: argparse.Namespace,
+        workload: schema.Workload,
+        workload_path: str,
+        backend: str,
+    ) -> None:
+        """Set workload.filter_kernel_ids based on --<backend>-operator patterns.
 
         Called in pre_processing *before* load_table_data so that metric
         evaluation runs once with the correct kernel filter — the same
         approach used by -k/--kernel.
         """
+        cli = _BACKEND_CLI[backend]
+        label = cli["label"]
         api_trace_dir = Path(workload_path) / "api_trace"
         consolidated_path = api_trace_dir / "consolidated.csv"
 
@@ -281,13 +344,22 @@ class cli_analysis(OmniAnalyze_Base):
             if consolidated_df.empty:
                 console_warning(
                     "api trace",
-                    "No torch operator data found in this workload. "
-                    "Proceeding without torch operator filter.",
+                    f"No {label} operator data found in this workload. "
+                    f"Proceeding without {label} operator filter.",
                 )
                 return
             write_api_trace_consolidated_csv(consolidated_df, api_trace_path)
 
-        pattern_list = parse_torch_operator_patterns(args)
+        consolidated_df = self._filter_by_backend(consolidated_df, backend)
+        if consolidated_df.empty:
+            console_warning(
+                "api trace",
+                f"No {label} operator data found in this workload. "
+                f"Proceeding without {label} operator filter.",
+            )
+            return
+
+        pattern_list = parse_operator_patterns(args, cli["filter_attr"])
         all_operators = consolidated_df["Operator_Name"].dropna().unique()
         matched_names = [
             str(op).strip()
@@ -316,6 +388,10 @@ class cli_analysis(OmniAnalyze_Base):
         }
 
         matched_df["Kernel_ID"] = matched_df["Kernel_Name"].str.strip().map(name_to_id)
+        # Store matches per backend so combined runs render each call tree.
+        if not hasattr(workload, "matched_api_trace_dfs"):
+            workload.matched_api_trace_dfs = {}
+        workload.matched_api_trace_dfs[backend] = matched_df
         workload.matched_api_trace_df = matched_df
 
         kernel_names = set(matched_df["Kernel_Name"].dropna().str.strip().unique())
@@ -335,14 +411,14 @@ class cli_analysis(OmniAnalyze_Base):
             workload.filter_kernel_ids = kernel_ids
             console_log(
                 "api trace",
-                f"Torch operator filter selected {len(kernel_ids)} kernel(s) "
+                f"{label} operator filter selected {len(kernel_ids)} kernel(s) "
                 "for metric analysis.",
             )
         else:
             if workload.filter_kernel_ids:
                 console_error(
                     "api trace",
-                    "No torch-operator kernels overlap with the -k filter "
+                    f"No {label}-operator kernels overlap with the -k filter "
                     f"{workload.filter_kernel_ids}. No kernels to analyze.",
                 )
             else:
@@ -354,17 +430,27 @@ class cli_analysis(OmniAnalyze_Base):
     def handle_torch_operator(
         self, args: argparse.Namespace, workload: schema.Workload
     ) -> None:
-        """Display matched torch operator call tree."""
-        matched_df = workload.matched_api_trace_df
-        if matched_df.empty:
+        """Display the matched torch operator call tree."""
+        self.handle_operator(args, workload, "torch")
+
+    def handle_operator(
+        self, args: argparse.Namespace, workload: schema.Workload, backend: str
+    ) -> None:
+        """Display the matched operator call tree for a single backend."""
+        cli = _BACKEND_CLI[backend]
+        label = cli["label"]
+        matched_df = getattr(workload, "matched_api_trace_dfs", {}).get(backend)
+        if matched_df is None:
+            matched_df = getattr(workload, "matched_api_trace_df", None)
+        if matched_df is None or matched_df.empty:
             return
 
         call_trees = build_call_trees(matched_df)
 
-        pattern_list = parse_torch_operator_patterns(args)
+        pattern_list = parse_operator_patterns(args, cli["filter_attr"])
         matched_operators = matched_df["Operator_Name"].dropna().unique()
         print(f"\n{'=' * 80}")
-        print(f"Matched PyTorch Operators: {', '.join(pattern_list)}")
+        print(f"Matched {label} Operators: {', '.join(pattern_list)}")
         print("Grouped by source location, sorted by total GPU kernel duration.")
         print(f"{'=' * 80}")
         tty.show_call_tree(call_trees)

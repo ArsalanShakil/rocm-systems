@@ -1075,6 +1075,62 @@ Torch operator mapping can be combined with other profiling options. Use
    # Combine with kernel filtering (filters by GPU kernel name)
    $ rocprof-compute --experimental profile --name mnist --torch-trace -k elementwise -- python train.py
 
+.. _triton-trace:
+
+Triton trace
+============
+
+In addition to PyTorch, ROCm Compute Profiler can map performance counters to
+**Triton** kernels (including Triton kernels launched by ``torch.compile`` /
+Inductor). This is enabled with the ``--triton-trace`` option and shares the
+same ``api_trace`` output, ``Backend`` attribution, and analysis flow as Torch
+trace.
+
+.. warning::
+
+   Triton trace is currently an experimental feature. You must pass
+   ``--experimental`` to both **profile** and **analyze** commands when using the
+   Triton trace related options (``--triton-trace`` for profile;
+   ``--list-triton-operators`` and ``--triton-operator`` for analyze).
+
+Requirements
+------------
+
+* Valid Triton installation in the profiling environment.
+* The workload must be run as a Python script or a Python command.
+* The workload's Python version must match roctx's Python version.
+
+Usage
+-----
+
+To enable Triton kernel mapping, use ``--experimental`` with the
+``--triton-trace`` option:
+
+.. code-block:: shell-session
+
+   $ rocprof-compute --experimental profile --name triton_gemm --triton-trace -- python gemm.py
+
+``--triton-trace`` can be combined with ``--torch-trace`` to instrument both
+frameworks in a single run (useful for ``torch.compile`` workloads that mix
+ATen operators and generated Triton kernels):
+
+.. code-block:: shell-session
+
+   $ rocprof-compute --experimental profile --name compiled_model --torch-trace --triton-trace -- python train.py
+
+Each captured marker row records which framework produced it in the
+``Backend`` column of ``api_trace/consolidated.csv`` (``torch`` or ``triton``),
+so the two frameworks can be analyzed independently.
+
+.. note::
+
+   The CLI flags set the ``ROCPROFCOMPUTE_ROCTX_FRAMEWORKS`` environment
+   variable automatically. Set it to ``api`` to enable every available
+   backend.
+
+To analyze the captured Triton kernels, use the ``--list-triton-operators`` and
+``--triton-operator`` options in analyze mode (see :doc:`../analyze/cli`).
+
 .. _iteration-multiplexing:
 
 Iteration multiplexing
