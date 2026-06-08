@@ -1057,8 +1057,15 @@ __device__ T GDAContext::internal_amo_swap(void *dst, T value, int pe,
  */
 __device__ __forceinline__ uint32_t GDAContext::get_qp_index(int pe,
     ActiveWFInfo wf_info) {
+  // Resolve num_qps_per_pe from constmem: compare this context pointer
+  // against the default context to select the right value.
+  // Both values are scalar K$ loads, avoiding the HBM pointer chase.
+  uint32_t nqp = (this == constmem.default_ctx)
+      ? constmem.num_qps_per_pe_default_ctx
+      : constmem.num_qps_per_pe_usr_ctx;
+
   // Fast path: single QP per PE, no round-robin needed
-  if (num_qps_per_pe == 1) return pe;
+  if (nqp == 1) return pe;
 
   uint32_t qp_index{0};
 
@@ -1067,7 +1074,7 @@ __device__ __forceinline__ uint32_t GDAContext::get_qp_index(int pe,
     // Not using atomics: load balancing between wfs may not be perfect and drift, its a cost tradeof.
     // Offset by wavefront ID so concurrent wavefronts spread across QPs
     uint32_t wf_id = get_flat_block_id() / WF_SIZE;
-    qp_index = ((qp_counter[pe]++ + wf_id) % num_qps_per_pe) * num_pes + pe;
+    qp_index = ((qp_counter[pe]++ + wf_id) % nqp) * num_pes + pe;
   }
 
   // Broadcast the qp_index value to other lanes in the wavefront
