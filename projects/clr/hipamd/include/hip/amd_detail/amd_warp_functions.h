@@ -24,12 +24,7 @@ __device__ static inline unsigned __hip_ds_bpermute(int index, unsigned src) {
     float f;
   } tmp;
   tmp.u = src;
-#if __has_builtin(__builtin_amdgcn_wave_shuffle)
-  // wave_shuffle takes a lane index; legacy bpermute takes a byte index, so convert via >> 2.
-  tmp.i = __builtin_amdgcn_wave_shuffle(tmp.i, index >> 2);
-#else
   tmp.i = __builtin_amdgcn_ds_bpermute(index, tmp.i);
-#endif
   return tmp.u;
 }
 
@@ -40,11 +35,7 @@ __device__ static inline float __hip_ds_bpermutef(int index, float src) {
     float f;
   } tmp;
   tmp.f = src;
-#if __has_builtin(__builtin_amdgcn_wave_shuffle)
-  tmp.i = __builtin_amdgcn_wave_shuffle(tmp.i, index >> 2);
-#else
   tmp.i = __builtin_amdgcn_ds_bpermute(index, tmp.i);
-#endif
   return tmp.f;
 }
 
