@@ -1758,6 +1758,18 @@ class AMDSMIHelpers:
                 continue
         return None
 
+    def user_choice_exception(self, msg=None):
+        if len(sys.argv) > 2:
+            cmd = " ".join(sys.argv[1:3])
+        elif len(sys.argv) == 2:
+            cmd = sys.argv[1]
+        else:
+            cmd = "unknown"
+
+        if msg is None:
+            msg = "Confirmation not given. Exiting without setting value"
+        raise AmdSmiPermissionDeniedException(cmd, self.get_output_format(), msg)
+
     def confirm_out_of_spec_warning(self, auto_respond=False):
         """Print the warning for running outside of specification and prompt user to accept the terms.
 
