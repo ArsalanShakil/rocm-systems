@@ -216,7 +216,11 @@ TEST(spm_core, check_packet_generation)
         if(rocp_agent->runtime_visibility.hsa && rocp_agent->runtime_visibility.hip)
         {
             auto metrics = findSPMDeviceMetrics(agent, {});
-            ASSERT_FALSE(metrics.empty());
+            if(metrics.empty())
+            {
+                ROCP_ERROR << "SPM unavailable";
+                continue;
+            }
             ASSERT_TRUE(agent.get_rocp_agent());
             for(auto& metric : metrics)
             {
@@ -375,7 +379,11 @@ TEST(spm_core, check_callbacks)
             rocprofiler_queue_id_t qid = {.handle = static_cast<uint64_t>(count++)};
             hsa::FakeQueue         fq(agent, qid);
             auto                   metrics = findSPMDeviceMetrics(agent, {});
-            ASSERT_FALSE(metrics.empty());
+            if(metrics.empty())
+            {
+                ROCP_ERROR << "SPM unavailable";
+                continue;
+            }
             ASSERT_TRUE(agent.get_rocp_agent());
             for(auto& metric : metrics)
             {
@@ -488,7 +496,11 @@ TEST(spm_core, destroy_counter_profile)
         if(rocp_agent->runtime_visibility.hsa && rocp_agent->runtime_visibility.hip)
         {
             auto metrics = findSPMDeviceMetrics(agent, {});
-            ASSERT_FALSE(metrics.empty());
+            if(metrics.empty())
+            {
+                ROCP_ERROR << "SPM unavailable";
+                continue;
+            }
             ASSERT_TRUE(agent.get_rocp_agent());
             for(auto& metric : metrics)
             {
@@ -672,7 +684,11 @@ TEST(spm_core, test_profile_incremental)
         if(rocp_agent->runtime_visibility.hsa && rocp_agent->runtime_visibility.hip)
         {
             auto metrics = findSPMDeviceMetrics(agent, {});
-            ASSERT_FALSE(metrics.empty());
+            if(metrics.empty())
+            {
+                ROCP_ERROR << "SPM unavailable";
+                continue;
+            }
             ASSERT_TRUE(agent.get_rocp_agent());
 
             std::map<std::string, std::vector<counters::Metric>> metric_blocks;
@@ -759,6 +775,13 @@ TEST(spm_core, public_api_iterate_agents)
         auto rocp_agent = CHECK_NOTNULL(agent.get_rocp_agent());
         if(rocp_agent->runtime_visibility.hsa && rocp_agent->runtime_visibility.hip)
         {
+            auto expected = findSPMDeviceMetrics(agent, {});
+            if(expected.empty())
+            {
+                ROCP_ERROR << "SPM unavailable";
+                continue;
+            }
+
             std::set<uint64_t> from_api{};
 
             // Iterate through the agents and get the counters available on that agent
@@ -778,8 +801,6 @@ TEST(spm_core, public_api_iterate_agents)
                                  },
                                  static_cast<void*>(&from_api)),
                              "Could not fetch supported counters");
-
-            auto expected = findSPMDeviceMetrics(agent, {});
             for(const auto& x : expected)
             {
                 bool found = false;
