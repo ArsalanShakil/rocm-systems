@@ -324,12 +324,43 @@ void Vopd::init_operands() {
 
   dst_operands_[0] = &dstx_;
   dst_operands_[1] = &dsty_;
-  src_operands_[0] = &srcx0_;
-  src_operands_[1] = &srcx1_;
-  src_operands_[2] = &srcy0_;
-  src_operands_[3] = &srcy1_;
   num_dst_ = 2;
-  num_src_ = 4;
+  num_src_ = 0;
+
+  const auto add_src = [this](Operand *op) {
+    if (op)
+      src_operands_[num_src_++] = op;
+  };
+  const auto add_slot_sources = [&](const Slot &slot) {
+    switch (slot.op) {
+    case 0:
+      add_src(slot.dst);
+      add_src(slot.src0);
+      add_src(slot.src1);
+      break;
+    case 8:
+      add_src(slot.src0);
+      break;
+    case 9:
+      add_src(slot.src0);
+      add_src(slot.src1);
+      if (!slot.uses_vcc)
+        add_src(slot.src2);
+      break;
+    case 19:
+      add_src(slot.src0);
+      add_src(slot.src1);
+      add_src(slot.src2);
+      break;
+    default:
+      add_src(slot.src0);
+      add_src(slot.src1);
+      break;
+    }
+  };
+
+  add_slot_sources(x_);
+  add_slot_sources(y_);
 }
 
 std::string Vopd::format_slot(const Slot &slot) const {
