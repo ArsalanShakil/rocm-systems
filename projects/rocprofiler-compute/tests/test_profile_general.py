@@ -3130,7 +3130,7 @@ def test_torch_trace_profile(
         "Analyze with non-matching --torch-operator should not crash"
     )
     out_nomatch = capsys.readouterr().out
-    assert "No operators matched" in out_nomatch, (
+    assert "No PyTorch operators matched" in out_nomatch, (
         "Expected warning about no operators matched"
     )
 
