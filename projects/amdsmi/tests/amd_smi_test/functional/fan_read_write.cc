@@ -127,7 +127,9 @@ void TestFanReadWrite::Run(void) {
     ret = amdsmi_set_gpu_fan_speed(processor_handles_[dv_ind], 0, static_cast<uint64_t>(new_speed));
     DISPLAY_AMDSMI_STATUS(VERB(STANDARD), __FILE__, __LINE__, ret, AMDSMI_STATUS_SUCCESS);
 
-    if (ret == AMDSMI_STATUS_NOT_SUPPORTED) {
+    if (ret == AMDSMI_STATUS_NO_PERM || ret == AMDSMI_STATUS_NOT_SUPPORTED) {
+      std::cout << "\t**Set fan speed: Not supported or requires root/sudo. Skipping..."
+                << std::endl;
       continue;
     }
     CHK_ERR_ASRT(ret)
