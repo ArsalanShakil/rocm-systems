@@ -76,6 +76,18 @@ class cli_analysis(OmniAnalyze_Base):
         if args.random_port:
             console_error("--gui flag is required to enable --random-port")
 
+        active_operator_filters = [
+            cli["filter_attr"]
+            for cli in _BACKEND_CLI.values()
+            if getattr(args, cli["filter_attr"], None) is not None
+        ]
+        if len(active_operator_filters) > 1:
+            console_error(
+                "analysis",
+                "Only one operator filter may be used per analysis run. "
+                "Run the analysis separately for each framework.",
+            )
+
         for path_info in args.path:
             workload = self._runs[path_info[0]]
 
@@ -321,11 +333,10 @@ class cli_analysis(OmniAnalyze_Base):
         workload_path: str,
         backend: str,
     ) -> None:
-        """Set workload.filter_kernel_ids based on --<backend>-operator patterns.
+        """Set workload.filter_kernel_ids from the backend's operator filter.
 
-        Called in pre_processing *before* load_table_data so that metric
-        evaluation runs once with the correct kernel filter — the same
-        approach used by -k/--kernel.
+        Operator matches are restricted to the -k/--kernel filter when set.
+        Matched rows are stored in workload.matched_api_trace_dfs[backend].
         """
         cli = _BACKEND_CLI[backend]
         label = cli["label"]
@@ -373,7 +384,7 @@ class cli_analysis(OmniAnalyze_Base):
         if not matched_names:
             console_warning(
                 "api trace",
-                f"No operators matched the pattern(s): {pattern_list}",
+                f"No {label} operators matched the pattern(s): {pattern_list}",
             )
             sys.exit(0)
 
@@ -388,11 +399,9 @@ class cli_analysis(OmniAnalyze_Base):
         }
 
         matched_df["Kernel_ID"] = matched_df["Kernel_Name"].str.strip().map(name_to_id)
-        # Store matches per backend so combined runs render each call tree.
         if not hasattr(workload, "matched_api_trace_dfs"):
             workload.matched_api_trace_dfs = {}
         workload.matched_api_trace_dfs[backend] = matched_df
-        workload.matched_api_trace_df = matched_df
 
         kernel_names = set(matched_df["Kernel_Name"].dropna().str.strip().unique())
         kernel_ids = sorted(
@@ -414,18 +423,17 @@ class cli_analysis(OmniAnalyze_Base):
                 f"{label} operator filter selected {len(kernel_ids)} kernel(s) "
                 "for metric analysis.",
             )
+        elif workload.filter_kernel_ids:
+            console_error(
+                "api trace",
+                f"No {label}-operator kernels overlap with the -k filter "
+                f"{workload.filter_kernel_ids}. No kernels to analyze.",
+            )
         else:
-            if workload.filter_kernel_ids:
-                console_error(
-                    "api trace",
-                    f"No {label}-operator kernels overlap with the -k filter "
-                    f"{workload.filter_kernel_ids}. No kernels to analyze.",
-                )
-            else:
-                console_error(
-                    "api trace",
-                    "No kernels found for matched operators. No kernels to analyze.",
-                )
+            console_error(
+                "api trace",
+                "No kernels found for matched operators. No kernels to analyze.",
+            )
 
     def handle_torch_operator(
         self, args: argparse.Namespace, workload: schema.Workload
@@ -440,8 +448,6 @@ class cli_analysis(OmniAnalyze_Base):
         cli = _BACKEND_CLI[backend]
         label = cli["label"]
         matched_df = getattr(workload, "matched_api_trace_dfs", {}).get(backend)
-        if matched_df is None:
-            matched_df = getattr(workload, "matched_api_trace_df", None)
         if matched_df is None or matched_df.empty:
             return
 

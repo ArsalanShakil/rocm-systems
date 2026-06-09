@@ -4,7 +4,10 @@
 import argparse
 import shlex
 
-from rocprof_compute_profile.profiler_base import RocProfCompute_Base
+from rocprof_compute_profile.profiler_base import (
+    RocProfCompute_Base,
+    compute_selected_frameworks,
+)
 from rocprof_compute_soc.soc_base import OmniSoC_Base
 from utils.logger import console_error, console_log, demarcate
 
@@ -29,7 +32,7 @@ class rocprof_v3_profiler(RocProfCompute_Base):
                 "version of rocprof-compute. This functionality is planned for a "
                 "future release. Please adjust your profiling options accordingly."
             )
-        elif getattr(args, "torch_trace", False):
+        elif compute_selected_frameworks(args):
             trace_option = "--marker-trace"
         else:
             trace_option = "--kernel-trace"

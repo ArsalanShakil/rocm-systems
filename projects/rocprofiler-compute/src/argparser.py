@@ -174,6 +174,7 @@ def add_general_group(
             "   Torch trace (--torch-trace, --list-torch-operators, --torch-operator)\n"
             "   Triton trace (--triton-trace, --list-triton-operators, "
             "--triton-operator)\n"
+            "   API trace (--api-trace)\n"
         ),
     )
 
@@ -339,6 +340,19 @@ Examples:
             "applications.\n"
             "\t\t\tCan be combined with --torch-trace."
         ),
+    )
+    profile_group.add_argument(
+        "--api-trace",
+        dest="api_trace",
+        required=False,
+        default=False,
+        const=True,
+        nargs=0,
+        base_action="store_true",
+        action=ExperimentalAction,
+        experimental_enabled=experimental_enabled,
+        feature_label="API trace",
+        help=("\t\t\tAPI Trace, enables tracing for all supported framework backends."),
     )
     profile_group.add_argument(
         "-k",

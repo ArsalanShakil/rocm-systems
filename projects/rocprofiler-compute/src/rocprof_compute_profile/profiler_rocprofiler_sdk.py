@@ -7,7 +7,10 @@ import shlex
 from pathlib import Path
 from typing import Optional, Union
 
-from rocprof_compute_profile.profiler_base import RocProfCompute_Base
+from rocprof_compute_profile.profiler_base import (
+    RocProfCompute_Base,
+    compute_selected_frameworks,
+)
 from rocprof_compute_soc.soc_base import OmniSoC_Base
 from utils.logger import console_debug, console_error, console_log, demarcate
 from utils.utils_common import resolve_rocm_library_path
@@ -54,7 +57,7 @@ class rocprofiler_sdk_profiler(RocProfCompute_Base):
             "ROCPROF_OUTPUT_PATH": f"{args.output_directory}/out/pmc_1",
         })
 
-        if getattr(args, "torch_trace", False):
+        if compute_selected_frameworks(args):
             options["ROCPROF_MARKER_API_TRACE"] = "1"
         # Create folder pointed by ROCPROF_OUTPUT_PATH
         Path(options["ROCPROF_OUTPUT_PATH"]).mkdir(parents=True, exist_ok=True)

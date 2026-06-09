@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from rocprof_compute_soc.soc_base import OmniSoC_Base
+from utils.inject_roctx import KNOWN_BACKENDS
 from utils.logger import (
     console_debug,
     console_error,
@@ -41,10 +42,11 @@ _FRAMEWORK_ENV_VAR = "ROCPROFCOMPUTE_ROCTX_FRAMEWORKS"
 _FLAG_TO_FRAMEWORKS: dict[str, tuple[str, ...]] = {
     "torch_trace": ("torch",),
     "triton_trace": ("triton",),
+    "api_trace": KNOWN_BACKENDS,
 }
 
 
-def _compute_selected_frameworks(args: argparse.Namespace) -> set[str]:
+def compute_selected_frameworks(args: argparse.Namespace) -> set[str]:
     """Return the set of frameworks requested via CLI flags."""
     selected: set[str] = set()
     for flag, frameworks in _FLAG_TO_FRAMEWORKS.items():
@@ -174,7 +176,7 @@ class RocProfCompute_Base:
     def sanitize(self) -> None:
         """Perform sanitization of inputs"""
         args = self.get_args()
-        selected_frameworks = _compute_selected_frameworks(args)
+        selected_frameworks = compute_selected_frameworks(args)
         self._selected_frameworks: set[str] = selected_frameworks
 
         if (
