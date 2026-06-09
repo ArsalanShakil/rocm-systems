@@ -37,9 +37,9 @@ INCREMENTS: dict[str, int] = {
     "rx_rdma_cnp_pkts":       5,
     "tx_rdma_cnp_pkts":       3,
     "tx_rdma_ack_timeout":    1,
-    "resp_tx_pkt_seq_err":    0,
-    "req_rx_pkt_seq_err":     0,
-    "req_rx_impl_nak_seq_err": 0,
+    "resp_tx_pkt_seq_err":    1,
+    "req_rx_pkt_seq_err":     1,
+    "req_rx_impl_nak_seq_err": 1,
 }
 
 

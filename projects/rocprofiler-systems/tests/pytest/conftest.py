@@ -329,6 +329,7 @@ def pytest_configure(config: pytest.Config) -> None:
         "time_window",
         "transpose",
         "nic",
+        "ainic",
         "network",
         "fork",
         "user_api",

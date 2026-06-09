@@ -357,3 +357,74 @@ python3 -m pytest test_ainic_sim.py -v
 
 Expected result: **3 PASSED, 1 SKIPPED** (the rocprof-sys-sample test is
 skipped until `AINIC_TEST_ROCPROF=1` and a dev build are available).
+
+---
+
+## Running `test_ainic_perf.py` without hardware
+
+`test_ainic_perf.py` tests full end-to-end AI NIC performance sampling via
+`rocprof-sys-sample`.  It was originally written for systems with real Pensando
+Pollara hardware, but it now supports simulation via `SMI_NIC_SYSFS_ROOT`.
+
+### Prerequisites
+
+* A dev build of **rocprofiler-systems** that links against the patched amdsmi
+  (the one with `SMI_NIC_SYSFS_ROOT` support and the non-fatal ethtool path).
+* `wget` must be on the `PATH` (the test uses it as the profiled workload).
+* The `setup_ainic_sim.sh` script (in the same directory as the tests).
+
+### Workflow: two terminals
+
+**Terminal 1 — start the simulation** (keep it running for the duration of the tests):
+
+```bash
+cd projects/rocprofiler-systems/tests/pytest
+./setup_ainic_sim.sh
+```
+
+The script prints a line like:
+
+```
+    export SMI_NIC_SYSFS_ROOT=/tmp/ainic-sim-12345
+```
+
+**Terminal 2 — run the tests:**
+
+```bash
+# Copy the export line from Terminal 1:
+export SMI_NIC_SYSFS_ROOT=/tmp/ainic-sim-12345
+export ROCPROFSYS_BUILD_DIR=/mnt/projects/rocprofiler-systems/build/debug
+
+cd projects/rocprofiler-systems/tests/pytest
+pytest -m ainic test_ainic_perf.py -v
+```
+
+The `ainic_perf_env` fixture automatically forwards `SMI_NIC_SYSFS_ROOT` into
+the `rocprof-sys-sample` child process so that amdsmi uses the fake sysfs.
+The `ainic_available` session fixture skips the test automatically if neither
+real hardware nor `SMI_NIC_SYSFS_ROOT` is set.
+
+### What the test validates
+
+| Check | How |
+|-------|-----|
+| 10 AI NIC Perfetto counter tracks written | `assert_perfetto()` with `AINIC_PERFETTO_COUNTER_NAMES` |
+| 10 AI NIC track names in ROCpd SQLite DB | queries `rocpd_string_*` tables for `ainic_*` strings |
+
+### Simulation vs real hardware
+
+| | Simulation | Real hardware |
+|---|---|---|
+| `SMI_NIC_SYSFS_ROOT` | set to fake sysfs root | unset |
+| Counter source | `nic_simulator.py` (increments files every 50 ms) | Pensando Pollara NIC |
+| Workload | `wget` download (2 files) | same |
+| Expected result | PASSED (counters non-zero) | PASSED (counters non-zero) |
+
+> **Tip:** The download URLs in the test point to real release artifacts. In an
+> air-gapped environment, replace them with any HTTP endpoint that takes several
+> seconds to respond (e.g. a local Python HTTP server serving a large file).
+
+> **Note:** `ROCPROFSYS_USE_PROCESS_SAMPLING` must be `ON` (which is the default
+> in the fixture) because `ROCPROFSYS_USE_AINIC` is in the `process_sampling`
+> category.  Setting process sampling to `OFF` silently disables AINIC even
+> when `ROCPROFSYS_USE_AINIC=ON`.
