@@ -234,12 +234,12 @@ class ResetCommands:
                 return
             if args.clocks:
                 reset_clocks_results = {"overdrive": "", "clocks": "", "performance": ""}
-                exc = None
+                detected_exception = None
                 try:
                     amdsmi_interface.amdsmi_set_gpu_overdrive_level(args.gpu, 0)
                     reset_clocks_results["overdrive"] = "Overdrive set to 0"
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    exc = e
+                    detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     logging.debug(
@@ -255,8 +255,8 @@ class ResetCommands:
                     amdsmi_interface.amdsmi_set_gpu_perf_level(args.gpu, level_auto)
                     reset_clocks_results["clocks"] = "Successfully reset performance level to auto"
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    if exc is None:
-                        exc = e
+                    if detected_exception is None:
+                        detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     error_msg = f"[{e.get_error_info(detailed=False)}] Unable to reset performance level to auto"
@@ -273,8 +273,8 @@ class ResetCommands:
                         "Successfully reset performance level to auto"
                     )
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    if exc is None:
-                        exc = e
+                    if detected_exception is None:
+                        detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     error_msg = f"[{e.get_error_info(detailed=False)}] Unable to reset performance level to auto"
@@ -286,10 +286,10 @@ class ResetCommands:
                 self.logger.store_output(args.gpu, "reset_clocks", reset_clocks_results)
                 self.logger.print_output()
                 self.logger.clear_multiple_devices_output()
-                if exc is not None:
+                if detected_exception is not None:
                     output_format = self.helpers.get_output_format()
                     raise AmdSmiLibraryErrorException(
-                        output_format, error_msg, exc.get_error_code()
+                        output_format, error_msg, detected_exception.get_error_code()
                     )
                 return
             if args.fans:
@@ -311,7 +311,7 @@ class ResetCommands:
                 self.logger.clear_multiple_devices_output()
                 return
             if args.profile:
-                exc = None
+                detected_exception = None
                 reset_profile_results = {"power_profile": "N/A"}
                 try:
                     power_profile_mask = (
@@ -322,7 +322,7 @@ class ResetCommands:
                         "Successfully reset Power Profile to default (bootup default)"
                     )
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    exc = e
+                    detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     error_msg = f"[{e.get_error_info(detailed=False)}] Unable to reset Power Profile to default (bootup default)"
@@ -334,19 +334,19 @@ class ResetCommands:
                 self.logger.store_output(args.gpu, "reset_profile", reset_profile_results)
                 self.logger.print_output()
                 self.logger.clear_multiple_devices_output()
-                if exc is not None:
+                if detected_exception is not None:
                     output_format = self.helpers.get_output_format()
                     raise AmdSmiLibraryErrorException(
-                        output_format, error_msg, exc.get_error_code()
+                        output_format, error_msg, detected_exception.get_error_code()
                     )
                 return
             if args.xgmierr:
-                exc = None
+                detected_exception = None
                 try:
                     amdsmi_interface.amdsmi_reset_gpu_xgmi_error(args.gpu)
                     result = "Successfully reset XGMI Error count"
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    exc = e
+                    detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     logging.debug(
@@ -361,9 +361,11 @@ class ResetCommands:
                 self.logger.store_output(args.gpu, "reset_xgmi_err", result)
                 self.logger.print_output()
                 self.logger.clear_multiple_devices_output()
-                if exc is not None:
+                if detected_exception is not None:
                     output_format = self.helpers.get_output_format()
-                    raise AmdSmiLibraryErrorException(output_format, result, exc.get_error_code())
+                    raise AmdSmiLibraryErrorException(
+                        output_format, result, detected_exception.get_error_code()
+                    )
                 return
             if args.perf_determinism:
                 try:
@@ -394,7 +396,7 @@ class ResetCommands:
                     power_limit_types[key] = "N/A"
                 current_sensor_num = 0
 
-                exc = None
+                detected_exception = None
                 try:
                     power_cap_types = amdsmi_interface.amdsmi_get_supported_power_cap(args.gpu)
                     for sensor in power_cap_types["sensor_inds"]:
@@ -427,7 +429,7 @@ class ResetCommands:
                             f"Successfully reset power cap to {default_power_cap_in_w}W"
                         )
                 except amdsmi_exception.AmdSmiLibraryException as e:
-                    exc = e
+                    detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                         raise PermissionError("Command requires elevation") from e
                     error_msg = f"[{e.get_error_info(detailed=False)}] Unable to reset cap to default power cap."
@@ -438,10 +440,10 @@ class ResetCommands:
                     return
                 self.logger.print_output()
                 self.logger.clear_multiple_devices_output()
-                if exc is not None:
+                if detected_exception is not None:
                     output_format = self.helpers.get_output_format()
                     raise AmdSmiLibraryErrorException(
-                        output_format, error_msg, exc.get_error_code()
+                        output_format, error_msg, detected_exception.get_error_code()
                     )
 
         #######################
@@ -449,19 +451,21 @@ class ResetCommands:
         #######################
 
         if args.clean_local_data:
-            exc = None
+            detected_exception = None
             try:
                 amdsmi_interface.amdsmi_clean_gpu_local_data(args.gpu)
                 result = "Successfully clean GPU local data"
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
                     raise PermissionError("Command requires elevation") from e
-                exc = e
+                detected_exception = e
                 result = f"[{e.get_error_info(detailed=False)}] Unable to clean local data."
             self.logger.store_output(args.gpu, "clean_local_data", result)
             self.logger.print_output()
             self.logger.clear_multiple_devices_output()
-            if exc is not None:
+            if detected_exception is not None:
                 output_format = self.helpers.get_output_format()
-                raise AmdSmiLibraryErrorException(output_format, result, exc.get_error_code())
+                raise AmdSmiLibraryErrorException(
+                    output_format, result, detected_exception.get_error_code()
+                )
             return
