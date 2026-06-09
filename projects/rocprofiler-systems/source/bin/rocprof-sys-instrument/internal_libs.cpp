@@ -13,12 +13,12 @@
 #include "fwd.hpp"
 #include "log.hpp"
 
+#include "common/join.hpp"
 #include <timemory/components/rusage/components.hpp>
 #include <timemory/components/timing/wall_clock.hpp>
 #include <timemory/environment/types.hpp>
 #include <timemory/log/macros.hpp>
 #include <timemory/utility/filepath.hpp>
-#include <timemory/utility/join.hpp>
 #include <timemory/utility/types.hpp>
 
 #include <algorithm>
@@ -32,7 +32,6 @@ namespace
 {
 namespace filepath = ::tim::filepath;
 using ::tim::get_env;
-using ::timemory::join::join;
 using strview_init_t   = std::initializer_list<std::string_view>;
 using strview_set_t    = std::set<std::string_view>;
 using open_modes_vec_t = std::vector<int>;
@@ -188,7 +187,7 @@ get_library_search_paths_impl()
         {
             for(const auto& ditr : rocprofsys::delimit(itr, ":"))
             {
-                _emplace_if_exists(join('/', ditr, "lib"));
+                _emplace_if_exists(rocprofsys::join('/', ditr, "lib"));
             }
         }
     }
@@ -414,7 +413,7 @@ get_internal_libs_data_impl()
         for(const auto* litr :
             { "librocprof-sys-dl.so", "librocprof-sys-user.so", "librocprof-sys-rt.so" })
         {
-            auto _libpath = join('/', _rocprofsys_base_path, itr, litr);
+            auto _libpath = rocprofsys::join('/', _rocprofsys_base_path, itr, litr);
             if(filepath::exists(_libpath))
             {
                 _libs.emplace_back(filepath::realpath(_libpath, nullptr, false));
@@ -526,7 +525,7 @@ find_library(std::string_view _lib_v)
 
     for(const auto& itr : get_library_search_paths())
     {
-        auto _path = join('/', itr, _lib_v);
+        auto _path = rocprofsys::join('/', itr, _lib_v);
         if(filepath::exists(_path)) return std::optional<std::string>{ _path };
     }
 
@@ -543,7 +542,7 @@ find_libraries(std::string_view _lib_v)
 
     for(const auto& itr : get_library_search_paths())
     {
-        auto _path = join('/', itr, _lib_v);
+        auto _path = rocprofsys::join('/', itr, _lib_v);
         if(filepath::exists(_path)) _libs.emplace_back(_path);
     }
 

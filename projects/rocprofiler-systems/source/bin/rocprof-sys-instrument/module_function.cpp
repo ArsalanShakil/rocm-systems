@@ -8,7 +8,7 @@
 #include "log.hpp"
 #include "rocprof-sys-instrument.hpp"
 
-#include <timemory/utility/join.hpp>
+#include "common/join.hpp"
 
 #include <stdexcept>
 
@@ -158,7 +158,7 @@ module_function::should_coverage_instrument() const
     {
         messages.emplace_back(
             2, "Skipping", "function",
-            TIMEMORY_JOIN("-", "less-than", absolute_min_instructions, "instructions"),
+            rocprofsys::join("-", "less-than", absolute_min_instructions, "instructions"),
             function_name);
         return false;
     }
@@ -197,7 +197,7 @@ module_function::should_instrument(bool coverage) const
     {
         messages.emplace_back(
             2, "Skipping", "function",
-            TIMEMORY_JOIN("-", "less-than", absolute_min_instructions, "instructions"),
+            rocprofsys::join("-", "less-than", absolute_min_instructions, "instructions"),
             function_name);
         return false;
     }
@@ -403,7 +403,7 @@ module_function::get_visibility() const
 bool
 module_function::is_internal_constrained() const
 {
-    using ::timemory::join::join;
+    using ::rocprofsys::join;
     auto _basename = [](std::string_view _v) {
         return std::string{ tim::filepath::basename(_v) };
     };
@@ -457,7 +457,7 @@ module_function::is_internal_constrained() const
 
         for(const auto& fitr : litr.second)
         {
-            using ::timemory::join::join;
+            using ::rocprofsys::join;
             if(fitr.second.find(function_name) != fitr.second.end())
                 return _report("Excluding", "function",
                                join(" ", "internal library", litr.first), 3);

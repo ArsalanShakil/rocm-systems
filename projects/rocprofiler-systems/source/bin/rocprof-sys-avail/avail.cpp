@@ -6,6 +6,7 @@
 #include "common/defines.h"
 #include "common/delimit.hpp"
 #include "common/environment.hpp"
+#include "common/join.hpp"
 #include "component_categories.hpp"
 #include "defines.hpp"
 #include "enumerated_list.hpp"
@@ -145,7 +146,7 @@ main(int argc, char** argv)
             }
             for(const auto& eitr : itr.second->get_categories())
             {
-                _category_options.emplace(TIMEMORY_JOIN("::", "settings", eitr));
+                _category_options.emplace(rocprofsys::join("::", "settings", eitr));
             }
         }
     }
@@ -374,7 +375,7 @@ main(int argc, char** argv)
                         if(!is_selected(itr.key)) continue;
                         if(_show && !is_selected(itr.value)) continue;
                         _msg << "| " << std::setw(std::get<0>(_w) + 2)
-                             << TIMEMORY_JOIN("", "`", itr.key, "`");
+                             << rocprofsys::join("", "`", itr.key, "`");
                         if(_show)
                             _msg << " | " << std::setw(std::get<1>(_w)) << itr.value;
                         _msg << " | " << std::setw(std::get<2>(_w)) << itr.description
@@ -1011,7 +1012,7 @@ write_settings_info(std::ostream& os, format_options& fmt_opts,
         {
             str_set_t _categories{};
             for(const auto& citr : sitr->second->get_categories())
-                _categories.emplace(TIMEMORY_JOIN("::", "settings", citr));
+                _categories.emplace(rocprofsys::join("::", "settings", citr));
             bool _found = false;
             for(const auto& citr : _categories)
             {

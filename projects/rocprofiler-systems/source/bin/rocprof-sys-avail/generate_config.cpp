@@ -8,6 +8,7 @@
 
 #include "common/delimit.hpp"
 #include "common/environment.hpp"
+#include "common/join.hpp"
 #include "common/json_config.hpp"
 
 #include <nlohmann/json.hpp>
@@ -59,7 +60,7 @@ ignore_setting(const Tp& _v, const format_options& fmt_opts)
         for(auto& itr : _v->get_categories())
         {
             if(category_view.count(itr) > 0 ||
-               category_view.count(TIMEMORY_JOIN("::", "settings", itr)) > 0)
+               category_view.count(rocprofsys::join("::", "settings", itr)) > 0)
             {
                 _found = true;
                 break;
@@ -198,7 +199,7 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
         _output_dir = std::string{ (_absolute) ? "/" : "" } + _dirs.front();
         _dirs.erase(_dirs.begin());
         for(const auto& itr : _dirs)
-            _output_dir = TIMEMORY_JOIN('/', _output_dir, itr);
+            _output_dir = rocprofsys::join('/', _output_dir, itr);
     }
     _output_dir += "/";
 
@@ -274,7 +275,7 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
         else
         {
             throw std::runtime_error(
-                TIMEMORY_JOIN(" ", "Error opening", _type, "output file:", _fname));
+                rocprofsys::join(" ", "Error opening", _type, "output file:", _fname));
         }
         return _ofs;
     };
