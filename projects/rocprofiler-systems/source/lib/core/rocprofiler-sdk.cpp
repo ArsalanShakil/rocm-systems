@@ -21,6 +21,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -44,11 +45,10 @@ namespace
 std::string
 get_setting_name(std::string _v)
 {
-    constexpr auto _prefix = tim::string_view_t{ "rocprofsys_" };
+    constexpr auto _prefix = std::string_view{ "rocprofsys_" };
     for(auto& itr : _v)
         itr = tolower(itr);
-    auto _pos = _v.find(_prefix);
-    if(_pos == 0) return _v.substr(_prefix.length());
+    if(_v.starts_with(_prefix)) return _v.substr(_prefix.length());
     return _v;
 }
 

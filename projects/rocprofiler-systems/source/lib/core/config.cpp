@@ -55,6 +55,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unistd.h>
 #include <utility>
@@ -98,11 +99,10 @@ get_config()
 std::string
 get_setting_name(std::string _v)
 {
-    constexpr auto _prefix = tim::string_view_t{ "rocprofsys_" };
+    constexpr auto _prefix = std::string_view{ "rocprofsys_" };
     for(auto& itr : _v)
         itr = tolower(itr);
-    auto _pos = _v.find(_prefix);
-    if(_pos == 0) return _v.substr(_prefix.length());
+    if(_v.starts_with(_prefix)) return _v.substr(_prefix.length());
     return _v;
 }
 
