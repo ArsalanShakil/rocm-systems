@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: "ROCm/TheRock"
-          ref: 597c72bc0f2604f76b2d6db985c5778cfef57909 # 2026-06-08 commit
+          ref: 3a81777f30974043830021e7547b8fd2947408f5 # 2026-06-09 commit
 
       # Centralized arch-specific configuration
       - name: Set arch-specific paths
