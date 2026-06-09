@@ -195,6 +195,11 @@ HIP_TEST_CASE(Unit_hipGraphRetainUserObject_Negative_Basic) {
   // Release graph object with reference count 8
   HIP_CHECK(hipGraphReleaseUserObject(graph, hObject, 8));
 
+  // Release user object with reference count 2
   HIP_CHECK(hipUserObjectRelease(hObject, 2));
+
+  // Finally, release user object with reference count 1
+  // This will avoid memory leaks
+  HIP_CHECK(hipUserObjectRelease(hObject, 1));
   HIP_CHECK(hipGraphDestroy(graph));
 }
