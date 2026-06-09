@@ -9,10 +9,11 @@ Inductor kernel launches appear in ROCTX markers.
 """
 
 import importlib.util
+import inspect
 import threading
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from utils.inject_roctx import _core
 from utils.inject_roctx._core import (
@@ -99,50 +100,103 @@ def _extract_kernel_name(obj: object, default: str = "<triton_kernel>") -> str:
     return default
 
 
+def _run_with_marker(
+    self_obj: object,
+    marker_prefix: str,
+    thunk: Callable[[], Any],
+) -> object:
+    """Run ``thunk`` inside a ROCTX range; nested launches reuse the outer range."""
+    if _in_launch():
+        return thunk()
+    kernel_name = _extract_kernel_name(self_obj)
+    location = resolve_user_caller_location()
+    _thread_local.in_launch = True
+    _push_scope(
+        f"{marker_prefix}.{kernel_name}", f"#1@{location}", backend=_BACKEND_NAME
+    )
+    try:
+        return thunk()
+    finally:
+        _pop_scope()
+        _thread_local.in_launch = False
+
+
+def _wrap_method(
+    owner: type, method_name: str, marker_prefix: str, original: Callable[..., Any]
+) -> bool:
+    @wraps(original)
+    def launch_with_roctx(self: object, *args: Any, **kwargs: Any) -> object:
+        return _run_with_marker(
+            self, marker_prefix, lambda: original(self, *args, **kwargs)
+        )
+
+    launch_with_roctx._roctx_wrapped = True
+    setattr(owner, method_name, launch_with_roctx)
+    return True
+
+
+def _wrap_property(
+    owner: type, method_name: str, marker_prefix: str, prop: property
+) -> bool:
+    orig_get = prop.fget
+    if orig_get is None:
+        return False
+
+    def roctx_get(self: object) -> object:
+        launcher = orig_get(self)
+        if launcher is None or getattr(launcher, "_roctx_launcher", False):
+            return launcher
+
+        @wraps(launcher)
+        def launch(*args: Any, **kwargs: Any) -> object:
+            return _run_with_marker(
+                self, marker_prefix, lambda: launcher(*args, **kwargs)
+            )
+
+        launch._roctx_launcher = True
+        return launch
+
+    roctx_get._roctx_wrapped = True
+    setattr(owner, method_name, property(roctx_get))
+    return True
+
+
 def _wrap_launch(
     owner: type,
     method_name: str,
     marker_prefix: str,
 ) -> bool:
-    """Wrap ``owner.method_name`` with a ROCTX range. Idempotent.
+    """Wrap ``owner.method_name`` (a method or property) with a ROCTX range.
 
-    Returns True when the wrapper is installed or already present.
+    Idempotent. Returns True when the wrapper is installed or already present.
     """
-    original = getattr(owner, method_name, None)
-    if original is None:
+    attr = inspect.getattr_static(owner, method_name, None)
+    if attr is None:
         return False
-    if getattr(original, "_roctx_wrapped", False):
+    if isinstance(attr, property):
+        if attr.fget is not None and getattr(attr.fget, "_roctx_wrapped", False):
+            return True
+    elif getattr(attr, "_roctx_wrapped", False):
         return True
 
-    @wraps(original)
-    def launch_with_roctx(self: object, *args: Any, **kwargs: Any) -> object:
-        if _in_launch():
-            return original(self, *args, **kwargs)
-        kernel_name = _extract_kernel_name(self)
-        location = resolve_user_caller_location()
-        marker = f"{marker_prefix}.{kernel_name}"
-        _thread_local.in_launch = True
-        _push_scope(marker, f"#1@{location}", backend=_BACKEND_NAME)
-        try:
-            return original(self, *args, **kwargs)
-        finally:
-            _pop_scope()
-            _thread_local.in_launch = False
-
-    launch_with_roctx._roctx_wrapped = True
     try:
-        setattr(owner, method_name, launch_with_roctx)
-        console_log(
-            "api trace",
-            f"Wrapped {owner.__name__}.{method_name} with ROCTX markers",
-        )
-        return True
+        if isinstance(attr, property):
+            installed = _wrap_property(owner, method_name, marker_prefix, attr)
+        else:
+            installed = _wrap_method(owner, method_name, marker_prefix, attr)
     except Exception as exc:
         console_warning(
             "api trace",
             f"Could not patch {owner.__name__}.{method_name}: {exc}",
         )
         return False
+
+    if installed:
+        console_log(
+            "api trace",
+            f"Wrapped {owner.__name__}.{method_name} with ROCTX markers",
+        )
+    return installed
 
 
 def patch_triton_launcher() -> None:

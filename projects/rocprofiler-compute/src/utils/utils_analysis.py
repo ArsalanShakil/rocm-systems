@@ -464,7 +464,8 @@ def process_api_trace_output(
     if not existing_csv_files:
         console_warning(
             "No marker files with corresponding counter files found. "
-            "Ensure profiling was done with '--torch-trace'."
+            "Ensure profiling was done with '--torch-trace', "
+            "'--triton-trace', or '--api-trace'."
         )
         return pd.DataFrame(), Path(f"{workload_dir}/api_trace")
 
