@@ -803,6 +803,6 @@ arguments, ``all``, ``*``, or ``**``):
    $ rocprof-compute --experimental analyze --path ./workload \
        --triton-operator "*matmul*,*softmax*"
 
-When a workload was profiled with both ``--torch-trace`` and ``--triton-trace``,
-``--torch-operator`` and ``--triton-operator`` can be used independently (or
-together) to inspect each framework's kernels.
+``--torch-operator`` and ``--triton-operator`` are **mutually exclusive**: apply
+one operator filter per analysis run, and run the analysis separately for each
+framework.

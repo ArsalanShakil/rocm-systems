@@ -1111,25 +1111,40 @@ To enable Triton kernel mapping, use ``--experimental`` with the
    $ rocprof-compute --experimental profile --name triton_gemm --triton-trace -- python gemm.py
 
 ``--triton-trace`` can be combined with ``--torch-trace`` to instrument both
-frameworks in a single run (useful for ``torch.compile`` workloads that mix
-ATen operators and generated Triton kernels):
+frameworks in a single run:
 
 .. code-block:: shell-session
 
    $ rocprof-compute --experimental profile --name compiled_model --torch-trace --triton-trace -- python train.py
 
-Each captured marker row records which framework produced it in the
-``Backend`` column of ``api_trace/consolidated.csv`` (``torch`` or ``triton``),
-so the two frameworks can be analyzed independently.
-
-.. note::
-
-   The CLI flags set the ``ROCPROFCOMPUTE_ROCTX_FRAMEWORKS`` environment
-   variable automatically. Set it to ``api`` to enable every available
-   backend.
+Each captured marker records its originating framework in the ``Backend`` column
+of ``api_trace/consolidated.csv``, so each framework can be analyzed
+independently. To enable all supported backends at once, use
+:ref:`--api-trace <api-trace>`.
 
 To analyze the captured Triton kernels, use the ``--list-triton-operators`` and
 ``--triton-operator`` options in analyze mode (see :doc:`../analyze/cli`).
+
+.. _api-trace:
+
+API trace
+=========
+
+``--api-trace`` enables marker tracing for all supported framework backends in a
+single option, equivalent to setting ``ROCPROFCOMPUTE_ROCTX_FRAMEWORKS=api``.
+
+.. warning::
+
+   API trace is currently an experimental feature. You must pass
+   ``--experimental`` when using it.
+
+.. code-block:: shell-session
+
+   $ rocprof-compute --experimental profile --name model --api-trace -- python train.py
+
+The output is identical to enabling each framework's trace flag individually.
+Captured kernels are attributed in the ``Backend`` column and analyzed with the
+corresponding per-framework operator options (see :doc:`../analyze/cli`).
 
 .. _iteration-multiplexing:
 

@@ -330,65 +330,69 @@ class RocProfCompute:
     def handle_analyze_args(self) -> None:
         """Handle analyze-specific argument processing"""
         args = self.__args
-        torch_operator = args.torch_operator
-        list_torch_operators = args.list_torch_operators
+        torch_operator = getattr(args, "torch_operator", None)
+        triton_operator = getattr(args, "triton_operator", None)
+        list_torch_operators = getattr(args, "list_torch_operators", False)
+        list_triton_operators = getattr(args, "list_triton_operators", False)
 
-        if torch_operator is not None or list_torch_operators:
+        operator_filter = (
+            torch_operator if torch_operator is not None else triton_operator
+        )
+        list_operators = list_torch_operators or list_triton_operators
+
+        if operator_filter is not None or list_operators:
             if args.gui is not None:
                 console_error(
                     "api trace",
-                    "--torch-operator and --list-torch-operators are not "
-                    "supported in --gui mode. Please remove --gui or run "
-                    "without the torch-operator flags.",
+                    "Operator analysis flags are not supported in --gui mode. "
+                    "Please remove --gui or run without the operator flags.",
                 )
             if args.tui:
                 console_error(
                     "api trace",
-                    "--torch-operator and --list-torch-operators are not "
-                    "supported in --tui mode. Please remove --tui or run "
-                    "without the torch-operator flags.",
+                    "Operator analysis flags are not supported in --tui mode. "
+                    "Please remove --tui or run without the operator flags.",
                 )
             if args.spatial_multiplexing:
                 console_error(
                     "api trace",
-                    "--torch-operator and --list-torch-operators do not yet "
-                    "support multi-node analysis via --spatial-multiplexing. "
+                    "Operator analysis flags do not yet support multi-node "
+                    "analysis via --spatial-multiplexing. "
                     "Please remove one of these options.",
                 )
             if args.output_format != "stdout":
                 console_error(
                     "api trace",
-                    "--torch-operator and --list-torch-operators are only "
-                    "supported with --output-format stdout (the default). "
-                    "The matched operator call tree is printed directly to "
-                    "stdout and is not captured in txt, csv, or db output. "
-                    "Remove the --output-format option or drop the "
-                    "torch-operator flags.",
+                    "Operator analysis flags are only supported with "
+                    "--output-format stdout (the default). The matched "
+                    "operator call tree is printed directly to stdout and is "
+                    "not captured in txt, csv, or db output. Remove the "
+                    "--output-format option or drop the operator flags.",
                 )
 
-            if torch_operator is not None:
+            if operator_filter is not None:
                 if args.list_stats:
                     console_warning(
                         "api trace",
-                        "--torch-operator is ignored by --list-stats; the "
+                        "The operator filter is ignored by --list-stats; the "
                         "full kernel stats table will be shown regardless "
                         "of the operator filter.",
                     )
                 if args.list_nodes:
                     console_warning(
                         "api trace",
-                        "--torch-operator is ignored by --list-nodes; the "
+                        "The operator filter is ignored by --list-nodes; the "
                         "node enumeration does not respect the operator "
                         "filter.",
                     )
-                if list_torch_operators:
+                if list_operators:
                     console_warning(
                         "api trace",
-                        "--torch-operator is ignored when "
-                        "--list-torch-operators is used; the full operator "
-                        "tree will be shown. Drop --list-torch-operators to "
-                        "apply the operator filter to the analysis, or drop "
-                        "--torch-operator to list all operators.",
+                        "The operator filter is ignored when a "
+                        "--list-*-operators flag is used; the full operator "
+                        "tree will be shown. Drop the list flag to apply the "
+                        "operator filter to the analysis, or drop the operator "
+                        "filter to list all operators.",
                     )
 
         # Block all filters during spatial-multiplexing

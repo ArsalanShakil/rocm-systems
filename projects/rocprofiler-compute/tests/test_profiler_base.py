@@ -12,7 +12,7 @@ from rocprof_compute_profile.profiler_base import (
     _FRAMEWORK_ENV_VAR,
     RocProfCompute_Base,
     _build_inject_env,
-    _compute_selected_frameworks,
+    compute_selected_frameworks,
 )
 from rocprof_compute_profile.profiler_rocprofiler_sdk import rocprofiler_sdk_profiler
 from utils.utils_exceptions import (
@@ -261,7 +261,7 @@ def test_sanitize_no_torch_trace(tmp_path, remaining, expected_exception, setup)
 )
 def test_compute_selected_frameworks(torch_trace, triton_trace, expected):
     args = argparse.Namespace(torch_trace=torch_trace, triton_trace=triton_trace)
-    assert _compute_selected_frameworks(args) == expected
+    assert compute_selected_frameworks(args) == expected
 
 
 def test_build_inject_env_sets_framework_var_for_triton(tmp_path):
