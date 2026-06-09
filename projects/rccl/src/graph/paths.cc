@@ -763,6 +763,31 @@ ncclResult_t ncclTopoComputePaths(struct ncclTopoSystem* system, struct ncclComm
     NCCLCHECK(ncclTopoSetPaths(system->nodes[NVS].nodes+n, system));
   }
 
+  // gfx1250: GPU and NIC are directly connected but on separate root
+  // ports under the same Host Bridge, so BFS computes PATH_PHB. Correct
+  // same-domain pairs to PATH_PXB to restore NIC affinity and enable GDRDMA.
+  // Multi-node safe: cross-node GPU-NIC pairs have PATH_NET, not PATH_PHB,
+  // so the type == PATH_PHB guard prevents cross-node false matches.
+  if (system->nodes[GPU].count > 0 &&
+      IsArchMatch(system->nodes[GPU].nodes[0].gpu.gcn, "gfx1250")) {
+    for (int g = 0; g < system->nodes[GPU].count; g++) {
+      struct ncclTopoNode* gpu = system->nodes[GPU].nodes + g;
+      int64_t gpuDomain = NCCL_BUSID_DOMAIN(NCCL_TOPO_ID_LOCAL_ID(gpu->id));
+      for (int n = 0; n < system->nodes[NET].count; n++) {
+        struct ncclTopoNode* net = system->nodes[NET].nodes + n;
+        int64_t netDomain = NCCL_BUSID_DOMAIN(net->net.busId);
+        if (gpuDomain != 0 && gpuDomain == netDomain) {
+          if (gpu->paths[NET] && gpu->paths[NET][n].type == PATH_PHB) {
+            gpu->paths[NET][n].type = PATH_PXB;
+            INFO(NCCL_GRAPH, "MI4XX: corrected GPU %d -> NET %d path from PHB to PXB (domain %ld)", g, n, gpuDomain);
+          }
+          if (net->paths[GPU] && net->paths[GPU][g].type == PATH_PHB)
+            net->paths[GPU][g].type = PATH_PXB;
+        }
+      }
+    }
+  }
+
   // Update path for GPUs when we don't want to / can't use GPU Direct P2P
   for (int g=0; g<system->nodes[GPU].count; g++) {
     for (int p=0; p<system->nodes[GPU].count; p++) {

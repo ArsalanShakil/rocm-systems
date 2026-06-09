@@ -28,6 +28,8 @@
 int ncclCudaCompCap();
 
 // PCI Bus ID <-> int64 conversion functions
+// Encoding: domain[31:20] bus[19:12] device[11:4] function[3:0]
+#define NCCL_BUSID_DOMAIN(id) ((id) >> 20)
 ncclResult_t int64ToBusId(int64_t id, char* busId);
 ncclResult_t busIdToInt64(const char* busId, int64_t* id);
 
