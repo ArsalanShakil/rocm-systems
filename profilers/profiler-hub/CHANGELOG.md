@@ -25,6 +25,11 @@ downstream consumer of the library.
 - `libprofiler-hub.so` now ships with a SOVERSION (`libprofiler-hub.so.0` symlink and
   `libprofiler-hub.so.0.1.0` actual file) so consumers can pin to a specific ABI.
 
+### Changed
+
+- `libprofiler-hub.so` no longer exports the bundled `sqlite3_*` symbols (sealed via
+  hidden visibility + `--exclude-libs`), preventing collisions with other SQLite versions.
+
 ## [0.1.0] - 2026-05-05
 
 Initial release.
