@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "core/rocprofiler-sdk.hpp"
+#include "common/delimit.hpp"
 #include "core/config.hpp"
 #include "timemory.hpp"
 #include <regex>
@@ -117,7 +118,7 @@ get_operations_impl(rocprofiler_callback_tracing_kind_t kindv,
     if(_val->empty()) return std::unordered_set<std::int32_t>{};
 
     auto _ret = std::unordered_set<std::int32_t>{};
-    for(const auto& itr : tim::delimit(*_val, " ,;:\n\t"))
+    for(const auto& itr : rocprofsys::delimit(*_val, " ,;:\n\t"))
     {
         for(auto iitr : callback_tracing_info[kindv].items())
         {
@@ -162,7 +163,7 @@ get_operations_impl(rocprofiler_buffer_tracing_kind_t kindv,
     if(_val->empty()) return std::unordered_set<std::int32_t>{};
 
     auto _ret = std::unordered_set<std::int32_t>{};
-    for(const auto& itr : tim::delimit(*_val, " ,;:\n\t"))
+    for(const auto& itr : rocprofsys::delimit(*_val, " ,;:\n\t"))
     {
         for(auto iitr : buffered_tracing_info[kindv].items())
         {
@@ -413,11 +414,11 @@ get_callback_domains()
     }
 #endif
 
-    auto _data = std::unordered_set<rocprofiler_callback_tracing_kind_t>{};
-    auto _domains =
-        tim::delimit(config::get_setting_value<std::string>("ROCPROFSYS_ROCM_DOMAINS")
-                         .value_or(std::string{}),
-                     " ,;:\t\n");
+    auto _data    = std::unordered_set<rocprofiler_callback_tracing_kind_t>{};
+    auto _domains = rocprofsys::delimit(
+        config::get_setting_value<std::string>("ROCPROFSYS_ROCM_DOMAINS")
+            .value_or(std::string{}),
+        " ,;:\t\n");
 
     if(config::get_use_rcclp() && _version.formatted >= 600)
     {
@@ -510,11 +511,11 @@ get_buffered_domains()
 #endif
     };
 
-    auto _data = std::unordered_set<rocprofiler_buffer_tracing_kind_t>{};
-    auto _domains =
-        tim::delimit(config::get_setting_value<std::string>("ROCPROFSYS_ROCM_DOMAINS")
-                         .value_or(std::string{}),
-                     " ,;:\t\n");
+    auto _data    = std::unordered_set<rocprofiler_buffer_tracing_kind_t>{};
+    auto _domains = rocprofsys::delimit(
+        config::get_setting_value<std::string>("ROCPROFSYS_ROCM_DOMAINS")
+            .value_or(std::string{}),
+        " ,;:\t\n");
     const auto valid_choices =
         settings::instance()->at("ROCPROFSYS_ROCM_DOMAINS")->get_choices();
 
@@ -653,7 +654,7 @@ get_buffered_domains()
 std::vector<std::string>
 get_rocm_events()
 {
-    return tim::delimit(
+    return rocprofsys::delimit(
         get_setting_value<std::string>("ROCPROFSYS_ROCM_EVENTS").value_or(std::string{}),
         " ,;\t\n");
 }

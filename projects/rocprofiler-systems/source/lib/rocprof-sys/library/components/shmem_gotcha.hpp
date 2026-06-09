@@ -472,7 +472,7 @@ shmem_gotcha<SHMEMPolicy>::configure()
         std::set<std::string> tokens;
         auto                  reject_list =
             rocprofsys::common::get_env<std::string>("ROCPROFSYS_SHMEM_REJECT_LIST", "");
-        for(const auto& itr : rocprofsys::common::delimit(reject_list))
+        for(const auto& itr : rocprofsys::delimit(reject_list))
             tokens.insert(itr);
         return shmem_categories::expand_tokens_to_apis(tokens);
     };
@@ -485,7 +485,7 @@ shmem_gotcha<SHMEMPolicy>::configure()
         auto permit_list =
             rocprofsys::common::get_env<std::string>("ROCPROFSYS_SHMEM_PERMIT_LIST", "");
         std::set<std::string> tokens;
-        for(const auto& itr : rocprofsys::common::delimit(permit_list))
+        for(const auto& itr : rocprofsys::delimit(permit_list))
             tokens.insert(itr);
         if(tokens.empty()) return shmem_categories::get_default_permit();
         if(tokens.count("all"))

@@ -11,6 +11,7 @@
 #include "internal_libs.hpp"
 #include "log.hpp"
 
+#include "common/delimit.hpp"
 #include <timemory/backends/process.hpp>
 #include <timemory/config.hpp>
 #include <timemory/environment/types.hpp>
@@ -20,7 +21,6 @@
 #include <timemory/settings.hpp>
 #include <timemory/signals/signal_mask.hpp>
 #include <timemory/utility/console.hpp>
-#include <timemory/utility/delimit.hpp>
 #include <timemory/utility/filepath.hpp>
 #include <timemory/utility/signals.hpp>
 
@@ -175,15 +175,15 @@ bool                                            dump_info_enabled    = false;
 std::string                                     modfunc_dump_dir     = {};
 auto regex_opts = std::regex_constants::egrep | std::regex_constants::optimize;
 
-strvec_t lib_search_paths =
-    tim::delimit(rocprofsys::join(':', path::get_internal_libdir(),
-                                  tim::get_env<std::string>("DYNINSTAPI_RT_LIB"),
-                                  tim::get_env<std::string>("DYNINST_REWRITER_PATHS"),
-                                  tim::get_env<std::string>("LD_LIBRARY_PATH")),
-                 ":");
-strvec_t bin_search_paths = tim::delimit(tim::get_env<std::string>("PATH"), ":");
+strvec_t lib_search_paths = rocprofsys::delimit(
+    rocprofsys::join(':', path::get_internal_libdir(),
+                     tim::get_env<std::string>("DYNINSTAPI_RT_LIB"),
+                     tim::get_env<std::string>("DYNINST_REWRITER_PATHS"),
+                     tim::get_env<std::string>("LD_LIBRARY_PATH")),
+    ":");
+strvec_t bin_search_paths = rocprofsys::delimit(tim::get_env<std::string>("PATH"), ":");
 
-auto _dyn_api_rt_paths = tim::delimit(
+auto _dyn_api_rt_paths = rocprofsys::delimit(
     rocprofsys::join(":", path::get_internal_libdir(),
                      rocprofsys::join("/", path::get_internal_libdir(), "rocprofsys")),
     ":");
@@ -2732,7 +2732,7 @@ canonicalize(std::string _path)
         _path = _path.insert(0, get_cwd() + "/");
 
     auto _leading_dash = (_path.find('/') == 0);
-    auto _pieces       = tim::delimit(_path, "/");
+    auto _pieces       = rocprofsys::delimit(_path, "/");
     std::reverse(_pieces.begin(), _pieces.end());
     auto _tree = std::vector<std::string>{};
     for(size_t i = 0; i < _pieces.size(); ++i)

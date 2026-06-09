@@ -6,8 +6,8 @@
 #include "state.hpp"
 #include "utility.hpp"
 
+#include "common/delimit.hpp"
 #include <timemory/units.hpp>
-#include <timemory/utility/delimit.hpp>
 
 #include "logger/debug.hpp"
 
@@ -227,7 +227,7 @@ spec::spec(const std::string& _line)
         config::get_setting_value<double>("ROCPROFSYS_TRACE_DELAY").value_or(0.0),
         config::get_setting_value<double>("ROCPROFSYS_TRACE_DURATION").value_or(0.0) }
 {
-    auto _delim = tim::delimit(_line, ":");
+    auto _delim = rocprofsys::delimit(_line, ":");
     if(!_delim.empty()) delay = utility::convert<double>(_delim.at(0));
     if(_delim.size() > 1) duration = utility::convert<double>(_delim.at(1));
     if(_delim.size() > 2) repeat = utility::convert<std::uint64_t>(_delim.at(2));
@@ -311,7 +311,7 @@ get_trace_specs()
                 .value_or("");
         if(!_periods_v.empty())
         {
-            for(auto itr : tim::delimit(_periods_v, " ;\t\n"))
+            for(auto itr : rocprofsys::delimit(_periods_v, " ;\t\n"))
                 _v.emplace_back(itr);
         }
     }

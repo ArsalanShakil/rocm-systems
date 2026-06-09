@@ -31,7 +31,6 @@
 namespace
 {
 namespace filepath = ::tim::filepath;
-using ::tim::delimit;
 using ::tim::get_env;
 using ::timemory::join::join;
 using strview_init_t   = std::initializer_list<std::string_view>;
@@ -177,7 +176,8 @@ get_library_search_paths_impl()
     };
 
     // search paths from environment variables
-    for(const auto& itr : delimit(get_env("LD_LIBRARY_PATH", std::string{}, false), ":"))
+    for(const auto& itr :
+        rocprofsys::delimit(get_env("LD_LIBRARY_PATH", std::string{}, false), ":"))
         _emplace_if_exists(itr);
 
     for(const auto& itr : { get_env<std::string>("ROCPROFSYS_ROCM_PATH", ""),
@@ -186,7 +186,7 @@ get_library_search_paths_impl()
     {
         if(!itr.empty())
         {
-            for(const auto& ditr : delimit(itr, ":"))
+            for(const auto& ditr : rocprofsys::delimit(itr, ":"))
             {
                 _emplace_if_exists(join('/', ditr, "lib"));
             }

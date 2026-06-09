@@ -6,6 +6,7 @@
 #include "defines.hpp"
 #include "info_type.hpp"
 
+#include "common/delimit.hpp"
 #include "common/json_config.hpp"
 
 #include <nlohmann/json.hpp>
@@ -186,7 +187,7 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
 
     _config_file   = settings::format(_config_file, _settings->get_tag());
     bool _absolute = _config_file.at(0) == '/';
-    auto _dirs     = tim::delimit(_config_file, "/\\/");
+    auto _dirs     = rocprofsys::delimit(_config_file, "/\\/");
     _config_file   = _dirs.back();
     _dirs.pop_back();
 
@@ -398,7 +399,7 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
             if(_options[DESC] || fmt_opts.all_info)
             {
                 _ss << "# description:\n";
-                auto              _desc = tim::delimit(itr->get_description(), " \n");
+                auto _desc = rocprofsys::delimit(itr->get_description(), " \n");
                 std::stringstream _line{};
                 _line << "#   ";
                 auto _write = [&_line, &_ss, _w](std::string_view _str) {

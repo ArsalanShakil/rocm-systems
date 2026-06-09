@@ -6,12 +6,12 @@
 #include "fwd.hpp"
 #include "module_function.hpp"
 
+#include "common/delimit.hpp"
 #include <timemory/log/color.hpp>
 #include <timemory/mpl/policy.hpp>
 #include <timemory/settings.hpp>
 #include <timemory/settings/types.hpp>
 #include <timemory/tpls/cereal/cereal.hpp>
-#include <timemory/utility/delimit.hpp>
 #include <timemory/utility/filepath.hpp>
 
 static inline void

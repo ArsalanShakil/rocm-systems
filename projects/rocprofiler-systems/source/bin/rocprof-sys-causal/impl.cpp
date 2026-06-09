@@ -10,11 +10,11 @@
 #include "core/mproc.hpp"
 #include "core/utility.hpp"
 
+#include "common/delimit.hpp"
 #include <timemory/environment.hpp>
 #include <timemory/log/color.hpp>
 #include <timemory/utility/argparse.hpp>
 #include <timemory/utility/console.hpp>
-#include <timemory/utility/delimit.hpp>
 #include <timemory/utility/filepath.hpp>
 #include <timemory/utility/join.hpp>
 
@@ -530,7 +530,7 @@ parse_args(int argc, char** argv, std::vector<std::string>& _env,
                 _virtual_speedups.clear();
                 for(const auto& itr : _val)
                 {
-                    for(const auto& ditr : tim::delimit(itr, ",; \t\n\r"))
+                    for(const auto& ditr : rocprofsys::delimit(itr, ",; \t\n\r"))
                     {
                         for(auto nitr :
                             parse_numeric_range<std::int64_t, std::vector<std::int64_t>>(

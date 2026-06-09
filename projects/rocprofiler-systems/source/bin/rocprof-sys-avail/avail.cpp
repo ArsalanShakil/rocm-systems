@@ -4,6 +4,7 @@
 #include "avail.hpp"
 #include "common.hpp"
 #include "common/defines.h"
+#include "common/delimit.hpp"
 #include "component_categories.hpp"
 #include "defines.hpp"
 #include "enumerated_list.hpp"
@@ -784,7 +785,7 @@ write_component_info(std::ostream& os, const array_t<bool, N>& options,
                                        if(itr.name().find(nitr) != std::string::npos)
                                            return true;
                                    }
-                                   auto _categories = tim::delimit(
+                                   auto _categories = rocprofsys::delimit(
                                        itr.categories(), ", ", [](const string_t& _v) {
                                            return "component::" + _v;
                                        });
