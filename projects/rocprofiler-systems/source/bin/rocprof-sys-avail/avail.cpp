@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "common/defines.h"
 #include "common/delimit.hpp"
+#include "common/environment.hpp"
 #include "component_categories.hpp"
 #include "defines.hpp"
 #include "enumerated_list.hpp"
@@ -520,7 +521,8 @@ main(int argc, char** argv)
             else
             {
                 _config_file = _p.get<std::string>("generate-config");
-                if(get_bool(_config_file, false) && !_out.empty()) _config_file = _out;
+                if(rocprofsys::to_bool(_config_file, false) && !_out.empty())
+                    _config_file = _out;
             }
         });
     parser.add_argument({ "-F", "--config-format" }, "Configuration file format")

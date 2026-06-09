@@ -7,6 +7,7 @@
 #include "info_type.hpp"
 
 #include "common/delimit.hpp"
+#include "common/environment.hpp"
 #include "common/json_config.hpp"
 
 #include <nlohmann/json.hpp>
@@ -260,7 +261,7 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
                           << "' exists. Overwrite? " << std::flush;
                 std::string _response = {};
                 std::cin >> _response;
-                if(!tim::get_bool(_response, false)) std::exit(EXIT_FAILURE);
+                if(!rocprofsys::to_bool(_response, false)) std::exit(EXIT_FAILURE);
             }
         }
 
