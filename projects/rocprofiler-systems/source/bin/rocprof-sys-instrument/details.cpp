@@ -1159,25 +1159,25 @@ to_string(error_level_t _level)
     {
         case BPatchFatal:
         {
-            return JOIN("", tim::log::color::fatal(), "FatalError");
+            return rocprofsys::join("", tim::log::color::fatal(), "FatalError");
         }
         case BPatchSerious:
         {
-            return JOIN("", tim::log::color::fatal(), "SeriousError");
+            return rocprofsys::join("", tim::log::color::fatal(), "SeriousError");
         }
         case BPatchWarning:
         {
-            return JOIN("", tim::log::color::warning(), "Warning");
+            return rocprofsys::join("", tim::log::color::warning(), "Warning");
         }
         case BPatchInfo:
         {
-            return JOIN("", tim::log::color::info(), "Info");
+            return rocprofsys::join("", tim::log::color::info(), "Info");
         }
         default: break;
     }
 
-    return JOIN("", tim::log::color::warning(), "UnknownErrorLevel",
-                static_cast<int>(_level));
+    return rocprofsys::join("", tim::log::color::warning(), "UnknownErrorLevel",
+                            static_cast<int>(_level));
 }
 
 namespace

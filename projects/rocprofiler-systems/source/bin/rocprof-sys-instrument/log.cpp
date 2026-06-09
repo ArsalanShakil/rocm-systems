@@ -21,15 +21,16 @@ get_color_regex(std::string _v)
 {
     auto _p = _v.find("[");
     if(_p != std::string::npos) _v.insert(_p, "\\");
-    return JOIN("", "\\", _v);
+    return rocprofsys::join("", "\\", _v);
 }
 
-auto _color_regex = std::regex{ JOIN("", "(", get_color_regex(tim::log::color::info()),
-                                     "|", get_color_regex(tim::log::color::source()), "|",
-                                     get_color_regex(tim::log::color::warning()), "|",
-                                     get_color_regex(tim::log::color::fatal()), "|",
-                                     get_color_regex(tim::log::color::end()), ")"),
-                                std::regex_constants::optimize };
+auto _color_regex =
+    std::regex{ rocprofsys::join("", "(", get_color_regex(tim::log::color::info()), "|",
+                                 get_color_regex(tim::log::color::source()), "|",
+                                 get_color_regex(tim::log::color::warning()), "|",
+                                 get_color_regex(tim::log::color::fatal()), "|",
+                                 get_color_regex(tim::log::color::end()), ")"),
+                std::regex_constants::optimize };
 }  // namespace
 
 log_entry::log_entry(std::string _msg)

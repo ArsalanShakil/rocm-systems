@@ -14,10 +14,6 @@
 #include <string>
 #include <tuple>
 
-#if !defined(JOIN)
-#    define JOIN(...) ::rocprofsys::join(__VA_ARGS__)
-#endif
-
 struct log_entry;
 
 void
