@@ -174,9 +174,12 @@ def _push_scope(marker: str, context: str, backend: str = "") -> None:
             used_native = False
 
     if not used_native:
-        # Compose the marker string for this scope.
+        # Percent-encode '%' and '/' in marker names.
         full = (
-            "/".join([*marker_stack, marker])
+            "/".join(
+                m.replace("%", "%25").replace("/", "%2F")
+                for m in [*marker_stack, marker]
+            )
             + ":"
             + "/".join([*context_stack, context])
         )

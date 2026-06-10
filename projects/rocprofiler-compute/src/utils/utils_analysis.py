@@ -254,7 +254,10 @@ def build_call_trees(
             call_trees[location] = CallTreeNode(name=location)
         location_root = call_trees[location]
 
-        op_segments = op_path.split("/")
+        # Reverse the marker percent-encoding.
+        op_segments = [
+            seg.replace("%2F", "/").replace("%25", "%") for seg in op_path.split("/")
+        ]
         ctx_segments = (
             str(context_id).split("/")
             if has_context_id and context_id is not None and pd.notna(context_id)
