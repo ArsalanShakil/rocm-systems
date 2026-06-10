@@ -46,7 +46,6 @@ from amdsmi_init import *
 from BDF import BDF
 
 import amdsmi_cli_exceptions
-from amdsmi_cli_exceptions import AmdSmiPermissionDeniedException
 
 
 class AMDSMIHelpers:
@@ -1716,7 +1715,9 @@ class AMDSMIHelpers:
 
         if msg is None:
             msg = "Confirmation not given. Exiting without setting value"
-        raise AmdSmiPermissionDeniedException(cmd, self.get_output_format(), msg)
+        raise amdsmi_cli_exceptions.AmdSmiPermissionDeniedException(
+            cmd, self.get_output_format(), msg
+        )
 
     def read_pending_gtt_pages(self):
         """Read the pending GTT pages_limit written by `amd-smi set --gtt`.
@@ -1768,7 +1769,9 @@ class AMDSMIHelpers:
 
         if msg is None:
             msg = "Confirmation not given. Exiting without setting value"
-        raise AmdSmiPermissionDeniedException(cmd, self.get_output_format(), msg)
+        raise amdsmi_cli_exceptions.AmdSmiPermissionDeniedException(
+            cmd, self.get_output_format(), msg
+        )
 
     def confirm_out_of_spec_warning(self, auto_respond=False):
         """Print the warning for running outside of specification and prompt user to accept the terms.
@@ -2700,16 +2703,21 @@ class AMDSMIHelpers:
                     or e.get_error_code()
                     == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_FILE_NOT_FOUND
                 ):
-                    raise FileNotFoundError(
-                        "Error accessing CPER files. This command requires CPER to be enabled."
-                    ) from e
+                    output_format = self.get_output_format()
+                    command = (sys.argv[1] if len(sys.argv) > 1 else "unknown",)
+                    msg = "Error accessing CPER files. This command requires CPER to be enabled."
+                    raise amdsmi_cli_exceptions.AmdSmiInvalidFilePathException(
+                        command, output_format, msg
+                    )
+                output_format = self.get_output_format()
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_FILE_ERROR:
-                    raise FileExistsError(
-                        "Error opening CPER file. Unable to read CPER File"
-                    ) from e
+                    msg = "Error opening CPER file. Unable to read CPER File."
                 else:
-                    logging.debug(f"Cannot retrieve CPER entries: {e}")
-                    break
+                    msg = f"Cannot retrieve CPER entries: {e}."
+                    logging.debug(msg)
+                amdsmi_cli_exceptions.AmdSmiLibraryErrorException(
+                    output_format, msg, e.get_error_code()
+                )
 
             args.cursor[gpu_idx] = new_cursor
             if len(entries) == 0:
