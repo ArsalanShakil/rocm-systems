@@ -172,8 +172,8 @@
   X(HostIntAmoFAdd,            127)  \
   X(HostIntAmoFCswap,          128)  \
   X(HostAmoAllPes,             129)  \
-  X(HostAmoSelf,               130)
-
+  X(HostAmoSelf,               130)  \
+  X(HostAmoAdd,                131)
 #define _ROCSHMEM_ENUM_ENTRY(name, val) name##TestType = val,
 enum TestType {
   ROCSHMEM_FOREACH_TEST_TYPE(_ROCSHMEM_ENUM_ENTRY)
