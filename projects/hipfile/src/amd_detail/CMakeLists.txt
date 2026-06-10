@@ -4,8 +4,6 @@
 
 # ROCm-backed hipFile
 
-include(AISUseTBB)
-
 set(HIPFILE_SOURCES
     "${HIPFILE_SRC_COMMON_PATH}/hipfile-common.cpp"
     api_trace/api-dispatch-interface.cpp
@@ -39,8 +37,12 @@ set(HIPFILE_SOURCES
 ais_add_libraries(
     NAME     hipfile
     DETAIL   amd
-    LIBS     mount TBB::tbb
+    LIBS     mount
     SRCS     ${HIPFILE_SOURCES}
     LIBINCL  ${HIPFILE_INCLUDE_PATH}
-    SYSINCLS ${HIPFILE_AMD_SOURCE_PATH}
+    SYSINCLS ${HIPFILE_AMD_SOURCE_PATH} ${HIPFILE_THIRD_PARTY_PATH}
 )
+
+# Taskflow 4.x uses C++20 library features internally, but remains private
+# to this target and does not raise the public hipFile header requirement.
+target_compile_features(hipfile PRIVATE cxx_std_20)

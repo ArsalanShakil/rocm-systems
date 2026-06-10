@@ -9,9 +9,12 @@
 #include "thread-pool.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 
 using namespace hipFile;
 using ::testing::ByMove;
@@ -58,6 +61,106 @@ TEST(HipFileThreadPool, TaskGroupWorkRuns)
     task_group->wait();
 
     ASSERT_EQ(completed.load(std::memory_order_relaxed), 2);
+}
+
+TEST(HipFileThreadPool, TaskGroupRejectsEmptyWork)
+{
+    ThreadPool pool{};
+    auto       task_group = pool.makeTaskGroup();
+
+    ASSERT_THROW(task_group->run({}), std::invalid_argument);
+}
+
+TEST(HipFileThreadPool, TaskGroupWaitPropagatesTaskFailure)
+{
+    ThreadPool pool{};
+    auto       task_group = pool.makeTaskGroup();
+
+    task_group->run([]() { throw std::runtime_error("task failed"); });
+
+    ASSERT_THROW(task_group->wait(), std::runtime_error);
+    ASSERT_NO_THROW(task_group->wait());
+}
+
+TEST(HipFileThreadPool, TaskGroupCancelSkipsQueuedWork)
+{
+    ThreadPool       pool{};
+    auto             task_group   = pool.makeTaskGroup();
+    const auto       worker_count = pool.threadCount();
+    std::atomic<int> completed{0};
+
+    std::mutex              mutex;
+    std::condition_variable cv;
+    std::size_t             started = 0;
+    bool                    release = false;
+
+    for (std::size_t i = 0; i < worker_count; ++i) {
+        task_group->run([&mutex, &cv, &started, &release]() {
+            std::unique_lock<std::mutex> lock{mutex};
+            ++started;
+            cv.notify_all();
+            cv.wait(lock, [&release]() { return release; });
+        });
+    }
+
+    {
+        std::unique_lock<std::mutex> lock{mutex};
+        cv.wait(lock, [&started, worker_count]() { return started == worker_count; });
+    }
+
+    task_group->run([&completed]() { completed.fetch_add(1, std::memory_order_relaxed); });
+    task_group->cancel();
+
+    {
+        std::lock_guard<std::mutex> lock{mutex};
+        release = true;
+    }
+    cv.notify_all();
+
+    task_group->wait();
+
+    ASSERT_EQ(completed.load(std::memory_order_relaxed), 0);
+}
+
+TEST(HipFileThreadPool, TaskGroupCanRunAfterCancelAndWait)
+{
+    ThreadPool       pool{};
+    auto             task_group   = pool.makeTaskGroup();
+    const auto       worker_count = pool.threadCount();
+    std::atomic<int> completed{0};
+
+    std::mutex              mutex;
+    std::condition_variable cv;
+    std::size_t             started = 0;
+    bool                    release = false;
+
+    for (std::size_t i = 0; i < worker_count; ++i) {
+        task_group->run([&mutex, &cv, &started, &release]() {
+            std::unique_lock<std::mutex> lock{mutex};
+            ++started;
+            cv.notify_all();
+            cv.wait(lock, [&release]() { return release; });
+        });
+    }
+
+    {
+        std::unique_lock<std::mutex> lock{mutex};
+        cv.wait(lock, [&started, worker_count]() { return started == worker_count; });
+    }
+
+    task_group->cancel();
+
+    {
+        std::lock_guard<std::mutex> lock{mutex};
+        release = true;
+    }
+    cv.notify_all();
+
+    task_group->wait();
+    task_group->run([&completed]() { completed.fetch_add(1, std::memory_order_relaxed); });
+    task_group->wait();
+
+    ASSERT_EQ(completed.load(std::memory_order_relaxed), 1);
 }
 
 TEST(HipFileThreadPool, TaskGroupCanOutliveThreadPoolObject)

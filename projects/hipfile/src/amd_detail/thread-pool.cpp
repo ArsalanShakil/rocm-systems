@@ -5,16 +5,32 @@
 
 #include "thread-pool.h"
 
+#include <taskflow/taskflow.hpp>
+
+#include <atomic>
+#include <exception>
+#include <future>
 #include <memory>
-#include <oneapi/tbb/task_arena.h>
-#include <oneapi/tbb/task_group.h>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 #include <utility>
+#include <vector>
 
 namespace hipFile {
 
+namespace {
+
+    std::size_t defaultThreadCount() noexcept
+    {
+        const auto thread_count = std::thread::hardware_concurrency();
+        return thread_count == 0 ? 1 : static_cast<std::size_t>(thread_count);
+    }
+
+}
+
 struct ThreadPool::ThreadPoolStorage {
-    tbb::task_arena arena;
+    tf::Executor executor{defaultThreadCount()};
 };
 
 class ThreadPool::TaskGroup : public ITaskGroup {
@@ -40,7 +56,18 @@ public:
             throw std::invalid_argument("Task group work item cannot be empty");
         }
 
-        storage->arena.execute([this, task = std::move(work)]() mutable { tasks.run(std::move(task)); });
+        std::lock_guard<std::mutex> lock{tasks_mutex};
+        if (cancelled.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        tasks.push_back(storage->executor
+                            .async([this, task = std::move(work)]() mutable {
+                                if (!cancelled.load(std::memory_order_acquire)) {
+                                    task();
+                                }
+                            })
+                            .share());
     }
 
     void cancel() override
@@ -54,18 +81,47 @@ public:
     }
 
 private:
-    void cancel_impl()
+    void cancel_impl() noexcept
     {
-        storage->arena.execute([this]() { tasks.cancel(); });
+        cancelled.store(true, std::memory_order_release);
     }
 
     void wait_impl()
     {
-        storage->arena.execute([this]() { tasks.wait(); });
+        std::vector<std::shared_future<void>> current_tasks;
+        {
+            std::lock_guard<std::mutex> lock{tasks_mutex};
+            current_tasks.swap(tasks);
+        }
+
+        std::exception_ptr first_exception{};
+        for (auto &task : current_tasks) {
+            try {
+                task.get();
+            }
+            catch (...) {
+                if (!first_exception) {
+                    first_exception = std::current_exception();
+                }
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock{tasks_mutex};
+            if (tasks.empty()) {
+                cancelled.store(false, std::memory_order_release);
+            }
+        }
+
+        if (first_exception) {
+            std::rethrow_exception(first_exception);
+        }
     }
 
-    std::shared_ptr<ThreadPoolStorage> storage;
-    tbb::task_group                    tasks;
+    std::shared_ptr<ThreadPoolStorage>    storage;
+    std::mutex                            tasks_mutex;
+    std::vector<std::shared_future<void>> tasks;
+    std::atomic<bool>                     cancelled{false};
 };
 
 ThreadPool::ThreadPool() : storage{std::make_shared<ThreadPoolStorage>()}
@@ -83,7 +139,7 @@ ThreadPool::makeTaskGroup()
 std::size_t
 ThreadPool::threadCount() const noexcept
 {
-    return static_cast<std::size_t>(storage->arena.max_concurrency());
+    return storage->executor.num_workers();
 }
 
 }
