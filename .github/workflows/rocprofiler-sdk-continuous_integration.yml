@@ -8,6 +8,7 @@ on:
     branches: [ develop ]
     paths:
       - 'projects/rocprofiler-sdk/**'
+      - '.github/actions/rocprofiler-sdk-util/**'
       - '.github/workflows/rocprofiler-sdk-continuous_integration.yml'
       - '!**/*.md'
       - '!**/*.rtf'
@@ -21,6 +22,7 @@ on:
   pull_request:
     paths:
       - 'projects/rocprofiler-sdk/**'
+      - '.github/actions/rocprofiler-sdk-util/**'
       - '.github/workflows/rocprofiler-sdk-continuous_integration.yml'
       - '!**/*.md'
       - '!**/*.rtf'
@@ -80,6 +82,7 @@ env:
   ENABLE_AQLPROFILE_BUILD: "true"
   ENABLE_ROCDECODE_BUILD: "true"
   ENABLE_ROCJPEG_BUILD: "true"
+  ENABLE_HIPFILE_BUILD: "true"
 
   CI_MODE: ${{ github.event_name == 'schedule' && 'Nightly' || 'Continuous' }}
 
@@ -128,6 +131,7 @@ jobs:
             projects/rocr-runtime
             projects/clr
             projects/hip
+            projects/hipfile
           submodules: false
           set-safe-directory: true
 
@@ -180,7 +184,7 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           apt-get update
-          apt-get install -y g++-11 g++-12 cmake python3-pip libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config rpm libzstd-dev
+          apt-get install -y g++-11 g++-12 cmake python3-pip libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config rpm libzstd-dev libtbb-dev
           update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 10 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
           update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 20 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
           python3 -m pip install -U --user -r requirements.txt
@@ -198,6 +202,7 @@ jobs:
           enable-aqlprofile-build: ${{ env.ENABLE_AQLPROFILE_BUILD }}
           enable-rocdecode-build: ${{ env.ENABLE_ROCDECODE_BUILD }}
           enable-rocjpeg-build: ${{ env.ENABLE_ROCJPEG_BUILD }}
+          enable-hipfile-build: ${{ env.ENABLE_HIPFILE_BUILD }}
           enable-rocprof-trace-decoder-build: 'true'
           ccache-key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}
           ccache-variant: ccache
@@ -353,6 +358,7 @@ jobs:
             projects/rocr-runtime
             projects/clr
             projects/hip
+            projects/hipfile
           submodules: false
           set-safe-directory: true
 
@@ -410,6 +416,7 @@ jobs:
           enable-hip-clr-build: ${{ env.ENABLE_HIP_CLR_BUILD }}
           enable-rocprofiler-register-build: ${{ env.ENABLE_ROCPROFILER_REGISTER_BUILD }}
           enable-aqlprofile-build: ${{ env.ENABLE_AQLPROFILE_BUILD }}
+          enable-hipfile-build: ${{ env.ENABLE_HIPFILE_BUILD }}
           enable-rocprof-trace-decoder-build: 'true'
           ccache-key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}
           ccache-variant: sccache
@@ -495,6 +502,7 @@ jobs:
           projects/rocr-runtime
           projects/clr
           projects/hip
+          projects/hipfile
         submodules: false
         set-safe-directory: true
 
@@ -531,7 +539,7 @@ jobs:
       run: |
         git config --global --add safe.directory '*'
         apt-get update
-        apt-get install -y build-essential cmake python3-pip libasan8 libtsan2 software-properties-common clang-15 libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config
+        apt-get install -y build-essential cmake python3-pip libasan8 libtsan2 software-properties-common clang-15 libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config libtbb-dev
         add-apt-repository ppa:ubuntu-toolchain-r/test
         apt-get update
         apt-get upgrade -y
@@ -556,6 +564,7 @@ jobs:
         enable-hip-clr-build: ${{ env.ENABLE_HIP_CLR_BUILD }}
         enable-rocprofiler-register-build: ${{ env.ENABLE_ROCPROFILER_REGISTER_BUILD }}
         enable-aqlprofile-build: ${{ env.ENABLE_AQLPROFILE_BUILD }}
+        enable-hipfile-build: ${{ env.ENABLE_HIPFILE_BUILD }}
         enable-rocprof-trace-decoder-build: 'true'
         ccache-key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}-${{ matrix.system.sanitizer}}
         ccache-variant: ccache
