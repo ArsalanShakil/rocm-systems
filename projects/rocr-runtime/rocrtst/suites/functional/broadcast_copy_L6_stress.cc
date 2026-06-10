@@ -1,5 +1,9 @@
-// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
-//
+/*
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 // ROCrtst Level 6 Tests: Stress & Concurrent Testing
 // Purpose: Long-running stability and multi-threaded concurrency
 
@@ -57,7 +61,7 @@ TEST_F(BroadcastCopyL6, StabilityTest_1000_Iterations) {
                                       SIZE, 0, nullptr, signal, HSA_AMD_SDMA_ENGINE_0, false);
 
     if (status != HSA_STATUS_SUCCESS) {
-      std::cout << "  ❌ Iteration " << iter << " failed with status " << (int)status << std::endl;
+      std::cout << "  [FAIL] Iteration " << iter << " failed with status " << (int)status << std::endl;
       fail_count++;
       continue;
     }
@@ -68,7 +72,7 @@ TEST_F(BroadcastCopyL6, StabilityTest_1000_Iterations) {
     bool all_valid = true;
     for (int i = 0; i < NUM_DESTS; i++) {
       if (!BroadcastTestUtils::VerifyPattern(dsts[i], SIZE, pattern, iter)) {
-        std::cout << "  ❌ Iteration " << iter << ", dst[" << i << "] verification failed"
+        std::cout << "  [FAIL] Iteration " << iter << ", dst[" << i << "] verification failed"
                   << std::endl;
         all_valid = false;
         break;
@@ -100,7 +104,7 @@ TEST_F(BroadcastCopyL6, StabilityTest_1000_Iterations) {
             << std::endl;
 
   ASSERT_EQ(ITERATIONS, pass_count) << "Stability test had failures";
-  std::cout << "  ✓ 1000-iteration stability test passed" << std::endl;
+  std::cout << "  [PASS] 1000-iteration stability test passed" << std::endl;
 
   BroadcastTestUtils::DestroySignal(signal);
   ctx.Free(src);
@@ -223,7 +227,7 @@ TEST_F(BroadcastCopyL6, ConcurrentBroadcasts_4_Threads) {
             << expected << " total)" << std::endl;
 
   ASSERT_EQ(expected, pass_count.load()) << "Some concurrent broadcasts failed";
-  std::cout << "  ✓ Concurrent broadcasts successful" << std::endl;
+  std::cout << "  [PASS] Concurrent broadcasts successful" << std::endl;
 }
 
 //
@@ -304,7 +308,7 @@ TEST_F(BroadcastCopyL6, MemoryPressureTest) {
   }
 
   ASSERT_TRUE(all_valid) << "Data corruption under memory pressure";
-  std::cout << "  ✓ Broadcast successful under memory pressure" << std::endl;
+  std::cout << "  [PASS] Broadcast successful under memory pressure" << std::endl;
 
   // Cleanup
   BroadcastTestUtils::DestroySignal(signal);
@@ -372,7 +376,7 @@ TEST_F(BroadcastCopyL6, RapidSequentialBroadcasts) {
   }
 
   ASSERT_TRUE(all_valid) << "Data corruption in rapid sequential test";
-  std::cout << "  ✓ All " << NUM_RAPID << " broadcasts completed successfully" << std::endl;
+  std::cout << "  [PASS] All " << NUM_RAPID << " broadcasts completed successfully" << std::endl;
 
   for (auto sig : signals) BroadcastTestUtils::DestroySignal(sig);
   ctx.Free(src);

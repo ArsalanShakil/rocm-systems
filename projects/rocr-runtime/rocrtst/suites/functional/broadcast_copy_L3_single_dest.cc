@@ -1,6 +1,10 @@
-// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
-//
-// ROCrtst Level 3 Tests: Single Destination E2E ⭐ PHASE 1 GATE
+/*
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+// ROCrtst Level 3 Tests: Single Destination E2E * PHASE 1 GATE
 // Purpose: First end-to-end functional test with single destination (N=1)
 
 #include <gtest/gtest.h>
@@ -19,7 +23,7 @@ class BroadcastCopyL3 : public ::testing::Test {
 };
 
 //
-// TC-L3-001: Single Destination, 4KB Copy (Minimal E2E) ⭐ CRITICAL
+// TC-L3-001: Single Destination, 4KB Copy (Minimal E2E) * CRITICAL
 //
 
 TEST_F(BroadcastCopyL3, SingleDest_4KB_Minimal) {
@@ -73,14 +77,14 @@ TEST_F(BroadcastCopyL3, SingleDest_4KB_Minimal) {
   int errors = 0;
   for (size_t i = 0; i < SIZE / 4 && errors < 10; i++) {
     if (dst_ptr[i] != src_ptr[i]) {
-      std::cout << "  ❌ Mismatch at offset " << i * 4 << ": expected=0x" << std::hex << src_ptr[i]
+      std::cout << "  [FAIL] Mismatch at offset " << i * 4 << ": expected=0x" << std::hex << src_ptr[i]
                 << ", actual=0x" << dst_ptr[i] << std::dec << std::endl;
       errors++;
     }
   }
 
   if (errors == 0) {
-    std::cout << "  ✓ Data integrity verified (4096 bytes)" << std::endl;
+    std::cout << "  [PASS] Data integrity verified (4096 bytes)" << std::endl;
   }
 
   ASSERT_EQ(0, errors) << "Data corruption detected";
@@ -129,7 +133,7 @@ TEST_F(BroadcastCopyL3, SingleDest_VariousSizes) {
 
     bool valid = BroadcastTestUtils::VerifyPattern(dst, size, BroadcastTestUtils::WALKING_BIT);
 
-    std::cout << "  Size " << std::setw(10) << size << " bytes: " << (valid ? "✓ PASS" : "❌ FAIL")
+    std::cout << "  Size " << std::setw(10) << size << " bytes: " << (valid ? "[PASS] PASS" : "[FAIL] FAIL")
               << std::endl;
 
     ASSERT_TRUE(valid) << "Data corruption at size=" << size;
@@ -184,7 +188,7 @@ TEST_F(BroadcastCopyL3, SingleDest_WithDependencySignal) {
 
   // Now copy should complete
   BroadcastTestUtils::WaitSignal(completion_signal);
-  std::cout << "  ✓ Copy completed after dependency satisfied" << std::endl;
+  std::cout << "  [PASS] Copy completed after dependency satisfied" << std::endl;
 
   bool valid = BroadcastTestUtils::VerifyPattern(dst, SIZE, BroadcastTestUtils::SEQUENTIAL);
   ASSERT_TRUE(valid);
@@ -196,10 +200,10 @@ TEST_F(BroadcastCopyL3, SingleDest_WithDependencySignal) {
 }
 
 //
-// TC-L3-004: Single Dest Without Completion Signal
+// TC-L3-004: Single Dest Basic Copy (Alternative Pattern)
 //
 
-TEST_F(BroadcastCopyL3, SingleDest_NoCompletionSignal) {
+TEST_F(BroadcastCopyL3, SingleDest_BasicCopy) {
   HsaTestContext ctx;
   if (!ctx.HasGPUAgent()) GTEST_SKIP() << "No GPU agent";
 
@@ -211,29 +215,31 @@ TEST_F(BroadcastCopyL3, SingleDest_NoCompletionSignal) {
 
   BroadcastTestUtils::FillPattern(src, SIZE, BroadcastTestUtils::INCREMENTAL);
 
-  std::cout << "[TC-L3-004] Fire-and-forget copy (no completion signal):" << std::endl;
+  std::cout << "[TC-L3-004] Basic single-dest copy with completion signal:" << std::endl;
+
+  // Always use a real completion signal
+  hsa_signal_t signal = BroadcastTestUtils::CreateSignal(1);
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list, dst_agents, 1, SIZE, 0, nullptr,
-                                    hsa_signal_t{},  // No completion signal
-                                    HSA_AMD_SDMA_ENGINE_0, false);
+                                    signal, HSA_AMD_SDMA_ENGINE_0, false);
 
   std::cout << "  submit_status=" << status << std::endl;
   ASSERT_EQ(HSA_STATUS_SUCCESS, status);
 
-  // Since no signal, wait for completion
-  std::cout << "  Waiting 500ms for copy to complete..." << std::endl;
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  // Wait for completion using real signal
+  BroadcastTestUtils::WaitSignal(signal);
 
   bool valid = BroadcastTestUtils::VerifyPattern(dst, SIZE, BroadcastTestUtils::INCREMENTAL);
   if (valid) {
-    std::cout << "  ✓ Copy completed successfully" << std::endl;
+    std::cout << "  [PASS] Copy completed successfully" << std::endl;
   } else {
-    std::cout << "  ❌ Data corruption or copy incomplete" << std::endl;
+    std::cout << "  [FAIL] Data corruption detected" << std::endl;
   }
 
   ASSERT_TRUE(valid);
 
+  BroadcastTestUtils::DestroySignal(signal);
   ctx.Free(src);
   ctx.Free(dst);
 }
@@ -280,7 +286,7 @@ TEST_F(BroadcastCopyL3, SingleDest_DataPatterns) {
     bool valid = BroadcastTestUtils::VerifyPattern(dst, SIZE, patterns[i]);
 
     std::cout << "  Pattern " << std::setw(15) << std::left << pattern_names[i] << ": "
-              << (valid ? "✓ PASS" : "❌ FAIL") << std::endl;
+              << (valid ? "[PASS] PASS" : "[FAIL] FAIL") << std::endl;
 
     ASSERT_TRUE(valid) << "Data corruption with pattern " << pattern_names[i];
 

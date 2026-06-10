@@ -1,5 +1,9 @@
-// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
-//
+/*
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 // ROCrtst Level 4 Tests: Small Multi-Destination (2-10)
 // Purpose: Scale from 2-10 destinations, validate multi-dest logic
 
@@ -64,7 +68,7 @@ TEST_F(BroadcastCopyL4, TwoDests_4KB) {
   int pass_count = 0;
   for (int i = 0; i < NUM_DESTS; i++) {
     bool valid = BroadcastTestUtils::CompareBuffers(src, dsts[i], SIZE);
-    std::cout << "  dst[" << i << "]: " << (valid ? "✓ PASS" : "❌ FAIL") << std::endl;
+    std::cout << "  dst[" << i << "]: " << (valid ? "[PASS] PASS" : "[FAIL] FAIL") << std::endl;
     if (valid) pass_count++;
   }
 
@@ -143,9 +147,9 @@ TEST_F(BroadcastCopyL4, TenDests_1MB_Performance) {
   ASSERT_EQ(NUM_DESTS, pass_count) << "Data corruption in some destinations";
 
   if (speedup >= 1.2) {
-    std::cout << "  ✓ Performance acceptable (≥1.2x speedup)" << std::endl;
+    std::cout << "  [PASS] Performance acceptable (≥1.2x speedup)" << std::endl;
   } else {
-    std::cout << "  ℹ️  Performance below target (expected ≥1.2x for 10 dests)" << std::endl;
+    std::cout << "  [INFO]  Performance below target (expected ≥1.2x for 10 dests)" << std::endl;
   }
 
   BroadcastTestUtils::DestroySignal(signal);
@@ -196,7 +200,7 @@ TEST_F(BroadcastCopyL4, ProgressiveDestCounts) {
     bool pass = (status == HSA_STATUS_SUCCESS && verified == NUM_DESTS);
 
     std::cout << std::setw(10) << NUM_DESTS << " | " << std::setw(12) << time_us << " | "
-              << (pass ? "✓ PASS" : "❌ FAIL") << " (" << verified << "/" << NUM_DESTS
+              << (pass ? "[PASS] PASS" : "[FAIL] FAIL") << " (" << verified << "/" << NUM_DESTS
               << " verified)" << std::endl;
 
     ASSERT_TRUE(pass);
@@ -258,5 +262,5 @@ TEST_F(BroadcastCopyL4, MultipleSequentialBroadcasts) {
 
   std::cout << "  Passed: " << total_pass << "/" << NUM_ITERATIONS << " iterations" << std::endl;
   ASSERT_EQ(NUM_ITERATIONS, total_pass) << "Some iterations failed";
-  std::cout << "  ✓ All iterations passed" << std::endl;
+  std::cout << "  [PASS] All iterations passed" << std::endl;
 }

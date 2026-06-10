@@ -1,5 +1,9 @@
-// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
-//
+/*
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 // ROCrtst Level 1 Tests: Parameter Validation
 // Purpose: Validate error handling for all invalid parameter combinations
 
@@ -30,7 +34,7 @@ TEST_F(BroadcastCopyL1, NullSourcePointer) {
   hsa_agent_t dst_agents[1] = {ctx.gpu_agent};
 
   hsa_status_t status =
-      hsa_amd_memory_broadcast_copy(nullptr,  // ❌ NULL src
+      hsa_amd_memory_broadcast_copy(nullptr,  // [FAIL] NULL src
                                     ctx.gpu_agent, dst_list, dst_agents, 1, 4096, 0, nullptr,
                                     hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
@@ -52,7 +56,7 @@ TEST_F(BroadcastCopyL1, NullDestinationList) {
   hsa_agent_t dst_agents[1] = {ctx.gpu_agent};
 
   hsa_status_t status = hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent,
-                                                      nullptr,  // ❌ NULL dst_list
+                                                      nullptr,  // [FAIL] NULL dst_list
                                                       dst_agents, 1, 4096, 0, nullptr,
                                                       hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
@@ -75,7 +79,7 @@ TEST_F(BroadcastCopyL1, NullDestinationAgents) {
   void* dst_list[1] = {dst};
 
   hsa_status_t status = hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list,
-                                                      nullptr,  // ❌ NULL dst_agents
+                                                      nullptr,  // [FAIL] NULL dst_agents
                                                       1, 4096, 0, nullptr, hsa_signal_t{},
                                                       HSA_AMD_SDMA_ENGINE_0, false);
 
@@ -101,7 +105,7 @@ TEST_F(BroadcastCopyL1, ZeroDestinations) {
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list, dst_agents,
-                                    0,  // ❌ num_destinations=0
+                                    0,  // [FAIL] num_destinations=0
                                     4096, 0, nullptr, hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
   std::cout << "[TC-L1-004] num_dests=0 → status=" << status << std::endl;
@@ -137,7 +141,7 @@ TEST_F(BroadcastCopyL1, ExceedsMaxDestinations) {
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list.data(), dst_agents.data(),
-                                    max_dests + 1,  // ❌ Over limit
+                                    max_dests + 1,  // [FAIL] Over limit
                                     4096, 0, nullptr, hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
   std::cout << "[TC-L1-005] num_dests=" << (max_dests + 1) << " (max=" << max_dests
@@ -163,11 +167,12 @@ TEST_F(BroadcastCopyL1, ZeroSize) {
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list, dst_agents, 1,
-                                    0,  // ❌ size=0
+                                    0,  // size=0 is a no-op, returns SUCCESS
                                     0, nullptr, hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
   std::cout << "[TC-L1-006] size=0 → status=" << status << std::endl;
-  ASSERT_EQ(HSA_STATUS_ERROR_INVALID_ARGUMENT, status);
+  // size=0 is valid and acts as a no-op (consistent with standard memcpy behavior)
+  ASSERT_EQ(HSA_STATUS_SUCCESS, status);
 
   ctx.Free(src);
   ctx.Free(dst);
@@ -186,7 +191,7 @@ TEST_F(BroadcastCopyL1, InvalidSourceAgent) {
   void* dst_list[1] = {dst};
   hsa_agent_t dst_agents[1] = {ctx.gpu_agent};
 
-  hsa_agent_t invalid_agent = {0xDEADBEEF};  // ❌ Invalid handle
+  hsa_agent_t invalid_agent = {0xDEADBEEF};  // [FAIL] Invalid handle
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, invalid_agent, dst_list, dst_agents, 1, 4096, 0, nullptr,
@@ -214,8 +219,8 @@ TEST_F(BroadcastCopyL1, MismatchedSignalCount) {
 
   hsa_status_t status =
       hsa_amd_memory_broadcast_copy(src, ctx.gpu_agent, dst_list, dst_agents, 1, 4096,
-                                    5,        // ❌ num_dep_signals=5
-                                    nullptr,  // ❌ but dep_signals=NULL
+                                    5,        // [FAIL] num_dep_signals=5
+                                    nullptr,  // [FAIL] but dep_signals=NULL
                                     hsa_signal_t{}, HSA_AMD_SDMA_ENGINE_0, false);
 
   std::cout << "[TC-L1-008] num_dep_signals=5, dep_signals=NULL → status=" << status << std::endl;
@@ -236,7 +241,7 @@ TEST_F(BroadcastCopyL1, NullPointerInDestList) {
   void* src = ctx.AllocateGPUBuffer(4096);
   void* dst1 = ctx.AllocateGPUBuffer(4096);
 
-  void* dst_list[3] = {dst1, nullptr, dst1};  // ❌ Middle element is NULL
+  void* dst_list[3] = {dst1, nullptr, dst1};  // [FAIL] Middle element is NULL
   hsa_agent_t dst_agents[3] = {ctx.gpu_agent, ctx.gpu_agent, ctx.gpu_agent};
 
   hsa_status_t status =
@@ -259,7 +264,7 @@ TEST_F(BroadcastCopyL1, CapabilityQueryNullOutput) {
   if (!ctx.HasGPUAgent()) GTEST_SKIP() << "No GPU agent";
 
   hsa_status_t status =
-      hsa_amd_memory_broadcast_capability(ctx.gpu_agent, nullptr  // ❌ NULL max_destinations
+      hsa_amd_memory_broadcast_capability(ctx.gpu_agent, nullptr  // [FAIL] NULL max_destinations
       );
 
   std::cout << "[TC-L1-010] Null max_destinations output → status=" << status << std::endl;

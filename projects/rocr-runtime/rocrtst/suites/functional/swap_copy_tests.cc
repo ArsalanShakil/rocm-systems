@@ -1,46 +1,7 @@
 /*
- * =============================================================================
- *   ROC Runtime Conformance Release License
- * =============================================================================
- * The University of Illinois/NCSA
- * Open Source License (NCSA)
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
  *
- * Copyright (c) 2026, Advanced Micro Devices, Inc.
- * All rights reserved.
- *
- * Developed by:
- *
- *                 AMD Research and AMD ROC Software Development
- *
- *                 Advanced Micro Devices, Inc.
- *
- *                 www.amd.com
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal with the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- *  - Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimers.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimers in
- *    the documentation and/or other materials provided with the distribution.
- *  - Neither the names of <Name of Development Group, Name of Institution>,
- *    nor the names of its contributors may be used to endorse or promote
- *    products derived from this Software without specific prior written
- *    permission.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
- * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
- * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS WITH THE SOFTWARE.
- *
+ * SPDX-License-Identifier: MIT
  */
 
 // =============================================================================
@@ -141,7 +102,7 @@ class SwapCopyTestUtils {
     }
 
     if (match) {
-      std::cout << "  [" << buffer_name << "] ✓ Pattern verified (" << size << " bytes)"
+      std::cout << "  [" << buffer_name << "] [PASS] Pattern verified (" << size << " bytes)"
                 << std::endl;
     }
     return match;
@@ -524,7 +485,7 @@ TEST_F(SwapCopyTest, TC_SWAP_007_NullPointerValidation) {
                                     nullptr, signal);
   EXPECT_EQ(HSA_STATUS_ERROR_INVALID_ARGUMENT, status);
 
-  std::cout << "  ✓ Null pointer validation passed" << std::endl;
+  std::cout << "  [PASS] Null pointer validation passed" << std::endl;
 
   hsa_signal_destroy(signal);
   ctx_.Free(valid_buf);
@@ -550,7 +511,7 @@ TEST_F(SwapCopyTest, TC_SWAP_008_ZeroSizeHandling) {
       hsa_amd_memory_swap_copy(buf_a, ctx_.gpu_agent, buf_b, ctx_.gpu_agent, 0, 0, nullptr, signal);
   EXPECT_EQ(HSA_STATUS_ERROR_INVALID_ARGUMENT, status);
 
-  std::cout << "  ✓ Zero size validation passed" << std::endl;
+  std::cout << "  [PASS] Zero size validation passed" << std::endl;
 
   hsa_signal_destroy(signal);
   ctx_.Free(buf_a);
@@ -652,7 +613,7 @@ TEST_F(SwapCopyTest, TC_SWAP_010_ChainedSwaps) {
 
   EXPECT_TRUE(correct) << "Chained swap result incorrect";
   if (correct) {
-    std::cout << "  ✓ Chained swaps verified: A=0xAA, B=0xCC, C=0xBB" << std::endl;
+    std::cout << "  [PASS] Chained swaps verified: A=0xAA, B=0xCC, C=0xBB" << std::endl;
   }
 
   hsa_signal_destroy(signal);

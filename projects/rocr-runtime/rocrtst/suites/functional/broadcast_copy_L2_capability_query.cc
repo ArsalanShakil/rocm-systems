@@ -1,5 +1,9 @@
-// Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
-//
+/*
+ * Copyright (c) Advanced Micro Devices, Inc., or its affiliates.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 // ROCrtst Level 2 Tests: Capability Query
 // Purpose: Test capability detection across different agent types and hardware
 
@@ -107,7 +111,7 @@ TEST_F(BroadcastCopyL2, CapabilityConsistencyCheck) {
         << "Capability query returned inconsistent results: " << results[0] << " vs " << results[i];
   }
 
-  std::cout << "  ✓ All queries returned consistent value: " << results[0] << std::endl;
+  std::cout << "  [PASS] All queries returned consistent value: " << results[0] << std::endl;
 }
 
 //
@@ -135,17 +139,17 @@ TEST_F(BroadcastCopyL2, IsaVersionCorrelation) {
   bool is_gfx14_plus = (strstr(isa_name, "gfx14") != nullptr);
 
   if (is_gfx13_plus || is_gfx14_plus) {
-    std::cout << "  Expected: ≥1024 (MI350+ series or newer)" << std::endl;
+    std::cout << "  Expected: ≥1024 (GFX13+ or newer)" << std::endl;
     if (max_dests == 0) {
-      std::cout << "  ⚠️  WARNING: GFX13+/GFX14+ returned 0, HW/FW support may be missing"
+      std::cout << "  [WARNING]  WARNING: GFX13+/GFX14+ returned 0, HW/FW support may be missing"
                 << std::endl;
     } else {
-      std::cout << "  ✓ GFX13+/GFX14+ reports multicast support" << std::endl;
+      std::cout << "  [PASS] GFX13+/GFX14+ reports multicast support" << std::endl;
     }
   } else {
-    std::cout << "  Expected: 0 (Pre-MI350 hardware)" << std::endl;
+    std::cout << "  Expected: 0 (Pre-GFX13 hardware)" << std::endl;
     if (max_dests > 0) {
-      std::cout << "  ℹ️  Note: Pre-GFX13 hardware reports multicast support" << std::endl;
+      std::cout << "  [INFO]  Note: Pre-GFX13 hardware reports multicast support" << std::endl;
     }
   }
 }
