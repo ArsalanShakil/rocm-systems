@@ -216,6 +216,7 @@ void Backend::dump_stats() {
   printf("WAVE_Sync %llu\n", device_stats.getStat(NUM_SYNC_WAVE));
   printf("WG_Sync %llu\n", device_stats.getStat(NUM_SYNC_WG));
   printf("Reduce %llu\n", device_stats.getStat(NUM_REDUCE));
+  printf("ReduceScatter %llu\n", device_stats.getStat(NUM_REDUCE_SCATTER));
 
   const auto& host_stats{globalHostStats};
   printf("HOST STATS\n");

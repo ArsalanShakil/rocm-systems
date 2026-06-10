@@ -134,6 +134,7 @@ declare -A TEST_NUMBERS=(
   ["reduce_on_stream"]="117"
   ["host_ctx_create"]="118"
   ["teamsplit2d"]="119"
+  ["teamreducescatter"]="120"
 )
 
 # Detect which runtime to use
@@ -690,6 +691,10 @@ TestColl() {
   ExecTest  "fcollect"         2       1            64        32768
 
   ExecTest  "teamreduction"    2       1            64        32768
+
+  ExecTest  "teamreducescatter" 2     1            64        32768
+  ExecTest  "teamreducescatter" 4     1            64        32768
+  ExecTest  "teamreducescatter" 8     1            64        32768
 }
 
 TestOnStream() {
