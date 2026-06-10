@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 mirage_core = { workspace = true }
 mirage_ctl = { workspace = true }
+mirage_corpus = { workspace = true }
 mirage_dashboard = { path = "../dashboard" }
 anyhow = { workspace = true }
 clap = { workspace = true }

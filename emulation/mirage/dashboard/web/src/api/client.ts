@@ -6,6 +6,10 @@
 
 import type {
   AgentDef,
+  CorpusCase,
+  CorpusRunReport,
+  CorpusRunRequest,
+  CorpusScenario,
   EmulatorEntry,
   ExecListItem,
   ExecStatus,
@@ -160,3 +164,12 @@ export function attachUrl(sessionId: string, execId: string): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}${API}/sessions/${encodeURIComponent(sessionId)}/execs/${encodeURIComponent(execId)}/attach`;
 }
+
+// ── Corpus ─────────────────────────────────────────────────────────────────
+
+export const listCorpusScenarios = () =>
+  get<CorpusScenario[]>("/corpus/scenarios");
+export const listCorpusCases = (root: string) =>
+  get<CorpusCase[]>(`/corpus/cases?root=${encodeURIComponent(root)}`);
+export const runCorpus = (body: CorpusRunRequest) =>
+  post<CorpusRunReport>("/corpus/run", body);

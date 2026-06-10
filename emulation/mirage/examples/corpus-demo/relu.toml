@@ -1,0 +1,31 @@
+# relu_f32 — a tiny, self-contained corpus case used by the mirage demo,
+# the `corpus_native` ctest, and the corpus e2e test.
+#
+# It exercises the full native pipeline (compile -> run -> validate) using
+# the stub IREE tools under ./tools, so it runs deterministically without a
+# real IREE install or a GPU.
+
+name = "relu_f32"
+kind = "run_module"
+sources = ["relu.mlir"]
+function = "main"
+
+# The kernel writes one output file.
+outputs = ["output0.npy"]
+
+# Validate with CEL property predicates over the observed output instead of
+# a golden tensor: ReLU is non-negative, finite, and shape-preserving.
+# (All root-level keys must precede the `[[inputs]]` array-of-tables, or TOML
+# would fold them into the last input table.)
+validate = [
+  "all_finite",
+  "min >= 0.0",
+  "count == 16",
+  "shape == [4, 4]",
+]
+
+# A single 4x4 input drawn from a reproducible uniform distribution in
+# [-1, 1]. The native generator spec is produced by a CEL map literal.
+[[inputs]]
+dtype = "f32"
+formula = '{"dist": "uniform", "shape": [4, 4], "low": -1.0, "high": 1.0}'

@@ -1,0 +1,8 @@
+$ iree-compile examples/corpus-demo/relu.mlir -o /home/arosa/rocm-systems/emulation/mirage/examples/corpus-demo/.artifacts/default/compile-cache/b399e21538e07889/relu.vmfb
+cwd: examples/corpus-demo
+returncode: 0
+
+stdout:
+
+stderr:
+

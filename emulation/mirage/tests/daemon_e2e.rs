@@ -34,6 +34,12 @@ struct Daemon {
 
 impl Daemon {
     fn spawn() -> Self {
+        Self::spawn_with_extra_path(None)
+    }
+
+    /// Spawn a daemon, optionally prepending `extra_path` to the child's
+    /// `PATH` (used to expose the corpus demo's stub IREE tools).
+    fn spawn_with_extra_path(extra_path: Option<&str>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config");
         let runtime = dir.path().join("runtime");
@@ -44,8 +50,8 @@ impl Daemon {
         let mirage_bin = PathBuf::from(env!("CARGO_BIN_EXE_mirage"));
         let port = free_port();
         let addr = format!("127.0.0.1:{port}");
-        let child = Command::new(&mirage_bin)
-            .args(["webui", "--addr", &addr])
+        let mut cmd = Command::new(&mirage_bin);
+        cmd.args(["webui", "--addr", &addr])
             .env("XDG_CONFIG_HOME", &config)
             .env("XDG_RUNTIME_DIR", &runtime)
             .env("XDG_STATE_HOME", &state)
@@ -53,9 +59,12 @@ impl Daemon {
             .env_remove("MIRAGE_LOG")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn mirage daemon");
+            .stderr(Stdio::null());
+        if let Some(extra) = extra_path {
+            let existing = std::env::var("PATH").unwrap_or_default();
+            cmd.env("PATH", format!("{extra}:{existing}"));
+        }
+        let child = cmd.spawn().expect("spawn mirage daemon");
         let base = format!("http://{addr}");
         let d = Daemon {
             _dir: dir,
@@ -458,4 +467,79 @@ fn unknown_spa_route_falls_back_to_index() {
     assert!(r.status().is_success());
     let body = r.text().unwrap();
     assert!(body.to_ascii_lowercase().contains("<html"));
+}
+
+// ── Corpus endpoints ────────────────────────────────────────────────────────
+
+fn demo_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/corpus-demo")
+}
+
+fn have_python3() -> bool {
+    Command::new("python3")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+fn corpus_scenarios_endpoint() {
+    let d = Daemon::spawn();
+    let (s, v) = d.get_json("/api/corpus/scenarios");
+    assert!(s.is_success());
+    let arr = v.as_array().unwrap();
+    assert_eq!(arr.len(), 3);
+    assert!(arr.iter().any(|x| x["name"] == "native"));
+}
+
+#[test]
+fn corpus_cases_endpoint_lists_demo() {
+    let d = Daemon::spawn();
+    let (s, v) = d.get_json(&format!(
+        "/api/corpus/cases?root={}",
+        urlencode(demo_dir().to_str().unwrap())
+    ));
+    assert!(s.is_success(), "status {s}: {v}");
+    let arr = v.as_array().unwrap();
+    assert!(arr.iter().any(|c| c["name"] == "relu_f32"));
+}
+
+#[test]
+fn corpus_run_endpoint_native() {
+    if !have_python3() {
+        eprintln!("skipping: python3 not available for stub iree-run-module");
+        return;
+    }
+    let tools = demo_dir().join("tools");
+    let d = Daemon::spawn_with_extra_path(Some(tools.to_str().unwrap()));
+    let artifacts = d._dir.path().join("corpus-artifacts");
+    let (s, v) = d.post_json(
+        "/api/corpus/run",
+        &json!({
+            "root": demo_dir().to_str().unwrap(),
+            "scenarios": ["native"],
+            "no_wrapper": true,
+            "artifact_dir": artifacts.to_str().unwrap(),
+        }),
+    );
+    assert!(s.is_success(), "status {s}: {v}");
+    let outcomes = v["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0]["case"], "relu_f32");
+    assert_eq!(outcomes[0]["status"], "pass");
+}
+
+/// Minimal percent-encoding for a filesystem path used in a query string.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }

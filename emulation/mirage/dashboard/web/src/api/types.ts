@@ -131,3 +131,49 @@ export type StreamPacket =
     }
   | { NodeExit: { node: number; exit_code: number } }
   | { ExecExit: { exit_code: number } };
+
+// ── Corpus ───────────────────────────────────────────────────────────────
+
+export interface CorpusScenario {
+  name: string;
+  emulator: string;
+  agent: string;
+  profile: string;
+  description: string;
+  installed: boolean;
+}
+
+export interface CorpusCase {
+  name: string;
+  kind: string;
+  sources: string[];
+  function: string;
+  compile_only?: boolean;
+  validate?: string | string[];
+}
+
+export type CaseStatus = "pass" | "fail" | "skip" | "xfail" | "xpass";
+
+export interface CaseOutcome {
+  case: string;
+  scenario: string;
+  config: string;
+  status: CaseStatus;
+  elapsed_s: number;
+  returncode: number;
+  message: string;
+}
+
+export interface CorpusRunReport {
+  outcomes: CaseOutcome[];
+}
+
+export interface CorpusRunRequest {
+  root: string;
+  configs?: string[];
+  cases?: string[];
+  scenarios?: string[];
+  compile_only?: boolean;
+  no_wrapper?: boolean;
+  artifact_dir?: string;
+}

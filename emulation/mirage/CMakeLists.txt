@@ -87,3 +87,7 @@ set_tests_properties(cargo_test PROPERTIES TIMEOUT 1800)
 # (HotSwap by default). Opt-in via MIRAGE_RUN_CORPUS; tests SKIP when the
 # corpus, IREE tools, or emulator install are unavailable.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/RocjitsuCorpus.cmake)
+
+# Native mirage-corpus demo pipeline (hermetic, stub IREE tools). Registers
+# the `corpus_native` ctest; on by default since it needs no external deps.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MirageCorpusNative.cmake)

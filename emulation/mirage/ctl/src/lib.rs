@@ -26,6 +26,8 @@ use mirage_core::profile::{ContainerizedDef, FileMount, ProfileDef};
 use mirage_core::session::SessionId;
 use tokio_stream::StreamExt;
 
+pub mod corpus;
+
 /// Log directive that detached child processes (notably the per-session
 /// `mirage host`) should inherit, derived from the CLI's `-v`/`-vv`.
 ///
@@ -211,6 +213,10 @@ pub enum CtlCmd {
     /// Manage agents (hardware GPU definitions).
     #[command(subcommand)]
     Agent(AgentCmd),
+
+    /// Browse and run rocjitsu test-corpus cases across scenarios.
+    #[command(subcommand)]
+    Corpus(corpus::CorpusCmd),
 
     /// List emulator backends and their install / support status.
     Emulators {
@@ -573,6 +579,7 @@ pub async fn dispatch<C: MirageCtl + 'static>(
         CtlCmd::Profile(c) => profile_cmd(&*ctl, c, json),
         CtlCmd::Topology(c) => topology_cmd(&*ctl, c, json),
         CtlCmd::Agent(c) => agent_cmd(&*ctl, c, json),
+        CtlCmd::Corpus(c) => corpus::corpus_cmd(c, json),
         CtlCmd::Emulators { long } => {
             emulators_cmd(long, json);
             Ok(ExitCode::from(0))

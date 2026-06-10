@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Stub ``iree-run-module`` for the mirage corpus demo / tests.
+
+A real ``iree-run-module`` loads a compiled ``.vmfb`` and runs it on inputs.
+This stub ignores the (stub) module and instead computes the demo kernel —
+elementwise ReLU, ``max(x, 0)`` — directly from the first ``--input=@FILE``
+``.npy`` and writes the result to the first ``--output=@FILE`` ``.npy``.
+
+It implements just enough of the NumPy ``.npy`` v1.0 format (little-endian
+``<f4`` / ``<f8``) to round-trip the demo tensors without requiring NumPy, so
+the demo and the ``corpus_native`` ctest run anywhere Python 3 is available.
+If Python 3 is missing the corpus runner reports the case as SKIPPED.
+"""
+
+import ast
+import struct
+import sys
+
+
+def read_npy(path):
+    with open(path, "rb") as f:
+        magic = f.read(6)
+        if magic != b"\x93NUMPY":
+            raise ValueError(f"{path}: not a .npy file")
+        major, _minor = f.read(2)
+        if major == 1:
+            (hlen,) = struct.unpack("<H", f.read(2))
+        else:
+            (hlen,) = struct.unpack("<I", f.read(4))
+        header = f.read(hlen).decode("latin1")
+        meta = ast.literal_eval(header.strip())
+        descr = meta["descr"]
+        shape = tuple(meta["shape"])
+        count = 1
+        for d in shape:
+            count *= d
+        if descr in ("<f4", "|f4", "f4"):
+            fmt, itemsize = "<%df" % count, 4
+        elif descr in ("<f8", "|f8", "f8"):
+            fmt, itemsize = "<%dd" % count, 8
+        else:
+            raise ValueError(f"{path}: unsupported dtype {descr!r}")
+        data = list(struct.unpack(fmt, f.read(count * itemsize)))
+        return descr, shape, data
+
+
+def write_npy(path, descr, shape, data):
+    shape_str = "(" + "".join(f"{d}, " for d in shape) + ")"
+    header = "{'descr': '%s', 'fortran_order': False, 'shape': %s, }" % (
+        descr,
+        shape_str,
+    )
+    base = 6 + 2 + 2 + len(header) + 1
+    pad = (64 - base % 64) % 64
+    header = header + " " * pad + "\n"
+    fmt = "<%d%s" % (len(data), "f" if descr.endswith("f4") else "d")
+    with open(path, "wb") as f:
+        f.write(b"\x93NUMPY")
+        f.write(bytes([1, 0]))
+        f.write(struct.pack("<H", len(header)))
+        f.write(header.encode("latin1"))
+        f.write(struct.pack(fmt, *data))
+
+
+def main(argv):
+    inputs, outputs = [], []
+    for arg in argv:
+        if arg.startswith("--input=@"):
+            inputs.append(arg[len("--input=@"):])
+        elif arg.startswith("--output=@"):
+            outputs.append(arg[len("--output=@"):])
+
+    if not inputs or not outputs:
+        sys.stderr.write("stub iree-run-module: need at least one input and output\n")
+        return 2
+
+    descr, shape, data = read_npy(inputs[0])
+    relu = [x if x > 0.0 else 0.0 for x in data]
+    write_npy(outputs[0], descr, shape, relu)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

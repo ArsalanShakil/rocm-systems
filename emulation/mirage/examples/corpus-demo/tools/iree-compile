@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Stub `iree-compile` for the mirage corpus demo / tests.
+#
+# A real iree-compile turns an .mlir module into a .vmfb. Here we only need a
+# deterministic, content-free artifact at the `-o` path so the corpus runner's
+# compile step succeeds without a real IREE toolchain. The matching stub
+# `iree-run-module` ignores the module and computes the kernel directly.
+set -euo pipefail
+
+out=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "-o" ]]; then
+    out="$arg"
+  fi
+  prev="$arg"
+done
+
+if [[ -z "$out" ]]; then
+  echo "stub iree-compile: missing -o <output>" >&2
+  exit 2
+fi
+
+mkdir -p "$(dirname "$out")"
+printf 'STUB_VMFB\n' > "$out"
+exit 0

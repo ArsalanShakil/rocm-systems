@@ -24,6 +24,8 @@ $ mirage run --profile cdna3 -- ./my-rocm-app --flag
 See:
 
 * [`docs/cli.md`](docs/cli.md) — full CLI reference.
+* [`docs/corpus.md`](docs/corpus.md) — run kernel test corpora across scenarios
+  (`mirage corpus`), with CEL input generation + output validation.
 * [`docs/state-layout.md`](docs/state-layout.md) — on-disk layout reference.
 * [`docs/host.md`](docs/host.md) — what the per-session host does and
   how to extend it.

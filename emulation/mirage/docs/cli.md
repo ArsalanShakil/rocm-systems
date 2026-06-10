@@ -119,6 +119,30 @@ Flags:
   finishes. Only meaningful when mirage created the session.
 * `--workdir DIR` sets the working directory.
 
+## `mirage corpus`
+
+Run [rocjitsu-test-corpus][corpus]–style kernel tests across emulator
+scenarios (rocjitsu / hotswap / native), with CEL-based input generation and
+output validation.
+
+```text
+mirage corpus scenarios
+mirage corpus list  --root <dir>
+mirage corpus show  --root <dir> <case>
+mirage corpus run   --root <dir> [--scenario S]... [--case C]...
+                                 [--config FILE]... [--out-dir DIR]
+                                 [--compile-only] [--no-wrapper]
+mirage corpus bench --root <dir> [--scenario S]...
+```
+
+`run` exits non-zero on any real failure and, with `--out-dir`, writes
+`results.csv` + `results.json`. See [`docs/corpus.md`](corpus.md) for the case
+format, the CEL function reference, scenarios, the REST API, and a contributor
+guide. A runnable, IREE-free example lives in
+[`examples/corpus-demo`](../examples/corpus-demo).
+
+[corpus]: https://github.com/rocm/rocjitsu-test-corpus
+
 ## Environment variables
 
 | Variable               | Purpose                                                   |
