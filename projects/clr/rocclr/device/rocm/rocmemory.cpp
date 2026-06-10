@@ -704,11 +704,11 @@ void Buffer::destroy() {
       }
     } else {
       if (memFlags & CL_MEM_USE_HOST_PTR) {
-        // unlock svm host pointer from memory pool
-        if (!dev().info().hmmSupported_) {
-          dev().hostUnlock(owner()->getSvmPtr(), size());
+        if (dev().info().hmmSupported_) {
+          dev().RevokeAccess(owner()->getSvmPtr(), size());
+        } else {
+          Hsa::memory_unlock(owner()->getSvmPtr());
         }
-        // destroy system memory
         if (!(amd::Os::releaseMemory(deviceMemory_, size()))) {
           ClPrint(amd::LOG_ERROR, amd::LOG_MEM, "munmap failed");
         }
@@ -749,8 +749,9 @@ void Buffer::destroy() {
 
     if (needUnlockHostMem) {
       if (memFlags & (CL_MEM_USE_HOST_PTR | CL_MEM_ALLOC_HOST_PTR)) {
-        if (dev().agent_profile() != HSA_PROFILE_FULL)
-          dev().hostUnlock(owner()->getHostMem(), size());
+        if (dev().agent_profile() != HSA_PROFILE_FULL) {
+          Hsa::memory_unlock(owner()->getHostMem());
+        }
       }
     }
   }
