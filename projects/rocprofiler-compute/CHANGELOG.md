@@ -3,6 +3,12 @@
 Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.amd.com/projects/rocprofiler-compute/en/latest/](https://rocm.docs.amd.com/projects/rocprofiler-compute/en/latest/).
 
 
+## ROCm Compute Profiler for ROCm 7.15.0
+
+### Changed
+
+* Improved vL1D Cache Hit and vL1D Cache Hit Rate metric equations to more accurately reflect vL1 cache behavior on MI300/MI350.
+
 ## ROCm Compute Profiler 3.7.0 for ROCm 7.14.0
 
 ### Added
