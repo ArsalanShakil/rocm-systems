@@ -296,10 +296,9 @@ class OmniAnalyze_Base:
 
         # --api-trace enables every backend.
         api_trace = profiling_config.get("api_trace", False)
-        needs_torch_trace = (
-            getattr(args, "torch_operator", None) is not None
-            or getattr(args, "list_torch_operators", False)
-        )
+        needs_torch_trace = getattr(
+            args, "torch_operator", None
+        ) is not None or getattr(args, "list_torch_operators", False)
         if needs_torch_trace and not (
             profiling_config.get("torch_trace", False) or api_trace
         ):
@@ -310,10 +309,9 @@ class OmniAnalyze_Base:
                 "Cannot use --torch-operator or --list-torch-operators.",
             )
 
-        needs_triton_trace = (
-            getattr(args, "triton_operator", None) is not None
-            or getattr(args, "list_triton_operators", False)
-        )
+        needs_triton_trace = getattr(
+            args, "triton_operator", None
+        ) is not None or getattr(args, "list_triton_operators", False)
         if needs_triton_trace and not (
             profiling_config.get("triton_trace", False) or api_trace
         ):
