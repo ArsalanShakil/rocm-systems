@@ -952,11 +952,23 @@ fn spawn_node(
             .stdout(Stdio::from(slave_out))
             .stderr(Stdio::from(slave_err))
             .env_clear()
-            // inherit a minimal environment by default
+            // inherit a minimal environment by default. `XDG_RUNTIME_DIR`
+            // is included because the ROCm/HSA runtime (and thus the
+            // rocjitsu KMD interposer that builds on it) requires it to
+            // bring up its per-user runtime state; without it the
+            // interposer silently fails to emulate, so e.g. the rocjitsu
+            // race detector and kernel logging plugins produce no output.
             .envs(std::env::vars().filter(|(k, _)| {
                 matches!(
                     k.as_str(),
-                    "PATH" | "HOME" | "USER" | "LANG" | "LC_ALL" | "TERM" | "TMPDIR"
+                    "PATH"
+                        | "HOME"
+                        | "USER"
+                        | "LANG"
+                        | "LC_ALL"
+                        | "TERM"
+                        | "TMPDIR"
+                        | "XDG_RUNTIME_DIR"
                 )
             }))
             // Make sure programs that consult $TERM behave like a real

@@ -203,6 +203,68 @@ fn session_start_detach_exec_then_stop() {
 }
 
 #[test]
+fn plugin_logs_are_exposed_via_logs_command() {
+    let env = Env::new();
+    env.mirage()
+        .args(["profile", "create", "p"])
+        .assert()
+        .success();
+    env.mirage()
+        .args(["session", "start", "--profile", "p", "--id", "sp"])
+        .assert()
+        .success();
+    // Run an exec so the exec directory exists (the logs command keys
+    // off it). The workload itself is irrelevant here.
+    env.mirage()
+        .args([
+            "exec", "start", "sp", "--keep", "--detach", "--", "/bin/echo", "hi",
+        ])
+        .assert()
+        .success();
+    // Simulate an emulator plugin's file sink writing per-plugin logs
+    // under `<session>/plugins/`, exactly as rocjitsu's race detector and
+    // kernel logging plugins do at runtime when enabled via `--plugin`.
+    let plugins = env.runtime.join("mirage/session/sp/plugins");
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(
+        plugins.join("race.log"),
+        b"RACE: write-after-write at 0x1000\n",
+    )
+    .unwrap();
+    std::fs::write(plugins.join("logging.log"), b"dispatch 0: grid=64\n").unwrap();
+
+    // `--plugin race` prints just that plugin's captured log.
+    let out = env
+        .mirage()
+        .args(["logs", "sp", "e-000000", "--plugin", "race"])
+        .output()
+        .unwrap();
+    let s = String::from_utf8_lossy(&out.stdout);
+    assert!(s.contains("RACE: write-after-write"), "stdout={s:?}");
+    assert!(!s.contains("dispatch 0"), "race filter leaked: {s:?}");
+
+    // `--plugins` prints every plugin's log with a per-plugin header.
+    env.mirage()
+        .args(["logs", "sp", "e-000000", "--plugins"])
+        .assert()
+        .success()
+        .stdout(str::contains("==> race <=="))
+        .stdout(str::contains("==> logging <=="))
+        .stdout(str::contains("dispatch 0: grid=64"));
+
+    // An unknown plugin name is a hard error.
+    env.mirage()
+        .args(["logs", "sp", "e-000000", "--plugin", "nope"])
+        .assert()
+        .failure();
+
+    env.mirage()
+        .args(["session", "stop", "sp", "-f"])
+        .assert()
+        .success();
+}
+
+#[test]
 fn attach_to_long_running_exec_then_signal() {
     let env = Env::new();
     env.mirage()

@@ -95,6 +95,14 @@ export interface ExecListItem {
   status: ExecStatus;
 }
 
+/// Captured diagnostic output from a single emulator plugin (e.g.
+/// rocjitsu's `race` detector or `logging` plugin). Written through the
+/// plugin sink system to `<session>/plugins/<name>.log`.
+export interface PluginLog {
+  name: string;
+  content: string;
+}
+
 export interface PathsInfo {
   config: string;
   runtime: string;

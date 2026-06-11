@@ -530,6 +530,11 @@ pub struct RunArgs {
     /// when omitted.
     #[arg(long)]
     provider: Option<String>,
+    /// Enable an emulator plugin for this run (e.g. `race`, `logging`
+    /// for rocjitsu). May be repeated. Plugin diagnostic output is
+    /// captured per-plugin and viewable with `mirage logs --plugin`.
+    #[arg(long = "plugin", value_name = "NAME")]
+    plugins: Vec<String>,
     /// The command and its arguments.
     #[arg(trailing_var_arg = true, required = true, allow_hyphen_values = true)]
     argv: Vec<String>,
@@ -550,6 +555,14 @@ pub struct LogsArgs {
     /// Follow output as it is appended.
     #[arg(short = 'f', long)]
     follow: bool,
+    /// Show the captured log for a single emulator plugin (e.g. `race`,
+    /// `logging`) instead of the workload's stdout.
+    #[arg(long = "plugin", value_name = "NAME", conflicts_with = "follow")]
+    plugin: Option<String>,
+    /// Show the captured logs for every emulator plugin (each prefixed
+    /// with a `==> <name> <==` header) instead of the workload's stdout.
+    #[arg(long = "plugins", conflicts_with_all = ["follow", "plugin"])]
+    plugins: bool,
 }
 
 // =============================================================================
@@ -1093,6 +1106,21 @@ fn resolve_count(
 }
 
 /// Parse CLI `--mount` specs into [`FileMount`]s.
+/// Apply `--plugin NAME` flags to a freshly-loaded profile, enabling
+/// each named emulator plugin (with no options). Returns `true` when any
+/// plugin was added, so the caller knows the now-modified profile must
+/// be sent inline rather than referenced by name. Emulator-specific
+/// validation of plugin names happens when the session resolves its
+/// injection.
+fn apply_plugin_overrides(profile: &mut ProfileDef, plugins: &[String]) -> bool {
+    let mut changed = false;
+    for name in plugins {
+        profile.emulator.plugins.entry(name.clone()).or_default();
+        changed = true;
+    }
+    changed
+}
+
 fn parse_mounts(mounts: &[String]) -> anyhow::Result<Vec<FileMount>> {
     mounts
         .iter()
@@ -1560,6 +1588,35 @@ async fn logs_cmd<C: MirageCtl>(ctl: Arc<C>, a: LogsArgs) -> anyhow::Result<Exit
     if !layout.root.exists() {
         anyhow::bail!("exec not found: {}", a.exec);
     }
+    // Plugin logs are session-scoped diagnostic output captured from the
+    // emulator's plugin sinks (see `mirage logs --plugin`).
+    if a.plugins || a.plugin.is_some() {
+        let logs = ctl.session_plugin_logs(&a.session)?;
+        let mut stdout = std::io::stdout();
+        let mut found = false;
+        for pl in &logs {
+            if let Some(want) = &a.plugin
+                && &pl.name != want
+            {
+                continue;
+            }
+            found = true;
+            if a.plugin.is_none() {
+                let _ = writeln!(stdout, "==> {} <==", pl.name);
+            }
+            let _ = stdout.write_all(pl.content.as_bytes());
+        }
+        if !found {
+            match &a.plugin {
+                Some(w) => anyhow::bail!(
+                    "no plugin log named `{w}` for session {} (is the plugin enabled?)",
+                    a.session
+                ),
+                None => eprintln!("mirage: no plugin logs for session {}", a.session),
+            }
+        }
+        return Ok(ExitCode::from(0));
+    }
     let mut nodes = vec![];
     if let Ok(rd) = std::fs::read_dir(layout.node_root()) {
         for e in rd.flatten() {
@@ -1595,6 +1652,7 @@ async fn run_cmd<C: MirageCtl + 'static>(ctl: Arc<C>, a: RunArgs) -> anyhow::Res
         None => {
             // create transient session
             let mut profile = ctl.profile_get(&a.profile)?;
+            let plugins_added = apply_plugin_overrides(&mut profile, &a.plugins);
             let profile_ref = apply_container_overrides(
                 &mut profile,
                 a.image.clone(),
@@ -1602,6 +1660,13 @@ async fn run_cmd<C: MirageCtl + 'static>(ctl: Arc<C>, a: RunArgs) -> anyhow::Res
                 a.provider.clone(),
                 &a.profile,
             )?;
+            // Plugin overrides mutate the profile, so it can no longer be
+            // resolved by name — send it inline even when no container
+            // override forced that already.
+            let profile_ref = match profile_ref {
+                MaybeRef::Ref(_) if plugins_added => MaybeRef::Owned(profile.clone()),
+                other => other,
+            };
             tracing::info!(profile = %a.profile, "creating transient session");
             let def = ctl.session_create(CreateSessionRequest {
                 id: None,

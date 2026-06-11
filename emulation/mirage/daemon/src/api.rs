@@ -21,7 +21,7 @@ use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use mirage_core::agent::AgentDef;
 use mirage_core::common::MaybeRef;
-use mirage_core::ctl::{CreateSessionRequest, MirageCtl, StreamPacket};
+use mirage_core::ctl::{CreateSessionRequest, MirageCtl, PluginLog, StreamPacket};
 use mirage_core::exec::{ExecArgs, ExecDef, ExecId, ExecRef, ExecStatus};
 use mirage_core::profile::ProfileDef;
 use mirage_core::session::{SessionDef, SessionId, SessionState};
@@ -50,6 +50,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/agents/{name}", delete(delete_agent))
         .route("/sessions", get(list_sessions).post(create_session))
         .route("/sessions/{id}", get(get_session).delete(delete_session))
+        .route("/sessions/{id}/plugins", get(list_plugin_logs))
         .route("/sessions/{id}/execs", get(list_execs).post(create_exec))
         .route(
             "/sessions/{id}/execs/{exec}",
@@ -487,6 +488,17 @@ async fn delete_session(
     let id = parse_session_id(&id)?;
     s.ctl.session_destroy(&id)?;
     Ok(ok())
+}
+
+/// Captured emulator plugin diagnostic logs for a session (one entry per
+/// `<session>/plugins/*.log` file). Empty when no plugins are enabled or
+/// none have produced output yet.
+async fn list_plugin_logs(
+    State(s): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<PluginLog>>, ApiError> {
+    let id = parse_session_id(&id)?;
+    Ok(Json(s.ctl.session_plugin_logs(&id)?))
 }
 
 // ---- execs -----------------------------------------------------------------

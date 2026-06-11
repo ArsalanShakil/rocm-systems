@@ -11,6 +11,7 @@ import type {
   ExecStatus,
   Metrics,
   PathsInfo,
+  PluginLog,
   ProfileDef,
   SessionDef,
   SessionState,
@@ -120,6 +121,11 @@ export const createSession = (params: {
 }) => post<SessionDef>("/sessions", params);
 export const deleteSession = (id: string) =>
   del<{ ok: boolean }>(`/sessions/${encodeURIComponent(id)}`);
+
+/// Captured emulator plugin logs for a session (one entry per enabled
+/// plugin that has produced output). Empty when no plugins are enabled.
+export const listPluginLogs = (sessionId: string) =>
+  get<PluginLog[]>(`/sessions/${encodeURIComponent(sessionId)}/plugins`);
 
 // ── Execs ──────────────────────────────────────────────────────────────────
 

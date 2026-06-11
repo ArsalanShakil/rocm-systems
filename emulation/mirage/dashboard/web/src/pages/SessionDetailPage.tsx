@@ -11,7 +11,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import * as api from "../api/client";
-import type { ExecListItem, SessionState, StreamPacket } from "../api/types";
+import type {
+  ExecListItem,
+  PluginLog,
+  SessionState,
+  StreamPacket,
+} from "../api/types";
 import { Pill, StatusDot } from "../components/ui/Status";
 import { useToast } from "../components/ui/Toast";
 
@@ -117,13 +122,19 @@ export function SessionDetailPage() {
   const [envInput, setEnvInput] = useState("");
   const [envs, setEnvs] = useState<string[]>([]);
   const [activeExecId, setActiveExecId] = useState<string | null>(null);
+  const [pluginLogs, setPluginLogs] = useState<PluginLog[]>([]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
     try {
-      const [s, e] = await Promise.all([api.getSession(id), api.listExecs(id)]);
+      const [s, e, p] = await Promise.all([
+        api.getSession(id),
+        api.listExecs(id),
+        api.listPluginLogs(id).catch(() => [] as PluginLog[]),
+      ]);
       setSession(s);
       setExecs(e);
+      setPluginLogs(p);
     } catch (err) {
       setError(String(err));
     }
@@ -338,6 +349,30 @@ export function SessionDetailPage() {
           )}
         </section>
       </div>
+
+      {pluginLogs.length > 0 && (
+        <section className="panel" data-testid="plugin-logs">
+          <header className="panel-header">
+            <h3>Plugin logs</h3>
+            <span className="muted">{pluginLogs.length} plugin(s)</span>
+          </header>
+          {pluginLogs.map((p) => (
+            <details
+              key={p.name}
+              className="plugin-log"
+              open
+              data-testid={`plugin-log-${p.name}`}
+            >
+              <summary className="plugin-log-name">
+                <code>{p.name}</code>
+              </summary>
+              <pre className="plugin-log-body">
+                {p.content.trim() ? p.content : "(no output yet)"}
+              </pre>
+            </details>
+          ))}
+        </section>
+      )}
 
       <section className="panel command-palette">
         <header className="panel-header">

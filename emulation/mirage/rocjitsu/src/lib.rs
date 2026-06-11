@@ -119,6 +119,44 @@ impl Emulator for Rocjitsu {
         env.insert("RJ_CONFIG".to_string(), config.display().to_string());
         env.insert("RJ_SCHEMA".to_string(), schema.display().to_string());
 
+        // Translate the profile's declared emulator plugins into the
+        // environment variables rocjitsu's KMD interposer reads to load
+        // them (see rocjitsu `docs/plugins.md`). Each recognised plugin
+        // also produces diagnostic output through the plugin *sink*
+        // system; we route that to per-plugin files under the session's
+        // `plugins/` directory (in addition to stderr) so mirage can
+        // surface it to the UX via
+        // [`mirage_core::ctl::MirageCtl::session_plugin_logs`].
+        let mut any_plugin = false;
+        for name in def.plugins.keys() {
+            let var = plugin_env_var(name).ok_or_else(|| {
+                MirageError::Other(format!(
+                    "rocjitsu: unknown plugin `{name}` (known plugins: race, logging)"
+                ))
+            })?;
+            env.insert(var.to_string(), "1".to_string());
+            any_plugin = true;
+        }
+        if any_plugin {
+            // The plugin log directory lives under the session root, which
+            // is shared with the workload in both the plain and the
+            // containerised case (the per-node host bind-mounts the
+            // session directory into each container), so this same path
+            // resolves to the same files on the host and inside the
+            // container with no extra mounts. Create it up front so the
+            // plugins' file sinks (which `fopen` without creating
+            // directories) can write into it.
+            let plugin_dir = plugin_log_dir(session);
+            let _ = std::fs::create_dir_all(&plugin_dir);
+            // `stderr` keeps plugin output visible in the live exec
+            // stream; `file` captures it for the dedicated plugin-log UX.
+            env.insert("RJ_SINKS".to_string(), "stderr,file".to_string());
+            env.insert(
+                "RJ_SINK_DIR".to_string(),
+                plugin_dir.display().to_string(),
+            );
+        }
+
         // For a containerised session the workload runs inside a node
         // container that does *not* share the host filesystem, so the
         // rocjitsu runtime assets (the KMD interposer, the flatbuffer
@@ -242,6 +280,32 @@ pub fn schema_fbs_path() -> PathBuf {
 /// (`<MIRAGE_RUNTIME>/session/<id>/rj_config.json`).
 pub fn rj_config_path(session: &SessionId) -> PathBuf {
     mirage_core::paths::session_dir(session).join(RJ_CONFIG_NAME)
+}
+
+/// Map a mirage plugin name (a key in [`EmulatorDef::plugins`]) to the
+/// rocjitsu KMD environment variable that enables the corresponding
+/// execution plugin. A few common aliases are accepted. Returns `None`
+/// for an unrecognised plugin so the caller can reject the profile
+/// rather than silently running without it.
+///
+/// | mirage plugin key            | rocjitsu env | log file       |
+/// |------------------------------|--------------|----------------|
+/// | `race` / `race_detector`     | `RJ_RACE`    | `race.log`     |
+/// | `logging` / `kernel_logging` | `RJ_LOG`     | `logging.log`  |
+fn plugin_env_var(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "race" | "race_detector" | "race-detector" => Some("RJ_RACE"),
+        "logging" | "log" | "kernel_logging" => Some("RJ_LOG"),
+        _ => None,
+    }
+}
+
+/// Directory rocjitsu plugins write their per-plugin log files into for
+/// `session` (`<session>/plugins`, holding e.g. `race.log` and
+/// `logging.log`). Mirage surfaces these to the UX via
+/// [`mirage_core::ctl::MirageCtl::session_plugin_logs`].
+pub fn plugin_log_dir(session: &SessionId) -> PathBuf {
+    mirage_core::paths::SessionLayout::for_id(session).plugins_root()
 }
 
 /// Write the embedded rocjitsu schema into
@@ -412,5 +476,26 @@ mod tests {
         assert_eq!(name, SCHEMA_FBS_NAME);
         assert!(written, "schema should have been written on first run");
         assert!(schema_fbs_path().exists());
+    }
+
+    #[test]
+    fn plugin_env_var_maps_known_plugins() {
+        assert_eq!(plugin_env_var("race"), Some("RJ_RACE"));
+        assert_eq!(plugin_env_var("race_detector"), Some("RJ_RACE"));
+        assert_eq!(plugin_env_var("Race-Detector"), Some("RJ_RACE"));
+        assert_eq!(plugin_env_var("logging"), Some("RJ_LOG"));
+        assert_eq!(plugin_env_var("kernel_logging"), Some("RJ_LOG"));
+        assert_eq!(plugin_env_var("nope"), None);
+    }
+
+    #[test]
+    fn plugin_log_dir_is_under_session() {
+        let _g = mirage_core::paths::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        mirage_core::paths::set_test_root(tmp.path());
+        let session = SessionId::new("s-000001").unwrap();
+        let dir = plugin_log_dir(&session);
+        assert!(dir.ends_with("plugins"));
+        assert!(dir.starts_with(mirage_core::paths::session_dir(&session)));
     }
 }

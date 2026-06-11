@@ -286,6 +286,19 @@ impl SessionLayout {
             root: self.exec_root().join(id.as_str()),
         }
     }
+    /// Directory holding emulator plugin log files: `<session>/plugins`.
+    ///
+    /// Emulators that produce diagnostic plugin output (e.g. rocjitsu's
+    /// race detector / kernel logging plugins, written through their
+    /// file sinks) emit `<plugin-name>.log` here. The directory lives
+    /// under the session root so it is naturally shared with the
+    /// workload — including containerised sessions, where the session
+    /// directory is bind-mounted into each node, so the path resolves to
+    /// the same files inside and outside the container with no extra
+    /// mounts.
+    pub fn plugins_root(&self) -> PathBuf {
+        self.root.join("plugins")
+    }
 }
 
 /// Layout helper for a single node's session-level runtime directory.

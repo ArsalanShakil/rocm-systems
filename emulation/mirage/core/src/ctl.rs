@@ -46,6 +46,21 @@ pub enum StdStream {
     Stderr,
 }
 
+/// A single emulator plugin's captured diagnostic output.
+///
+/// Plugins (e.g. rocjitsu's race detector and kernel logging) write
+/// their output through file sinks to `<session>/plugins/<name>.log`.
+/// [`MirageCtl::session_plugin_logs`] surfaces those files so the CLI,
+/// daemon, and dashboard can present plugin diagnostics alongside the
+/// workload's own output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginLog {
+    /// Plugin name, taken from the log file stem (e.g. `race`, `logging`).
+    pub name: String,
+    /// Full captured contents of the plugin's log file.
+    pub content: String,
+}
+
 /// Request used to create a session.
 #[derive(Debug, Clone)]
 pub struct CreateSessionRequest {
@@ -116,6 +131,12 @@ pub trait MirageCtl: Send + Sync {
     /// Tear down a session: signals the host (if any), and removes the
     /// session directory.
     fn session_destroy(&self, id: &SessionId) -> Result<()>;
+
+    /// Read captured emulator plugin logs for a session. Returns one
+    /// entry per `<session>/plugins/*.log` file (empty when the
+    /// emulator has no plugins enabled or none have produced output
+    /// yet). Entries are sorted by plugin name.
+    fn session_plugin_logs(&self, id: &SessionId) -> Result<Vec<PluginLog>>;
 
     // ---- Execs ----------------------------------------------------------
 
@@ -494,6 +515,38 @@ impl MirageCtl for FileCtl {
         Ok(crate::attach::attach_stream(layout))
     }
 
+    fn session_plugin_logs(&self, id: &SessionId) -> Result<Vec<PluginLog>> {
+        let dir = crate::paths::SessionLayout::for_id(id).plugins_root();
+        if !dir.exists() {
+            return Ok(vec![]);
+        }
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&dir).map_err(|e| MirageError::Io {
+            path: dir.clone(),
+            source: e,
+        })? {
+            let entry = entry.map_err(|e| MirageError::Io {
+                path: dir.clone(),
+                source: e,
+            })?;
+            let path = entry.path();
+            // Only `*.log` files are plugin sink output; skip anything else.
+            if path.extension().and_then(|e| e.to_str()) != Some("log") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            out.push(PluginLog {
+                name: name.to_string(),
+                content,
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
+    }
+
     fn session_stdin(&self, exec: &ExecRef, data: &[u8]) -> Result<()> {
         let layout = crate::paths::SessionLayout::for_id(&exec.session).exec(&exec.exec);
         let stdin = layout.node(0).stdin();
@@ -769,6 +822,31 @@ mod tests {
             ctl.session_create(req()),
             Err(MirageError::SessionExists(_))
         ));
+    }
+
+    #[test]
+    fn session_plugin_logs_reads_log_files() {
+        let (ctl, _env) = fresh_ctl();
+        let s = SessionId::new("plug").unwrap();
+        // No plugins directory yet -> empty list.
+        assert!(ctl.session_plugin_logs(&s).unwrap().is_empty());
+
+        // Simulate the emulator's plugin file sinks writing per-plugin
+        // logs under `<session>/plugins/`.
+        let dir = crate::paths::SessionLayout::for_id(&s).plugins_root();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("race.log"), b"RACE detected\n").unwrap();
+        std::fs::write(dir.join("logging.log"), b"dispatch 0\n").unwrap();
+        // A non-`.log` file must be ignored.
+        std::fs::write(dir.join("notes.txt"), b"ignore me\n").unwrap();
+
+        let logs = ctl.session_plugin_logs(&s).unwrap();
+        assert_eq!(logs.len(), 2);
+        // Sorted by plugin name.
+        assert_eq!(logs[0].name, "logging");
+        assert_eq!(logs[0].content, "dispatch 0\n");
+        assert_eq!(logs[1].name, "race");
+        assert_eq!(logs[1].content, "RACE detected\n");
     }
 
     #[test]

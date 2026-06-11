@@ -1480,6 +1480,35 @@
   font-size: 13px;
 }
 
+/* ── Plugin logs ───────────────────────────────────────────────────── */
+
+.plugin-log {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  margin: 8px 0;
+  padding: 6px 10px;
+}
+
+.plugin-log-name {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plugin-log-body {
+  margin: 8px 0 0;
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-elevated, #111);
+  border-radius: 4px;
+}
+
 /* ── Quick create row ──────────────────────────────────────────────── */
 
 .quick-create {
