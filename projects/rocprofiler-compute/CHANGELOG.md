@@ -2,6 +2,25 @@
 
 Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.amd.com/projects/rocprofiler-compute/en/latest/](https://rocm.docs.amd.com/projects/rocprofiler-compute/en/latest/).
 
+## Unreleased
+
+### Added
+
+* Added GPU benchmarking support for gfx1150 and gfx1152 hardware.
+* Added GPU support of GPU metrics for gfx1150 and gfx1152 hardware.
+
+### Changed
+
+### Removed
+
+### Optimized
+
+### Resolved issues
+
+### Upcoming changes
+
+### Known issues
+
 ## ROCm Compute Profiler 3.7.0 for ROCm 7.14.0
 
 ### Added
@@ -32,6 +51,8 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 * Unified accumulator handling across profile and analyze so each `_ACCUM`-suffixed counter is preserved instead of collapsing to `SQ_ACCUM_PREV_HIRES`
 
 * Reworded the N/A metric-evaluation warning to "divide-by-zero or empty counter data" (the prior "missing counter data" message could only fire for non-missing causes).
+
+* PC sampling in profile mode now opts in via the `--experimental --pc-sampling` option. Explicit `-b 21` / `--block 21` is no longer accepted on its own.
 
 ### Removed
 
