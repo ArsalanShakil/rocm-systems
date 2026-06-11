@@ -850,8 +850,8 @@ To regenerate benchmark data in an existing profiled workload directory, use
 
 .. _torch-operator-mapping:
 
-Torch operator mapping
-========================
+Torch trace
+===========
 
 ROCm Compute Profiler offers Torch operator mapping functionality to analyze the performance metrics at the PyTorch operator level. This feature maps the performance counters to specific PyTorch operators, enabling detailed performance analysis of
 the PyTorch workloads at the operator granularity.
@@ -1131,7 +1131,7 @@ API trace
 =========
 
 ``--api-trace`` enables marker tracing for all supported framework backends in a
-single option, equivalent to setting ``ROCPROFCOMPUTE_ROCTX_FRAMEWORKS=api``.
+single option.
 
 .. warning::
 
