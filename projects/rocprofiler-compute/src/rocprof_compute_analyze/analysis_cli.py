@@ -320,12 +320,6 @@ class cli_analysis(OmniAnalyze_Base):
         )
         tty.list_torch_operators(workload_path, call_trees, framework_label=label)
 
-    def apply_torch_operator_filter(
-        self, args: argparse.Namespace, workload: schema.Workload, workload_path: str
-    ) -> None:
-        """Apply the torch operator filter."""
-        self.apply_operator_filter(args, workload, workload_path, "torch")
-
     def apply_operator_filter(
         self,
         args: argparse.Namespace,
@@ -434,12 +428,6 @@ class cli_analysis(OmniAnalyze_Base):
                 "api trace",
                 "No kernels found for matched operators. No kernels to analyze.",
             )
-
-    def handle_torch_operator(
-        self, args: argparse.Namespace, workload: schema.Workload
-    ) -> None:
-        """Display the matched torch operator call tree."""
-        self.handle_operator(args, workload, "torch")
 
     def handle_operator(
         self, args: argparse.Namespace, workload: schema.Workload, backend: str

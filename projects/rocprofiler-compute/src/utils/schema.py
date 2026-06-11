@@ -49,8 +49,6 @@ class Workload:
     roofline_metrics: dict[int, dict[str, Any]] = field(default_factory=dict)
     path: str = field(default_factory=str)
     filter_top_n: str = field(default_factory=str)
-    matched_api_trace_df: pd.DataFrame = field(default_factory=pd.DataFrame)
-    # Matched API trace rows keyed by backend, populated by operator filters.
     matched_api_trace_dfs: dict[str, pd.DataFrame] = field(default_factory=dict)
 
 
