@@ -88,6 +88,18 @@ class cli_analysis(OmniAnalyze_Base):
                 "Run the analysis separately for each framework.",
             )
 
+        active_operator_lists = [
+            cli["list_attr"]
+            for cli in _BACKEND_CLI.values()
+            if getattr(args, cli["list_attr"], False)
+        ]
+        if len(active_operator_lists) > 1:
+            console_error(
+                "analysis",
+                "Only one operator listing may be used per analysis run. "
+                "Run the analysis separately for each framework.",
+            )
+
         for path_info in args.path:
             workload = self._runs[path_info[0]]
 
