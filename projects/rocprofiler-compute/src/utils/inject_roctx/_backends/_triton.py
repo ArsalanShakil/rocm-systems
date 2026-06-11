@@ -160,7 +160,7 @@ def _wrap_property(
         return launch
 
     roctx_get._roctx_wrapped = True
-    setattr(owner, method_name, property(roctx_get))
+    setattr(owner, method_name, property(roctx_get, prop.fset, prop.fdel))
     return True
 
 
