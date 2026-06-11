@@ -2,12 +2,19 @@
 
 Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projects/rocprofiler-sdk](https://rocm.docs.amd.com/projects/rocprofiler-sdk/en/latest/index.html)
 
+## ROCprofiler-SDK 1.3.2
+
+### Added
+
+- Anytime initialization support.
+  - Tools can call `rocprofiler_force_configure` after one or more other tools have configured rocprofiler-sdk.
+    - NOTE: during the initialization of another tool, there is a small window where previously existing tools will not receive records generated from application background threads.
+
 ## ROCprofiler-SDK 1.3.0 for ROCm release 7.2.4
 
 ### Optimized
 
 - Reduced ROCprofiler-sdk profiling overhead: Improved profiling stability for vLLM workloads traced with PyTorch torch.profiler using the rocprofiler-sdk backend.
-
 
 ## ROCprofiler-SDK 1.3.0 for ROCm release 7.13
 
@@ -71,7 +78,6 @@ Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projec
 ### Removed
 
 - Counter collection support for plain text (`.txt`) input files has been deprecated due to lack of schema validation and input sanitization. Only structured file formats (JSON and YAML) with schema validation are supported.
-
 
 ### Resolved issues
 
