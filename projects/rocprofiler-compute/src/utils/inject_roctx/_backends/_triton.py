@@ -111,13 +111,16 @@ def _run_with_marker(
     kernel_name = _extract_kernel_name(self_obj)
     location = resolve_user_caller_location()
     _thread_local.in_launch = True
-    _push_scope(
-        f"{marker_prefix}.{kernel_name}", f"#1@{location}", backend=_BACKEND_NAME
-    )
+    pushed = False
     try:
+        _push_scope(
+            f"{marker_prefix}.{kernel_name}", f"#1@{location}", backend=_BACKEND_NAME
+        )
+        pushed = True
         return thunk()
     finally:
-        _pop_scope()
+        if pushed:
+            _pop_scope()
         _thread_local.in_launch = False
 
 

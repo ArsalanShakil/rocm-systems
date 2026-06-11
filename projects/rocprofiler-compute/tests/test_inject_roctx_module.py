@@ -522,3 +522,48 @@ def test_pop_scope_routes_each_frame_to_its_originating_tier(core_with_python_ti
     assert pushed == ["native_op/py_op:#1@x:1/#2@x:2|torch"]
     assert popped == [None]
     assert native_pops == [None]
+
+
+# ---------------------------------------------------------------------------
+# Marker name percent-encoding
+# ---------------------------------------------------------------------------
+
+
+def test_push_scope_percent_encodes_slash_and_percent(core_with_python_tier):
+    """``_push_scope`` encodes '/' as %2F and '%' as %25 within a marker name."""
+    core, pushed, _ = core_with_python_tier
+
+    core._push_scope("a/b%c%2Fd", "#1@x:1")
+
+    assert pushed == ["a%2Fb%25c%252Fd:#1@x:1"]
+
+
+def test_marker_encoding_round_trips_through_build_call_trees(core_with_python_tier):
+    """Names encoded by ``_push_scope`` are restored by ``build_call_trees``."""
+    import pandas as pd
+
+    from utils.utils_analysis import build_call_trees
+
+    core, pushed, _ = core_with_python_tier
+
+    outer = "Torch-Compiled Region: 0/0"
+    inner = "kernel%name_with_%2F_literal"
+
+    core._push_scope(outer, "#1@a.py:1")
+    core._push_scope(inner, "#2@b.py:2")
+
+    # The operator path precedes the ':' that separates it from the context.
+    expected_encoded = "Torch-Compiled Region: 0%2F0/kernel%25name_with_%252F_literal"
+    assert pushed[-1].startswith(expected_encoded + ":")
+
+    df = pd.DataFrame({
+        "Operator_Name": [expected_encoded],
+        "Kernel_Name": ["my_kernel"],
+    })
+    trees = build_call_trees(df)
+
+    (root,) = trees.values()
+    assert outer in root.children, list(root.children)
+    outer_node = root.children[outer]
+    assert inner in outer_node.children, list(outer_node.children)
+    assert "my_kernel" in outer_node.children[inner].kernels
