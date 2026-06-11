@@ -8,17 +8,13 @@ from unittest.mock import patch
 import common
 import pytest
 
-<<<<<<< users/ggottipa-amd/inject-roctx-multi-framework
+from rocprof_compute_base import RocProfCompute
 from rocprof_compute_profile.profiler_base import (
     _FRAMEWORK_ENV_VAR,
     RocProfCompute_Base,
     _build_inject_env,
     compute_selected_frameworks,
 )
-=======
-from rocprof_compute_base import RocProfCompute
-from rocprof_compute_profile.profiler_base import RocProfCompute_Base
->>>>>>> rocprofiler-compute-develop
 from rocprof_compute_profile.profiler_rocprofiler_sdk import rocprofiler_sdk_profiler
 from utils.utils_exceptions import (
     ExecutableNotFoundError,
