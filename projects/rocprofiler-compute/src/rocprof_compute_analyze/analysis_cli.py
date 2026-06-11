@@ -378,11 +378,17 @@ class cli_analysis(OmniAnalyze_Base):
 
         pattern_list = parse_operator_patterns(args, cli["filter_attr"])
         all_operators = consolidated_df["Operator_Name"].dropna().unique()
+        # Names are percent-encoded on the wire ('/' -> '%2F', '%' -> '%25'); match
+        # the encoded name and its decoded form so patterns work either way.
         matched_names = [
             str(op).strip()
             for op in all_operators
             if any(
-                parser.torch_operator_pattern_matches(p.strip(), str(op).strip())
+                parser.torch_operator_pattern_matches(p.strip(), candidate)
+                for candidate in {
+                    str(op).strip(),
+                    str(op).strip().replace("%2F", "/").replace("%25", "%"),
+                }
                 for p in pattern_list
             )
         ]
