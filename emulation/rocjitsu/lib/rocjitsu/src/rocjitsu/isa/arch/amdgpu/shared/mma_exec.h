@@ -31,10 +31,10 @@
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <vector>
 
 namespace rocjitsu {
 namespace amdgpu {
@@ -92,6 +92,10 @@ inline uint32_t src_base(uint32_t vb, int ev) {
 constexpr uint32_t ACC_FROM_VGPR = UINT32_MAX;
 
 constexpr uint32_t WMMA_WAVE32 = 32;
+
+constexpr uint32_t MAX_MMA_ELEMS = 4096;
+constexpr uint32_t MAX_MMA_OUTPUTS = 2048;
+constexpr uint32_t MAX_PACKED16_DST_WORDS = 1024;
 
 /// Resolve the accumulator source (src2) for MFMA instructions.
 ///
@@ -615,35 +619,46 @@ void exec_f32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto al = input_loc(M, K, B, row, k, b, a_bits);
+        if (cbsz != 0)
+          al.lane = permute_a_lane(al.lane, cbsz, abid);
+        a_buf[b * M * K + row * K + k] = ea(cu, s0, physicalize_loc(al, wf));
+      }
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto bl = input_loc(N, K, B, col, k, b, b_bits);
+        if (blgp != 0)
+          bl.lane = permute_b_lane(bl.lane, blgp);
+        b_buf[b * N * K + col * K + k] = eb(cu, s1, physicalize_loc(bl, wf));
+      }
+
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
       for (uint32_t col = 0; col < N; ++col) {
-        // AMD convention: i=row (register dimension), j=col (lane dimension).
         auto out = physicalize_out(output_loc_32(M, N, row, col, b), wf);
         float acc = (const_acc != ACC_FROM_VGPR)
                         ? std::bit_cast<float>(const_acc)
                         : std::bit_cast<float>(cu.read_vgpr(s2 + out.reg, out.lane));
-        for (uint32_t k = 0; k < K; ++k) {
-          auto al = input_loc(M, K, B, row, k, b, a_bits);
-          auto bl = input_loc(N, K, B, col, k, b, b_bits);
-          // Apply cbsz/abid lane permutation to A input.
-          if (cbsz != 0)
-            al.lane = permute_a_lane(al.lane, cbsz, abid);
-          // Apply blgp lane permutation to B input.
-          if (blgp != 0)
-            bl.lane = permute_b_lane(bl.lane, blgp);
-          float a_val = ea(cu, s0, physicalize_loc(al, wf));
-          float b_val = eb(cu, s1, physicalize_loc(bl, wf));
-          acc += a_val * b_val;
-        }
-        results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+        for (uint32_t k = 0; k < K; ++k)
+          acc += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
+        results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
       }
     }
   }
   bool has_nan = false;
-  for (const auto &r : results) {
+  for (uint32_t i = 0; i < result_count; ++i) {
+    const auto &r = results[i];
     cu.write_vgpr(dst + r.reg, r.lane, r.val);
     float fval = std::bit_cast<float>(r.val);
     if (std::isnan(fval) || std::isinf(fval))
@@ -653,7 +668,8 @@ void exec_f32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_
     util::Logger::vm([&](auto &os) {
       os << std::format("MFMA_NAN_DETECTED dst=v{} s0=v{} s1=v{} s2=v{} M={} N={} K={}", dst, s0,
                         s1, s2, M, N, K);
-      for (const auto &r : results) {
+      for (uint32_t i = 0; i < result_count; ++i) {
+        const auto &r = results[i];
         float fval = std::bit_cast<float>(r.val);
         if (std::isnan(fval) || std::isinf(fval))
           os << std::format("\n[rj log VM]   reg={} lane={} val={:#x}({}) "
@@ -707,8 +723,24 @@ void exec_packed16_gfx9(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uin
     uint32_t sub_element;
     uint16_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k)
+        a_buf[b * M * K + row * K + k] =
+            ea(cu, s0, physicalize_loc(input_loc(M, K, B, row, k, b, in_bits), wf));
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k)
+        b_buf[b * N * K + col * K + k] =
+            eb(cu, s1, physicalize_loc(input_loc(N, K, B, col, k, b, in_bits), wf));
+
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
       for (uint32_t col = 0; col < N; ++col) {
@@ -716,26 +748,24 @@ void exec_packed16_gfx9(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uin
         float acc = (const_acc != ACC_FROM_VGPR)
                         ? std::bit_cast<float>(const_acc)
                         : read_acc(cu, s2 + out.reg, out.lane, out.sub_element);
-        for (uint32_t k = 0; k < K; ++k) {
-          auto al = physicalize_loc(input_loc(M, K, B, row, k, b, in_bits), wf);
-          auto bl = physicalize_loc(input_loc(N, K, B, col, k, b, in_bits), wf);
-          acc += ea(cu, s0, al) * eb(cu, s1, bl);
-        }
-        results.push_back({out.reg, out.lane, out.sub_element, pack_result(acc)});
+        for (uint32_t k = 0; k < K; ++k)
+          acc += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
+        results[result_count++] = {out.reg, out.lane, out.sub_element, pack_result(acc)};
       }
     }
   }
 
-  // Determine physical VGPR count for the packed output.
   uint32_t max_reg = 0;
-  for (const auto &r : results)
-    if (r.reg > max_reg)
-      max_reg = r.reg;
+  for (uint32_t i = 0; i < result_count; ++i)
+    if (results[i].reg > max_reg)
+      max_reg = results[i].reg;
   uint32_t dst_regs = max_reg + 1;
 
-  std::vector<uint32_t> words(dst_regs * wf, 0);
-  std::vector<uint8_t> masks(dst_regs * wf, 0);
-  for (const auto &r : results) {
+  assert(dst_regs * wf <= MAX_PACKED16_DST_WORDS);
+  uint32_t words[MAX_PACKED16_DST_WORDS]{};
+  uint8_t masks[MAX_PACKED16_DST_WORDS]{};
+  for (uint32_t i = 0; i < result_count; ++i) {
+    const auto &r = results[i];
     uint32_t idx = r.reg * wf + r.lane;
     uint32_t shift = r.sub_element * 16;
     words[idx] = (words[idx] & ~(0xFFFFu << shift)) | (static_cast<uint32_t>(r.val) << shift);
@@ -796,8 +826,30 @@ void exec_i32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  int32_t a_buf[MAX_MMA_ELEMS];
+  int32_t b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto al = input_loc(M, K, B, row, k, b, in_bits);
+        if (cbsz != 0)
+          al.lane = permute_a_lane(al.lane, cbsz, abid);
+        a_buf[b * M * K + row * K + k] = ea(cu, s0, physicalize_loc(al, wf));
+      }
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto bl = input_loc(N, K, B, col, k, b, in_bits);
+        if (blgp != 0)
+          bl.lane = permute_b_lane(bl.lane, blgp);
+        b_buf[b * N * K + col * K + k] = eb(cu, s1, physicalize_loc(bl, wf));
+      }
+
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
       for (uint32_t col = 0; col < N; ++col) {
@@ -805,21 +857,14 @@ void exec_i32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_
         int32_t acc = (const_acc != ACC_FROM_VGPR)
                           ? static_cast<int32_t>(const_acc)
                           : static_cast<int32_t>(cu.read_vgpr(s2 + out.reg, out.lane));
-        for (uint32_t k = 0; k < K; ++k) {
-          auto al = input_loc(M, K, B, row, k, b, in_bits);
-          auto bl = input_loc(N, K, B, col, k, b, in_bits);
-          if (cbsz != 0)
-            al.lane = permute_a_lane(al.lane, cbsz, abid);
-          if (blgp != 0)
-            bl.lane = permute_b_lane(bl.lane, blgp);
-          acc += ea(cu, s0, physicalize_loc(al, wf)) * eb(cu, s1, physicalize_loc(bl, wf));
-        }
-        results.push_back({out.reg, out.lane, static_cast<uint32_t>(acc)});
+        for (uint32_t k = 0; k < K; ++k)
+          acc += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
+        results[result_count++] = {out.reg, out.lane, static_cast<uint32_t>(acc)};
       }
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 template <typename ExtractA, typename ExtractB>
@@ -833,24 +878,33 @@ void exec_wmma_f32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, ui
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t k = 0; k < K; ++k)
+      a_buf[row * K + k] = ea(cu, s0, wmma_input_loc(M, K, row, k, a_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t k = 0; k < K; ++k)
+      b_buf[col * K + k] = eb(cu, s1, wmma_input_loc(N, K, col, k, b_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_32(M, N, row, col);
       float acc = (const_acc != ACC_FROM_VGPR)
                       ? std::bit_cast<float>(const_acc)
                       : std::bit_cast<float>(cu.read_vgpr(s2 + out.reg, out.lane));
-      for (uint32_t k = 0; k < K; ++k) {
-        auto al = wmma_input_loc(M, K, row, k, a_bits);
-        auto bl = wmma_input_loc(N, K, col, k, b_bits);
-        acc += ea(cu, s0, al) * eb(cu, s1, bl);
-      }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      for (uint32_t k = 0; k < K; ++k)
+        acc += a_buf[row * K + k] * b_buf[col * K + k];
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 template <typename ExtractA, typename ExtractB, typename ScaleAWord, typename ScaleBWord>
@@ -867,8 +921,29 @@ void exec_wmma_f32_scaled_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  uint8_t a_scale_bytes[MAX_MMA_ELEMS];
+  uint8_t b_scale_bytes[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t k = 0; k < K; ++k) {
+      auto al = wmma_input_loc(M, K, row, k, a_bits);
+      a_buf[row * K + k] = ea(cu, s0, al);
+      a_scale_bytes[row * K + k] = static_cast<uint8_t>(wmma_scale_byte(al));
+    }
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t k = 0; k < K; ++k) {
+      auto bl = wmma_input_loc(N, K, col, k, b_bits);
+      b_buf[col * K + k] = eb(cu, s1, bl);
+      b_scale_bytes[col * K + k] =
+          static_cast<uint8_t>((b_bits == 4) ? wmma_b_fp4_scale_byte(k) : wmma_scale_byte(bl));
+    }
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_32(M, N, row, col);
@@ -878,22 +953,19 @@ void exec_wmma_f32_scaled_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_
       const uint32_t a_scale_word = scale_a_word(wmma_scale_lane(row, matrix_a_scale));
       const uint32_t b_scale_word = scale_b_word(wmma_scale_lane(col, matrix_b_scale));
       for (uint32_t k = 0; k < K; ++k) {
-        auto al = wmma_input_loc(M, K, row, k, a_bits);
-        auto bl = wmma_input_loc(N, K, col, k, b_bits);
-        const uint32_t a_scale_byte = wmma_scale_byte(al);
-        const uint32_t b_scale_byte =
-            (b_bits == 4) ? wmma_b_fp4_scale_byte(k) : wmma_scale_byte(bl);
         const float a_scale = decode_wmma_scale_byte(
-            static_cast<uint8_t>((a_scale_word >> (a_scale_byte * 8)) & 0xffu), matrix_a_scale_fmt);
+            static_cast<uint8_t>((a_scale_word >> (a_scale_bytes[row * K + k] * 8)) & 0xffu),
+            matrix_a_scale_fmt);
         const float b_scale = decode_wmma_scale_byte(
-            static_cast<uint8_t>((b_scale_word >> (b_scale_byte * 8)) & 0xffu), matrix_b_scale_fmt);
-        acc += ea(cu, s0, al) * eb(cu, s1, bl) * a_scale * b_scale;
+            static_cast<uint8_t>((b_scale_word >> (b_scale_bytes[col * K + k] * 8)) & 0xffu),
+            matrix_b_scale_fmt);
+        acc += a_buf[row * K + k] * b_buf[col * K + k] * a_scale * b_scale;
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 template <typename ExtractA, typename ExtractB>
@@ -915,10 +987,21 @@ void exec_swmmac_f32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, 
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
 
   const uint32_t compressed_k = K / 2;
+  assert(M * compressed_k <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t ck = 0; ck < compressed_k; ++ck)
+      a_buf[row * compressed_k + ck] = ea(cu, s0, wmma_input_loc(M, K / 2, row, ck, a_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t dk = 0; dk < K; ++dk)
+      b_buf[col * K + dk] = eb(cu, s1, wmma_input_loc(N, K, col, dk, b_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_32(M, N, row, col);
@@ -926,20 +1009,18 @@ void exec_swmmac_f32_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, 
                       ? std::bit_cast<float>(const_acc)
                       : std::bit_cast<float>(cu.read_vgpr(acc_base + out.reg, out.lane));
       for (uint32_t ck = 0; ck < compressed_k; ++ck) {
-        auto al = wmma_input_loc(M, K / 2, row, ck, a_bits);
         const uint32_t metadata_lane = row + (ck / index_entries) * M;
         const uint32_t local_ck = ck % index_entries;
         const uint64_t index_set =
             read_swmmac_index_set(cu, index_base, metadata_lane, index_entries, index_key);
         const uint32_t dense_k = swmmac_dense_k(index_set, ck, local_ck);
-        auto bl = wmma_input_loc(N, K, col, dense_k, b_bits);
-        acc += ea(cu, s0, al) * eb(cu, s1, bl);
+        acc += a_buf[row * compressed_k + ck] * b_buf[col * K + dense_k];
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 template <typename ExtractA, typename ExtractB>
@@ -963,27 +1044,38 @@ void exec_wmma_packed16(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uin
     uint32_t sub_element;
     uint16_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t k = 0; k < K; ++k)
+      a_buf[row * K + k] = ea(cu, s0, wmma_input_loc(M, K, row, k, in_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t k = 0; k < K; ++k)
+      b_buf[col * K + k] = eb(cu, s1, wmma_input_loc(N, K, col, k, in_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_16(M, N, row, col);
       float acc = (const_acc != ACC_FROM_VGPR)
                       ? std::bit_cast<float>(const_acc)
                       : read_acc(cu, s2 + out.reg, out.lane, out.sub_element);
-      for (uint32_t k = 0; k < K; ++k) {
-        auto al = wmma_input_loc(M, K, row, k, in_bits);
-        auto bl = wmma_input_loc(N, K, col, k, in_bits);
-        acc += ea(cu, s0, al) * eb(cu, s1, bl);
-      }
-      results.push_back({out.reg, out.lane, out.sub_element, pack_result(acc)});
+      for (uint32_t k = 0; k < K; ++k)
+        acc += a_buf[row * K + k] * b_buf[col * K + k];
+      results[result_count++] = {out.reg, out.lane, out.sub_element, pack_result(acc)};
     }
   }
 
   uint32_t dst_regs = ((M * N) / WMMA_WAVE32 + 1) / 2;
-  std::vector<uint32_t> words(dst_regs * WMMA_WAVE32, 0);
-  std::vector<uint8_t> masks(dst_regs * WMMA_WAVE32, 0);
-  for (const auto &r : results) {
+  assert(dst_regs * WMMA_WAVE32 <= MAX_PACKED16_DST_WORDS);
+  uint32_t words[MAX_PACKED16_DST_WORDS]{};
+  uint8_t masks[MAX_PACKED16_DST_WORDS]{};
+  for (uint32_t i = 0; i < result_count; ++i) {
+    const auto &r = results[i];
     uint32_t idx = r.reg * WMMA_WAVE32 + r.lane;
     uint32_t shift = r.sub_element * 16;
     words[idx] = (words[idx] & ~(0xFFFFu << shift)) | (static_cast<uint32_t>(r.val) << shift);
@@ -1018,10 +1110,21 @@ void exec_swmmac_packed16(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, u
     uint32_t sub_element;
     uint16_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
 
   const uint32_t compressed_k = K / 2;
+  assert(M * compressed_k <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t ck = 0; ck < compressed_k; ++ck)
+      a_buf[row * compressed_k + ck] = ea(cu, s0, wmma_input_loc(M, K / 2, row, ck, in_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t dk = 0; dk < K; ++dk)
+      b_buf[col * K + dk] = eb(cu, s1, wmma_input_loc(N, K, col, dk, in_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_16(M, N, row, col);
@@ -1029,23 +1132,23 @@ void exec_swmmac_packed16(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, u
                       ? std::bit_cast<float>(const_acc)
                       : read_acc(cu, acc_base + out.reg, out.lane, out.sub_element);
       for (uint32_t ck = 0; ck < compressed_k; ++ck) {
-        auto al = wmma_input_loc(M, K / 2, row, ck, in_bits);
         const uint32_t metadata_lane = row + (ck / index_entries) * M;
         const uint32_t local_ck = ck % index_entries;
         const uint64_t index_set =
             read_swmmac_index_set(cu, index_base, metadata_lane, index_entries, index_key);
         const uint32_t dense_k = swmmac_dense_k(index_set, ck, local_ck);
-        auto bl = wmma_input_loc(N, K, col, dense_k, in_bits);
-        acc += ea(cu, s0, al) * eb(cu, s1, bl);
+        acc += a_buf[row * compressed_k + ck] * b_buf[col * K + dense_k];
       }
-      results.push_back({out.reg, out.lane, out.sub_element, pack_result(acc)});
+      results[result_count++] = {out.reg, out.lane, out.sub_element, pack_result(acc)};
     }
   }
 
   uint32_t dst_regs = ((M * N) / WMMA_WAVE32 + 1) / 2;
-  std::vector<uint32_t> words(dst_regs * WMMA_WAVE32, 0);
-  std::vector<uint8_t> masks(dst_regs * WMMA_WAVE32, 0);
-  for (const auto &r : results) {
+  assert(dst_regs * WMMA_WAVE32 <= MAX_PACKED16_DST_WORDS);
+  uint32_t words[MAX_PACKED16_DST_WORDS]{};
+  uint8_t masks[MAX_PACKED16_DST_WORDS]{};
+  for (uint32_t i = 0; i < result_count; ++i) {
+    const auto &r = results[i];
     uint32_t idx = r.reg * WMMA_WAVE32 + r.lane;
     uint32_t shift = r.sub_element * 16;
     words[idx] = (words[idx] & ~(0xFFFFu << shift)) | (static_cast<uint32_t>(r.val) << shift);
@@ -1141,8 +1244,30 @@ void exec_f32_scaled(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32
     uint32_t val;
   };
   const uint32_t wf = cu.wf_size();
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto al = input_loc(M, K, B, row, k, b, in_bits);
+        if (cbsz != 0)
+          al.lane = permute_a_lane(al.lane, cbsz, abid);
+        a_buf[b * M * K + row * K + k] = ea(cu, s0, physicalize_loc(al, wf));
+      }
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto bl = input_loc(N, K, B, col, k, b, in_bits);
+        if (blgp != 0)
+          bl.lane = permute_b_lane(bl.lane, blgp);
+        b_buf[b * N * K + col * K + k] = eb(cu, s1, physicalize_loc(bl, wf));
+      }
+
   uint32_t num_blocks = (K + BLOCK_K - 1) / BLOCK_K;
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
@@ -1155,15 +1280,8 @@ void exec_f32_scaled(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32
           float block_sum = 0.0f;
           uint32_t k_start = blk * BLOCK_K;
           uint32_t k_end = std::min(k_start + BLOCK_K, K);
-          for (uint32_t k = k_start; k < k_end; ++k) {
-            auto al = input_loc(M, K, B, row, k, b, in_bits);
-            auto bl = input_loc(N, K, B, col, k, b, in_bits);
-            if (cbsz != 0)
-              al.lane = permute_a_lane(al.lane, cbsz, abid);
-            if (blgp != 0)
-              bl.lane = permute_b_lane(bl.lane, blgp);
-            block_sum += ea(cu, s0, physicalize_loc(al, wf)) * eb(cu, s1, physicalize_loc(bl, wf));
-          }
+          for (uint32_t k = k_start; k < k_end; ++k)
+            block_sum += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
           uint32_t sa_raw = cu.read_vgpr(scale_a_base, out.lane);
           uint32_t sb_raw = cu.read_vgpr(scale_b_base, out.lane);
           uint8_t sa_e8m0 = static_cast<uint8_t>((sa_raw >> (blk * 8)) & 0xFF);
@@ -1171,12 +1289,12 @@ void exec_f32_scaled(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32
           int scale_exp = static_cast<int>(sa_e8m0) + static_cast<int>(sb_e8m0) - 254;
           acc += std::ldexp(block_sum, scale_exp);
         }
-        results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+        results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
       }
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// Scaled MFMA for mixed-format f8f6f4: A and B may have different bit widths.
@@ -1193,8 +1311,24 @@ void exec_f32_scaled_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, 
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  float a_buf[MAX_MMA_ELEMS];
+  float b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k)
+        a_buf[b * M * K + row * K + k] =
+            ea(cu, s0, physicalize_loc(input_loc(M, K, B, row, k, b, a_bits), wf));
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k)
+        b_buf[b * N * K + col * K + k] =
+            eb(cu, s1, physicalize_loc(input_loc(N, K, B, col, k, b, b_bits), wf));
+
   uint32_t num_blocks = (K + BLOCK_K - 1) / BLOCK_K;
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
@@ -1207,11 +1341,8 @@ void exec_f32_scaled_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, 
           float block_sum = 0.0f;
           uint32_t k_start = blk * BLOCK_K;
           uint32_t k_end = std::min(k_start + BLOCK_K, K);
-          for (uint32_t k = k_start; k < k_end; ++k) {
-            auto al = input_loc(M, K, B, row, k, b, a_bits);
-            auto bl = input_loc(N, K, B, col, k, b, b_bits);
-            block_sum += ea(cu, s0, physicalize_loc(al, wf)) * eb(cu, s1, physicalize_loc(bl, wf));
-          }
+          for (uint32_t k = k_start; k < k_end; ++k)
+            block_sum += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
           uint32_t sa_raw = cu.read_vgpr(scale_a_base, M * blk + row);
           uint32_t sb_raw = cu.read_vgpr(scale_b_base, N * blk + col);
           uint8_t sa_e8m0 = static_cast<uint8_t>(sa_raw & 0xFFu);
@@ -1219,12 +1350,12 @@ void exec_f32_scaled_mixed(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, 
           int scale_exp = static_cast<int>(sa_e8m0) + static_cast<int>(sb_e8m0) - 254;
           acc += std::ldexp(block_sum, scale_exp);
         }
-        results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+        results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
       }
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// MFMA execute for i32 output with i8 input: D = C + A x B.
@@ -1238,8 +1369,30 @@ inline void exec_i32_i8(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uin
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K * B <= MAX_MMA_ELEMS && N * K * B <= MAX_MMA_ELEMS);
+  int32_t a_buf[MAX_MMA_ELEMS];
+  int32_t b_buf[MAX_MMA_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto al = input_loc(M, K, B, row, k, b, 8);
+        if (cbsz != 0)
+          al.lane = permute_a_lane(al.lane, cbsz, abid);
+        a_buf[b * M * K + row * K + k] = extract_i8(cu, s0, physicalize_loc(al, wf));
+      }
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k) {
+        auto bl = input_loc(N, K, B, col, k, b, 8);
+        if (blgp != 0)
+          bl.lane = permute_b_lane(bl.lane, blgp);
+        b_buf[b * N * K + col * K + k] = extract_i8(cu, s1, physicalize_loc(bl, wf));
+      }
+
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
       for (uint32_t col = 0; col < N; ++col) {
@@ -1247,22 +1400,14 @@ inline void exec_i32_i8(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uin
         int32_t acc = (const_acc != ACC_FROM_VGPR)
                           ? static_cast<int32_t>(const_acc)
                           : static_cast<int32_t>(cu.read_vgpr(s2 + out.reg, out.lane));
-        for (uint32_t k = 0; k < K; ++k) {
-          auto al = input_loc(M, K, B, row, k, b, 8);
-          auto bl = input_loc(N, K, B, col, k, b, 8);
-          if (cbsz != 0)
-            al.lane = permute_a_lane(al.lane, cbsz, abid);
-          if (blgp != 0)
-            bl.lane = permute_b_lane(bl.lane, blgp);
-          acc += extract_i8(cu, s0, physicalize_loc(al, wf)) *
-                 extract_i8(cu, s1, physicalize_loc(bl, wf));
-        }
-        results.push_back({out.reg, out.lane, static_cast<uint32_t>(acc)});
+        for (uint32_t k = 0; k < K; ++k)
+          acc += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
+        results[result_count++] = {out.reg, out.lane, static_cast<uint32_t>(acc)};
       }
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 inline uint32_t pack_i32_acc(int64_t acc, bool clamp) {
@@ -1284,8 +1429,20 @@ inline void exec_wmma_i32(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, u
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  assert(M * K <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  int32_t a_buf[MAX_MMA_ELEMS];
+  int32_t b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t k = 0; k < K; ++k)
+      a_buf[row * K + k] = ea(cu, s0, wmma_input_loc(M, K, row, k, in_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t k = 0; k < K; ++k)
+      b_buf[col * K + k] = eb(cu, s1, wmma_input_loc(N, K, col, k, in_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_32(M, N, row, col);
@@ -1293,16 +1450,13 @@ inline void exec_wmma_i32(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, u
           (const_acc != ACC_FROM_VGPR)
               ? static_cast<int64_t>(static_cast<int32_t>(const_acc))
               : static_cast<int64_t>(static_cast<int32_t>(cu.read_vgpr(s2 + out.reg, out.lane)));
-      for (uint32_t k = 0; k < K; ++k) {
-        auto al = wmma_input_loc(M, K, row, k, in_bits);
-        auto bl = wmma_input_loc(N, K, col, k, in_bits);
-        acc += static_cast<int64_t>(ea(cu, s0, al)) * static_cast<int64_t>(eb(cu, s1, bl));
-      }
-      results.push_back({out.reg, out.lane, pack_i32_acc(acc, clamp)});
+      for (uint32_t k = 0; k < K; ++k)
+        acc += static_cast<int64_t>(a_buf[row * K + k]) * static_cast<int64_t>(b_buf[col * K + k]);
+      results[result_count++] = {out.reg, out.lane, pack_i32_acc(acc, clamp)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 inline void exec_wmma_i32_i8(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_t K,
@@ -1323,10 +1477,21 @@ inline void exec_swmmac_i32(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N,
     uint32_t lane;
     uint32_t val;
   };
-  std::vector<Result> results;
-  results.reserve(M * N);
+  assert(M * N <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
 
   const uint32_t compressed_k = K / 2;
+  assert(M * compressed_k <= MAX_MMA_ELEMS && N * K <= MAX_MMA_ELEMS);
+  int32_t a_buf[MAX_MMA_ELEMS];
+  int32_t b_buf[MAX_MMA_ELEMS];
+  for (uint32_t row = 0; row < M; ++row)
+    for (uint32_t ck = 0; ck < compressed_k; ++ck)
+      a_buf[row * compressed_k + ck] = ea(cu, s0, wmma_input_loc(M, K / 2, row, ck, in_bits));
+  for (uint32_t col = 0; col < N; ++col)
+    for (uint32_t dk = 0; dk < K; ++dk)
+      b_buf[col * K + dk] = eb(cu, s1, wmma_input_loc(N, K, col, dk, in_bits));
+
   for (uint32_t row = 0; row < M; ++row) {
     for (uint32_t col = 0; col < N; ++col) {
       auto out = wmma_output_loc_32(M, N, row, col);
@@ -1335,20 +1500,19 @@ inline void exec_swmmac_i32(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N,
                         : static_cast<int64_t>(
                               static_cast<int32_t>(cu.read_vgpr(acc_base + out.reg, out.lane)));
       for (uint32_t ck = 0; ck < compressed_k; ++ck) {
-        auto al = wmma_input_loc(M, K / 2, row, ck, in_bits);
         const uint32_t metadata_lane = row + (ck / index_entries) * M;
         const uint32_t local_ck = ck % index_entries;
         const uint64_t index_set =
             read_swmmac_index_set(cu, index_base, metadata_lane, index_entries, index_key);
         const uint32_t dense_k = swmmac_dense_k(index_set, ck, local_ck);
-        auto bl = wmma_input_loc(N, K, col, dense_k, in_bits);
-        acc += static_cast<int64_t>(ea(cu, s0, al)) * static_cast<int64_t>(eb(cu, s1, bl));
+        acc += static_cast<int64_t>(a_buf[row * compressed_k + ck]) *
+               static_cast<int64_t>(b_buf[col * K + dense_k]);
       }
-      results.push_back({out.reg, out.lane, pack_i32_acc(acc, clamp)});
+      results[result_count++] = {out.reg, out.lane, pack_i32_acc(acc, clamp)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 inline void exec_swmmac_i32_i8(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32_t K,
@@ -1369,12 +1533,26 @@ inline void exec_f64(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32
     uint32_t lo;
     uint32_t hi;
   };
-  std::vector<Result> results;
-  results.reserve(M * N * B);
+  assert(M * N * B <= MAX_MMA_OUTPUTS);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
+
+  constexpr uint32_t MAX_F64_ELEMS = 128;
+  assert(M * K * B <= MAX_F64_ELEMS && N * K * B <= MAX_F64_ELEMS);
+  double a_buf[MAX_F64_ELEMS];
+  double b_buf[MAX_F64_ELEMS];
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t row = 0; row < M; ++row)
+      for (uint32_t k = 0; k < K; ++k)
+        a_buf[b * M * K + row * K + k] = extract_f64(cu, s0, input_loc(M, K, B, row, k, b, 64));
+  for (uint32_t b = 0; b < B; ++b)
+    for (uint32_t col = 0; col < N; ++col)
+      for (uint32_t k = 0; k < K; ++k)
+        b_buf[b * N * K + col * K + k] = extract_f64(cu, s1, input_loc(N, K, B, col, k, b, 64));
+
   for (uint32_t b = 0; b < B; ++b) {
     for (uint32_t row = 0; row < M; ++row) {
       for (uint32_t col = 0; col < N; ++col) {
-        // AMD convention: i=row (register dimension), j=col (lane dimension).
         auto out = output_loc_64(M, N, row, col, b);
         double acc;
         if (const_acc != ACC_FROM_VGPR) {
@@ -1384,20 +1562,17 @@ inline void exec_f64(amdgpu::ComputeUnitCore &cu, uint32_t M, uint32_t N, uint32
           uint32_t hi = cu.read_vgpr(s2 + out.reg + 1, out.lane);
           acc = std::bit_cast<double>(static_cast<uint64_t>(hi) << 32 | lo);
         }
-        for (uint32_t k = 0; k < K; ++k) {
-          auto al = input_loc(M, K, B, row, k, b, 64);
-          auto bl = input_loc(N, K, B, col, k, b, 64);
-          acc += extract_f64(cu, s0, al) * extract_f64(cu, s1, bl);
-        }
+        for (uint32_t k = 0; k < K; ++k)
+          acc += a_buf[b * M * K + row * K + k] * b_buf[b * N * K + col * K + k];
         uint64_t bits = std::bit_cast<uint64_t>(acc);
-        results.push_back(
-            {out.reg, out.lane, static_cast<uint32_t>(bits), static_cast<uint32_t>(bits >> 32)});
+        results[result_count++] = {out.reg, out.lane, static_cast<uint32_t>(bits),
+                                   static_cast<uint32_t>(bits >> 32)};
       }
     }
   }
-  for (const auto &r : results) {
-    cu.write_vgpr(dst + r.reg, r.lane, r.lo);
-    cu.write_vgpr(dst + r.reg + 1, r.lane, r.hi);
+  for (uint32_t i = 0; i < result_count; ++i) {
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].lo);
+    cu.write_vgpr(dst + results[i].reg + 1, results[i].lane, results[i].hi);
   }
 }
 
@@ -1437,8 +1612,8 @@ void exec_smfmac_f32_16x16x32_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(16 * 16);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 16; ++row) {
     for (uint32_t col = 0; col < 16; ++col) {
       auto out = output_loc_32(16, 16, row, col, 0);
@@ -1457,11 +1632,11 @@ void exec_smfmac_f32_16x16x32_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 32x32x16 f16/bf16 (CDNA3 mai-insts). K=16, 4 sparse groups.
@@ -1472,8 +1647,8 @@ void exec_smfmac_f32_32x32x16_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(32 * 32);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 32; ++row) {
     for (uint32_t col = 0; col < 32; ++col) {
       auto out = output_loc_32(32, 32, row, col, 0);
@@ -1495,11 +1670,11 @@ void exec_smfmac_f32_32x32x16_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 16x16x64 f16/bf16 (gfx950-insts). K=64, 16 sparse groups.
@@ -1510,8 +1685,8 @@ void exec_smfmac_f32_16x16x64_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(16 * 16);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 16; ++row) {
     for (uint32_t col = 0; col < 16; ++col) {
       auto out = output_loc_32(16, 16, row, col, 0);
@@ -1532,11 +1707,11 @@ void exec_smfmac_f32_16x16x64_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 32x32x32 f16/bf16 (gfx950-insts). K=32, 8 sparse groups.
@@ -1547,8 +1722,8 @@ void exec_smfmac_f32_32x32x32_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(32 * 32);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 32; ++row) {
     for (uint32_t col = 0; col < 32; ++col) {
       auto out = output_loc_32(32, 32, row, col, 0);
@@ -1572,11 +1747,11 @@ void exec_smfmac_f32_32x32x32_f16(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 16x16x64 fp8 (CDNA3 fp8-insts). K=64, 16 sparse groups.
@@ -1587,8 +1762,8 @@ void exec_smfmac_f32_16x16x64_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(16 * 16);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 16; ++row) {
     for (uint32_t col = 0; col < 16; ++col) {
       auto out = output_loc_32(16, 16, row, col, 0);
@@ -1614,11 +1789,11 @@ void exec_smfmac_f32_16x16x64_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 32x32x32 fp8 (CDNA3 fp8-insts). K=32, 8 sparse groups.
@@ -1629,8 +1804,8 @@ void exec_smfmac_f32_32x32x32_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(32 * 32);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 32; ++row) {
     for (uint32_t col = 0; col < 32; ++col) {
       auto out = output_loc_32(32, 32, row, col, 0);
@@ -1658,11 +1833,11 @@ void exec_smfmac_f32_32x32x32_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 16x16x128 fp8 (gfx950-insts). K=128, 32 sparse groups.
@@ -1673,8 +1848,8 @@ void exec_smfmac_f32_16x16x128_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(16 * 16);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 16; ++row) {
     for (uint32_t col = 0; col < 16; ++col) {
       auto out = output_loc_32(16, 16, row, col, 0);
@@ -1700,11 +1875,11 @@ void exec_smfmac_f32_16x16x128_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 /// SMFMAC 32x32x64 fp8 (gfx950-insts). K=64, 16 sparse groups.
@@ -1715,8 +1890,8 @@ void exec_smfmac_f32_32x32x64_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
   struct Result {
     uint32_t reg, lane, val;
   };
-  std::vector<Result> results;
-  results.reserve(32 * 32);
+  Result results[MAX_MMA_OUTPUTS];
+  uint32_t result_count = 0;
   for (uint32_t row = 0; row < 32; ++row) {
     for (uint32_t col = 0; col < 32; ++col) {
       auto out = output_loc_32(32, 32, row, col, 0);
@@ -1744,11 +1919,11 @@ void exec_smfmac_f32_32x32x64_fp8(ComputeUnitCore &cu, uint32_t dst, uint32_t s0
           acc += av * Bcol[4 * q + (s == 0 ? p0 : p1)];
         }
       }
-      results.push_back({out.reg, out.lane, std::bit_cast<uint32_t>(acc)});
+      results[result_count++] = {out.reg, out.lane, std::bit_cast<uint32_t>(acc)};
     }
   }
-  for (const auto &r : results)
-    cu.write_vgpr(dst + r.reg, r.lane, r.val);
+  for (uint32_t i = 0; i < result_count; ++i)
+    cu.write_vgpr(dst + results[i].reg, results[i].lane, results[i].val);
 }
 
 } // namespace amdgpu
