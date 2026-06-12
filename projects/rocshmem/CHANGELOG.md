@@ -18,6 +18,8 @@
    * `rocshmem_buffer_register`
    * `rocshmem_buffer_unregister`
    * `rocshmem_buffer_unregister_all`
+   * `rocshmem_buffer_register_symmetric`
+   * `rocshmem_buffer_unregister_symmetric`
    * `rocshmem_info_get_version`
    * `rocshmem_info_get_name`
    * `rocshmem_vendor_get_version_info`
@@ -36,6 +38,7 @@
   * `OVERRIDE_NIC_FIRMWARE_CHECK`
   * `ROCSHMEM_GDA_NUM_QPS_PER_PE_DEFAULT_CTX`
   * `ROCSHMEM_GDA_NUM_QPS_PER_PE_USR_CTX`
+  * `ROCSHMEM_MAX_SYMM_REGIONS`
 * Added VMM POSIX memory allocator (`USE_HEAP_DEVICE_VMM_POSIX`)
    * Uses HIP Virtual Memory Management (VMM) APIs for fine-grained memory control
    * Requires ROCm 7.0+ and Linux kernel 5.6+
