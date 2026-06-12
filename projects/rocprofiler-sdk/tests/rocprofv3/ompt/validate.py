@@ -417,6 +417,114 @@ def test_granular_target_filter_only_target_ops(json_data):
     )
 
 
+# The "parallel" --ompt-trace category resolves (in tool.cpp::resolve_ompt_ops)
+# to exactly these host-side operations. A --ompt-trace parallel run must not
+# leak any operation outside this set.
+PARALLEL_CATEGORY_OPS = {
+    "omp_parallel_begin",
+    "omp_parallel_end",
+    "omp_implicit_task",
+    "omp_work",
+    "omp_dispatch",
+    "omp_reduction",
+    "omp_masked",
+}
+
+# Representative host-side (CPU) OpenMP operations
+HOST_PARALLEL_OPS = ("omp_parallel_begin", "omp_parallel_end")
+HOST_WORK_OPS = ("omp_work", "omp_sync_region", "omp_dispatch")
+
+
+def _seen_ompt_ops(json_data):
+    """Return the set of OMPT operation-name strings present in the trace, or
+    None when there are no OMPT records (so the caller can skip)."""
+    data = json_data["rocprofiler-sdk-tool"]
+    ompt_records = data["buffer_records"].get(OMPT_BUFFER_KEY, [])
+    if not ompt_records:
+        return None
+    kind_entry = _get_ompt_kind_record(data)
+    op_names = kind_entry["operations"]
+    return {op_names[r["operation"]] for r in ompt_records}
+
+
+def test_ompt_host_side_events_present(json_data):
+    """A default (unfiltered) --ompt-trace should capture host-side OpenMP
+    activity, not just target-offload events. We require the parallel-region
+    lifecycle (parallel_begin/parallel_end + implicit_task) and at least one
+    work-related callback so the default trace reflects the overall OpenMP view
+    a user expects to see.
+    """
+    seen_ops = _seen_ompt_ops(json_data)
+    if seen_ops is None:
+        pytest.skip("no OMPT records present; OMPT tracing was likely not run")
+
+    assert any(op in seen_ops for op in HOST_PARALLEL_OPS), (
+        f"expected a host-side parallel-region event ({HOST_PARALLEL_OPS}); "
+        f"saw: {sorted(seen_ops)}"
+    )
+    assert (
+        "omp_implicit_task" in seen_ops
+    ), f"expected host-side 'omp_implicit_task' events; saw: {sorted(seen_ops)}"
+    assert any(op in seen_ops for op in HOST_WORK_OPS), (
+        f"expected at least one work-related host event ({HOST_WORK_OPS}); "
+        f"saw: {sorted(seen_ops)}"
+    )
+
+
+def test_ompt_all_form_is_complete(json_data):
+    """``--ompt-trace all`` must behave like the bare ``--ompt-trace`` form and
+    produce the *complete* OpenMP trace: both host-side (parallel/implicit-task)
+    and, on a target-offload workload, target_submit events. This guards the
+    common "trace everything" usage where a user expects ``all`` to be a synonym
+    for no filter.
+    """
+    seen_ops = _seen_ompt_ops(json_data)
+    if seen_ops is None:
+        pytest.skip("no OMPT records present; OMPT tracing was likely not run")
+
+    assert any(op in seen_ops for op in HOST_PARALLEL_OPS), (
+        f"--ompt-trace all is missing host-side parallel events "
+        f"({HOST_PARALLEL_OPS}); saw: {sorted(seen_ops)}"
+    )
+    assert "omp_implicit_task" in seen_ops, (
+        f"--ompt-trace all is missing host-side 'omp_implicit_task'; "
+        f"saw: {sorted(seen_ops)}"
+    )
+    assert any(_is_target_submit_operation(op) for op in seen_ops), (
+        f"--ompt-trace all is missing target_submit events on a target-offload "
+        f"workload; saw: {sorted(seen_ops)}"
+    )
+
+
+def test_granular_host_filter_only_parallel_ops(json_data):
+    """Counterpart to test_granular_target_filter_only_target_ops for a
+    host-side filter: ``--ompt-trace parallel`` must record only the
+    parallel-category operations and must not leak task/sync/mutex/target ops.
+    This covers the common case of a user focusing on CPU-side OpenMP behavior.
+    """
+    seen_ops = _seen_ompt_ops(json_data)
+    if seen_ops is None:
+        pytest.skip(
+            "no OMPT records present; the host-filter integration test was "
+            "likely not run"
+        )
+
+    leaks = {op for op in seen_ops if op not in PARALLEL_CATEGORY_OPS}
+    assert not leaks, (
+        f"--ompt-trace parallel leaked non-parallel-category operations into "
+        f"the trace: {sorted(leaks)}"
+    )
+
+    # The filter must actually have captured a parallel-region event.
+    assert any(
+        op in seen_ops
+        for op in ("omp_parallel_begin", "omp_parallel_end", "omp_implicit_task")
+    ), (
+        f"--ompt-trace parallel produced no parallel-region records; saw: "
+        f"{sorted(seen_ops)}"
+    )
+
+
 def test_otf2_data(otf2_data, json_data):
     """The OTF2 trace must expose ranged OMPT events under the 'openmp' category.
 

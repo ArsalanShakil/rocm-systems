@@ -37,12 +37,33 @@ if(NOT TARGET openmp-target)
     set(IS_DISABLED ON)
 endif()
 
+# Host-side OMPT tests trace the host-only openmp-host workload, which does not
+# require target-offload support (so they are *not* gated on the Navi check).
+# They are only disabled under sanitizers or when the host workload is missing.
+if(ROCPROFILER_MEMCHECK AND ROCPROFILER_MEMCHECK IN_LIST ROCPROFILER_MEMCHECK_TYPES)
+    set(IS_HOST_DISABLED ON)
+else()
+    set(IS_HOST_DISABLED OFF)
+endif()
+
+if(NOT TARGET openmp-host)
+    set(IS_HOST_DISABLED ON)
+endif()
+
 string(REPLACE "LD_PRELOAD=" "ROCPROF_PRELOAD=" PRELOAD_ENV
                "${ROCPROFILER_MEMCHECK_PRELOAD_ENV}")
 
 set(ompt-tracing-env
     "OMP_NUM_THREADS=2"
     "OMP_TARGET_OFFLOAD=mandatory"
+    "OMP_DISPLAY_ENV=1"
+    "ROCR_VISIBLE_DEVICES=0"
+    "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:rocprofiler-sdk::rocprofiler-sdk-shared-library>:$ENV{LD_LIBRARY_PATH}"
+    )
+
+# Host-only env
+set(ompt-host-env
+    "OMP_NUM_THREADS=2"
     "OMP_DISPLAY_ENV=1"
     "ROCR_VISIBLE_DEVICES=0"
     "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:rocprofiler-sdk::rocprofiler-sdk-shared-library>:$ENV{LD_LIBRARY_PATH}"
@@ -72,7 +93,7 @@ rocprofiler_add_integration_validate_test(
     CONFIG pytest.ini
     ARGS ${PYTEST_ARGS}
          -k
-         "not test_granular_target_filter"
+         "not test_granular and not test_ompt_all_form_is_complete"
          --json-input
          ${ompt-tracing-output-dir}/out_results.json
          --otf2-input
@@ -87,7 +108,8 @@ rocprofiler_add_integration_validate_test(
          ${ompt-tracing-output-dir}/out_ompt_stats.csv
          --agent-input
          ${ompt-tracing-output-dir}/out_agent_info.csv
-    DISCOVERY_ARGS ${PYTEST_ARGS} -k "not test_granular_target_filter"
+    DISCOVERY_ARGS ${PYTEST_ARGS} -k
+                   "not test_granular and not test_ompt_all_form_is_complete"
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"
     FIXTURES_REQUIRED rocprofv3-test-ompt-tracing
@@ -124,4 +146,99 @@ rocprofiler_add_integration_validate_test(
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"
     FIXTURES_REQUIRED rocprofv3-test-ompt-granular-target
+    DISABLED "${IS_DISABLED}")
+
+# Default --ompt-trace on a host-only OpenMP program: asserts the parallel
+# region / implicit-task / work events a user expects to see are recorded.
+set(ompt-host-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-trace)
+set(ompt-host-validate-k
+    "test_ompt_host_side_events_present or test_json_structure or test_ompt_records_present or test_csv_data or test_csv_matches_json_count"
+    )
+rocprofiler_add_integration_execute_test(
+    rocprofv3-test-ompt-host
+    COMMAND
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace -d
+        ${ompt-host-output-dir} -o out --output-format json csv --log-level env --
+        $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
+    DEPENDS openmp-host
+    TIMEOUT 100
+    LABELS "integration-tests;openmp-host"
+    ENVIRONMENT "${ompt-host-env}"
+    PRELOAD "${PRELOAD_ENV}"
+    FIXTURES_SETUP rocprofv3-test-ompt-host
+    DISABLED "${IS_HOST_DISABLED}")
+
+rocprofiler_add_integration_validate_test(
+    rocprofv3-test-ompt-host
+    TEST_PATHS validate.py
+    COPY conftest.py
+    CONFIG pytest.ini
+    ARGS ${PYTEST_ARGS} -k "${ompt-host-validate-k}" --json-input
+         ${ompt-host-output-dir}/out_results.json --csv-input
+         ${ompt-host-output-dir}/out_ompt_trace.csv
+    DISCOVERY_ARGS ${PYTEST_ARGS} -k "${ompt-host-validate-k}"
+    TIMEOUT 45
+    LABELS "integration-tests;openmp-host"
+    FIXTURES_REQUIRED rocprofv3-test-ompt-host
+    DISABLED "${IS_HOST_DISABLED}")
+
+# Host-side granular filter: --ompt-trace parallel must record only the
+# parallel-category operations (no task/sync/mutex/target leakage).
+set(ompt-host-parallel-output-dir
+    ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-parallel-trace)
+rocprofiler_add_integration_execute_test(
+    rocprofv3-test-ompt-host-parallel
+    COMMAND
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=parallel -d
+        ${ompt-host-parallel-output-dir} -o out --output-format json csv --log-level env
+        -- $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
+    DEPENDS openmp-host
+    TIMEOUT 100
+    LABELS "integration-tests;openmp-host"
+    ENVIRONMENT "${ompt-host-env}"
+    PRELOAD "${PRELOAD_ENV}"
+    FIXTURES_SETUP rocprofv3-test-ompt-host-parallel
+    DISABLED "${IS_HOST_DISABLED}")
+
+rocprofiler_add_integration_validate_test(
+    rocprofv3-test-ompt-host-parallel
+    TEST_PATHS validate.py
+    COPY conftest.py
+    CONFIG pytest.ini
+    ARGS ${PYTEST_ARGS} -k test_granular_host_filter_only_parallel_ops --json-input
+         ${ompt-host-parallel-output-dir}/out_results.json --csv-input
+         ${ompt-host-parallel-output-dir}/out_ompt_trace.csv
+    DISCOVERY_ARGS ${PYTEST_ARGS} -k test_granular_host_filter_only_parallel_ops
+    TIMEOUT 45
+    LABELS "integration-tests;openmp-host"
+    FIXTURES_REQUIRED rocprofv3-test-ompt-host-parallel
+    DISABLED "${IS_HOST_DISABLED}")
+
+# Explicit "trace everything" form
+set(ompt-all-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-target-all-trace)
+rocprofiler_add_integration_execute_test(
+    rocprofv3-test-ompt-all
+    COMMAND
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=all -d
+        ${ompt-all-output-dir} -o out --output-format json csv --log-level env --
+        $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
+    DEPENDS openmp-target
+    TIMEOUT 100
+    LABELS "integration-tests;openmp-target"
+    ENVIRONMENT "${ompt-tracing-env}"
+    PRELOAD "${PRELOAD_ENV}"
+    FIXTURES_SETUP rocprofv3-test-ompt-all
+    DISABLED "${IS_DISABLED}")
+
+rocprofiler_add_integration_validate_test(
+    rocprofv3-test-ompt-all
+    TEST_PATHS validate.py
+    COPY conftest.py
+    CONFIG pytest.ini
+    ARGS ${PYTEST_ARGS} -k test_ompt_all_form_is_complete --json-input
+         ${ompt-all-output-dir}/out_results.json
+    DISCOVERY_ARGS ${PYTEST_ARGS} -k test_ompt_all_form_is_complete
+    TIMEOUT 45
+    LABELS "integration-tests;openmp-target"
+    FIXTURES_REQUIRED rocprofv3-test-ompt-all
     DISABLED "${IS_DISABLED}")
