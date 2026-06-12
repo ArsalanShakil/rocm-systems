@@ -37,9 +37,9 @@ if(NOT TARGET openmp-target)
     set(IS_DISABLED ON)
 endif()
 
-# Host-side OMPT tests trace the host-only openmp-host workload, which does not
-# require target-offload support (so they are *not* gated on the Navi check).
-# They are only disabled under sanitizers or when the host workload is missing.
+# Host-side OMPT tests trace the host-only openmp-host workload, which does not require
+# target-offload support (so they are *not* gated on the Navi check). They are only
+# disabled under sanitizers or when the host workload is missing.
 if(ROCPROFILER_MEMCHECK AND ROCPROFILER_MEMCHECK IN_LIST ROCPROFILER_MEMCHECK_TYPES)
     set(IS_HOST_DISABLED ON)
 else()
@@ -148,8 +148,8 @@ rocprofiler_add_integration_validate_test(
     FIXTURES_REQUIRED rocprofv3-test-ompt-granular-target
     DISABLED "${IS_DISABLED}")
 
-# Default --ompt-trace on a host-only OpenMP program: asserts the parallel
-# region / implicit-task / work events a user expects to see are recorded.
+# Default --ompt-trace on a host-only OpenMP program: asserts the parallel region /
+# implicit-task / work events a user expects to see are recorded.
 set(ompt-host-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-trace)
 set(ompt-host-validate-k
     "test_ompt_host_side_events_present or test_json_structure or test_ompt_records_present or test_csv_data or test_csv_matches_json_count"
@@ -157,8 +157,8 @@ set(ompt-host-validate-k
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-host
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace -d
-        ${ompt-host-output-dir} -o out --output-format json csv --log-level env --
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace -d ${ompt-host-output-dir}
+        -o out --output-format json csv --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
     DEPENDS openmp-host
     TIMEOUT 100
@@ -182,10 +182,9 @@ rocprofiler_add_integration_validate_test(
     FIXTURES_REQUIRED rocprofv3-test-ompt-host
     DISABLED "${IS_HOST_DISABLED}")
 
-# Host-side granular filter: --ompt-trace parallel must record only the
-# parallel-category operations (no task/sync/mutex/target leakage).
-set(ompt-host-parallel-output-dir
-    ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-parallel-trace)
+# Host-side granular filter: --ompt-trace parallel must record only the parallel-category
+# operations (no task/sync/mutex/target leakage).
+set(ompt-host-parallel-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-parallel-trace)
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-host-parallel
     COMMAND
