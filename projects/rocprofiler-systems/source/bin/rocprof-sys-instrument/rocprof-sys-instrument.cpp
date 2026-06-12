@@ -3,6 +3,7 @@
 
 #include "rocprof-sys-instrument.hpp"
 #include "common/defines.h"
+#include "common/delimit.hpp"
 #include "common/join.hpp"
 #include "common/path.hpp"
 #include "core/demangler.hpp"
@@ -11,8 +12,8 @@
 #include "internal_libs.hpp"
 #include "log.hpp"
 
-#include "common/delimit.hpp"
 #include <spdlog/fmt/ranges.h>
+
 #include <timemory/backends/process.hpp>
 #include <timemory/config.hpp>
 #include <timemory/environment/types.hpp>
@@ -184,10 +185,8 @@ strvec_t lib_search_paths = rocprofsys::delimit(
     ":");
 strvec_t bin_search_paths = rocprofsys::delimit(tim::get_env<std::string>("PATH"), ":");
 
-auto _dyn_api_rt_paths = rocprofsys::delimit(
-    rocprofsys::join(":", path::get_internal_libdir(),
-                     rocprofsys::join("/", path::get_internal_libdir(), "rocprofsys")),
-    ":");
+const auto libdir            = path::get_internal_libdir();
+strvec_t   _dyn_api_rt_paths = { libdir, libdir + "/rocprofsys" };
 
 std::string
 get_absolute_filepath(std::string _name, const strvec_t& _paths);
@@ -287,24 +286,20 @@ main(int argc, char** argv)
 {
     argv0 = argv[0];
 
-    auto _omni_root = tim::get_env<std::string>(
+    auto omni_root = tim::get_env<std::string>(
         "rocprofiler_systems_ROOT", tim::get_env<std::string>("ROCPROFSYS_ROOT", ""));
-    if(!_omni_root.empty() && exists(_omni_root))
+    if(!omni_root.empty() && exists(omni_root))
     {
-        bin_search_paths.emplace_back(rocprofsys::join('/', _omni_root, "bin"));
-        bin_search_paths.emplace_back(
-            rocprofsys::join('/', _omni_root, "lib", "rocprofiler-systems"));
-        bin_search_paths.emplace_back(
-            rocprofsys::join('/', _omni_root, "lib", "rocprofiler-systems", "bin"));
-        lib_search_paths.emplace_back(rocprofsys::join('/', _omni_root, "lib"));
-        lib_search_paths.emplace_back(
-            rocprofsys::join('/', _omni_root, "lib", "rocprofiler-systems"));
-        lib_search_paths.emplace_back(
-            rocprofsys::join('/', _omni_root, "lib", "rocprofiler-systems", "lib"));
-        lib_search_paths.emplace_back(
-            rocprofsys::join('/', _omni_root, "lib", "rocprofiler-systems", "lib64"));
+        bin_search_paths.emplace_back(omni_root + "/bin");
+        bin_search_paths.emplace_back(omni_root + "/lib/rocprofiler-systems");
+        bin_search_paths.emplace_back(omni_root + "/lib/rocprofiler-systems/bin");
+
+        lib_search_paths.emplace_back(omni_root + "/lib");
+        lib_search_paths.emplace_back(omni_root + "/lib/rocprofiler-systems");
+        lib_search_paths.emplace_back(omni_root + "/lib/rocprofiler-systems/lib");
+        lib_search_paths.emplace_back(omni_root + "/lib/rocprofiler-systems/lib64");
         ROCPROFSYS_ADD_LOG_ENTRY(argv[0],
-                                 "::", "rocprofiler-systems root path: ", _omni_root);
+                                 "::", "rocprofiler-systems root path: ", omni_root);
     }
 
     auto _omni_exe_path = path::realpath(get_absolute_exe_filepath(argv[0]));

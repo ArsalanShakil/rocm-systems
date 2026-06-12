@@ -57,10 +57,10 @@ ignore_setting(const Tp& _v, const format_options& fmt_opts)
     if(!category_view.empty())
     {
         bool _found = false;
-        for(auto& itr : _v->get_categories())
+        for(auto& category : _v->get_categories())
         {
-            if(category_view.count(itr) > 0 ||
-               category_view.count(rocprofsys::join("::", "settings", itr)) > 0)
+            if(category_view.count(category) > 0 ||
+               category_view.count(rocprofsys::join("::", "settings", category)) > 0)
             {
                 _found = true;
                 break;
@@ -198,8 +198,10 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
     {
         _output_dir = std::string{ (_absolute) ? "/" : "" } + _dirs.front();
         _dirs.erase(_dirs.begin());
-        for(const auto& itr : _dirs)
-            _output_dir = rocprofsys::join('/', _output_dir, itr);
+        for(const auto& dir : _dirs)
+        {
+            _output_dir += '/' + dir;
+        }
     }
     _output_dir += "/";
 
@@ -262,7 +264,10 @@ generate_config(std::string _config_file, const std::set<std::string>& _config_f
                           << "' exists. Overwrite? " << std::flush;
                 std::string _response = {};
                 std::cin >> _response;
-                if(!rocprofsys::to_bool(_response, false)) std::exit(EXIT_FAILURE);
+                if(!rocprofsys::to_bool(_response, false))
+                {
+                    std::exit(EXIT_FAILURE);
+                }
             }
         }
 

@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <concepts>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -98,20 +97,6 @@ delimit(const std::string& line, std::string_view delimiters)
         // don't add empty strings
         if(!_tmp.empty()) emplace(_result, _tmp);
     }
-    return _result;
-}
-
-// Predicate overload: split `line` on any character in `delimiters`, then apply
-// `predicate` to each (non-empty) token before returning. Used to post-process
-// tokens, e.g. prefixing each with a namespace.
-template <typename ContainerT = std::vector<std::string>,
-          std::invocable<const std::string&> PredicateT>
-inline ContainerT
-delimit(const std::string& line, std::string_view delimiters, PredicateT&& predicate)
-{
-    ContainerT _result = delimit<ContainerT>(line, delimiters);
-    for(auto& _entry : _result)
-        _entry = predicate(_entry);
     return _result;
 }
 }  // namespace

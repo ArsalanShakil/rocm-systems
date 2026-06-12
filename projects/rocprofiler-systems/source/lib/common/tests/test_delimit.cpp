@@ -44,16 +44,3 @@ TEST(delimit_test, no_delimiter_present)
 }
 
 TEST(delimit_test, empty_input) { EXPECT_EQ(delimit("", ","), strvec{}); }
-
-TEST(delimit_test, predicate_prefixes_each_token)
-{
-    auto _pred = [](const std::string& _v) { return "component::" + _v; };
-    EXPECT_EQ(delimit("x y", " ", _pred), (strvec{ "component::x", "component::y" }));
-}
-
-TEST(delimit_test, predicate_applied_after_empty_drop)
-{
-    // empty tokens are dropped before the predicate runs
-    auto _pred = [](const std::string& _v) { return "component::" + _v; };
-    EXPECT_EQ(delimit(",x,", ",", _pred), (strvec{ "component::x" }));
-}

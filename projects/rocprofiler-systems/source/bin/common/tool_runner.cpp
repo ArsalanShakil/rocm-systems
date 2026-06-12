@@ -375,10 +375,10 @@ tool_runner::prepare_command(const char* exe)
 
     if(!injected)
     {
-        throw std::runtime_error(
-            rocprofsys::join("", "Unable to match launcher \"", data.out.launcher,
-                             "\" to any arguments on the command line: \"",
-                             fmt::format("{}", fmt::join(data.out.command, " ")), "\""));
+        throw std::runtime_error(fmt::format("Unable to match launcher \"{}\" to any "
+                                             "arguments on the command line: \"{}\"",
+                                             data.out.launcher,
+                                             fmt::join(data.out.command, " ")));
     }
 
     data.out.command = std::move(new_argv);

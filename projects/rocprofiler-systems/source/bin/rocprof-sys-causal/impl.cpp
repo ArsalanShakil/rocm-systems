@@ -190,9 +190,9 @@ prepare_command_for_run(char* _exe, std::vector<char*>& _argv)
         if(!_injected)
         {
             throw std::runtime_error(
-                rocprofsys::join("", "rocprof-sys-causal was unable to match \"",
-                                 launcher, "\" to any arguments on the command line: \"",
-                                 fmt::format("{}", fmt::join(_argv, " ")), "\""));
+                fmt::format("rocprof-sys-causal was unable to match \"{}\" to any "
+                            "arguments on the command line: \"{}\"",
+                            launcher, fmt::join(_argv, " ")));
         }
 
         std::swap(_argv, _new_argv);
