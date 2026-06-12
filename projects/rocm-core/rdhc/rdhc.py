@@ -769,16 +769,25 @@ class ROCMHealthCheck:
 
         max_depth = os.environ.get("LIBDIR_MAX_DEPTH", "")
         self.logger.debug(f"-- Env LIBDIR_MAX_DEPTH = {max_depth}")
-        max_depth_arg = f"-maxdepth {max_depth}" if max_depth else ""
+        if max_depth and not max_depth.isdigit():
+            self.logger.error(
+                f"!!! LIBDIR_MAX_DEPTH must be a non-negative integer: {max_depth}"
+            )
+            return (
+                TestStatus.FAIL.value,
+                "LIBDIR_MAX_DEPTH must be a non-negative integer.",
+            )
 
         if not os.path.exists(rocm_lib_path):
             self.logger.error(f"!!! ROCm library path not found: {rocm_lib_path}")
             return TestStatus.FAIL.value, "ROCm library path not found."
 
         # Get list of libraries in the ROCm path
-        stdout, stderr, ret_code = run_command(
-            f"find {rocm_lib_path} {max_depth_arg} -name '*.so*'", shell=True
-        )
+        find_cmd = ["find", rocm_lib_path]
+        if max_depth:
+            find_cmd += ["-maxdepth", max_depth]
+        find_cmd += ["-name", "*.so*"]
+        stdout, stderr, ret_code = run_command(find_cmd, shell=False)
         if ret_code != 0:
             self.logger.error(
                 f"--Error finding libraries in {rocm_lib_path}: \n{stderr}"
