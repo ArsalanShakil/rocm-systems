@@ -12,11 +12,14 @@
 #include <c10/util/ThreadLocalDebugInfo.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <torch/csrc/profiler/util.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -114,6 +117,154 @@ constexpr std::size_t    CAPTURE_CAP = 4096;
 
 // The RecordFunction tier instruments PyTorch ATen operators.
 constexpr const char* kRecordFnBackend = "torch";
+
+// Maximum length of an encoded args blob. Longer blobs are truncated.
+constexpr std::size_t kMaxArgsLen = 512;
+
+bool env_flag(const char* name, bool default_value)
+{
+    const char* raw = std::getenv(name);
+    if (raw == nullptr)
+    {
+        return default_value;
+    }
+    std::string value(raw);
+    for (char& c : value)
+    {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (value == "1" || value == "true" || value == "yes" || value == "on")
+    {
+        return true;
+    }
+    if (value.empty() || value == "0" || value == "false" || value == "no" || value == "off")
+    {
+        return false;
+    }
+    return default_value;
+}
+
+// Whether operator args are captured (default on).
+bool args_capture_enabled()
+{
+    static const bool enabled = env_flag("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", true);
+    return enabled;
+}
+
+// Whether scalar values are recorded in addition to shapes and dtypes.
+bool args_values_enabled()
+{
+    static const bool enabled = env_flag("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES", false);
+    return enabled;
+}
+
+// Mirror of the Python _core._encode_args percent-encoding.
+std::string encode_args(const std::string& args)
+{
+    std::string out;
+    out.reserve(args.size());
+    for (char c : args)
+    {
+        switch (c)
+        {
+        case '%':
+            out += "%25";
+            break;
+        case '|':
+            out += "%7C";
+            break;
+        case ';':
+            out += "%3B";
+            break;
+        case '\r':
+            out += "%0D";
+            break;
+        case '\n':
+            out += "%0A";
+            break;
+        default:
+            out += c;
+        }
+    }
+    return out;
+}
+
+// Build an unencoded args blob for the current RecordFunction leaf using the
+// torch profiler helpers. Returns "" when capture is disabled or unavailable.
+std::string build_leaf_args(const at::RecordFunction& fn)
+{
+    if (!args_capture_enabled())
+    {
+        return "";
+    }
+    std::string out;
+    try
+    {
+        const auto sizes = torch::profiler::impl::inputSizes(fn);
+        const auto types = torch::profiler::impl::inputTypes(fn);
+        out              = "types=" + torch::profiler::impl::strListToStr(types) +
+                           ";shapes=" + torch::profiler::impl::shapesToStr(sizes);
+        if (args_values_enabled())
+        {
+            // Render scalar IValues; tensors and lists are summarized by tag.
+            std::string vals;
+            bool        first = true;
+            for (const auto& iv : fn.inputs())
+            {
+                if (!first)
+                {
+                    vals += ", ";
+                }
+                first = false;
+                try
+                {
+                    if (iv.isInt())
+                    {
+                        vals += std::to_string(iv.toInt());
+                    }
+                    else if (iv.isBool())
+                    {
+                        vals += iv.toBool() ? "True" : "False";
+                    }
+                    else if (iv.isDouble())
+                    {
+                        vals += std::to_string(iv.toDouble());
+                    }
+                    else
+                    {
+                        vals += iv.tagKind();
+                    }
+                }
+                catch (...)
+                {
+                    vals += "?";
+                }
+            }
+            out += ";values=[" + vals + "]";
+        }
+    }
+    catch (...)
+    {
+        return "";
+    }
+    if (out.size() > kMaxArgsLen)
+    {
+        out.resize(kMaxArgsLen);
+        out += "...";
+    }
+    return out;
+}
+
+// Append "|args=<encoded>" to full when args (unencoded) is non-empty.
+void append_args_segment(std::string& full, const std::string& args)
+{
+    if (args.empty())
+    {
+        return;
+    }
+    full += "|args=";
+    full += encode_args(args);
+}
 
 void maybe_capture(const std::string& s)
 {
@@ -328,6 +479,8 @@ std::unique_ptr<at::ObserverContext> start_cb(const at::RecordFunction& fn)
 
         // Emit the ROCTX range last. RecordFunction ops are torch-backed.
         std::string full = build_marker_string(g_stack);
+        // The args segment precedes the backend suffix.
+        append_args_segment(full, build_leaf_args(fn));
         full += '|';
         full += kRecordFnBackend;
         roctxRangePushA(full.c_str());
@@ -395,8 +548,12 @@ void end_cb(const at::RecordFunction& /*fn*/, at::ObserverContext* obs_ctx)
 }
 
 // Main-thread USER_SCOPE push. On partial failure it rolls back and
-// rethrows. When non-empty, backend is appended to the range as "|<backend>".
-void push_user_scope(const std::string& marker, const std::string& context, const std::string& backend)
+// rethrows. When non-empty, args is appended as "|args=<encoded>" before the
+// "|<backend>" suffix.
+void push_user_scope(const std::string& marker,
+                     const std::string& context,
+                     const std::string& backend,
+                     const std::string& args = std::string(""))
 {
     bool pushed_to_stack  = false;
     bool pushed_to_guards = false;
@@ -424,6 +581,7 @@ void push_user_scope(const std::string& marker, const std::string& context, cons
         pushed_to_guards = true;
 
         std::string full = build_marker_string(g_stack);
+        append_args_segment(full, args);
         if (!backend.empty())
         {
             full += '|';
@@ -491,9 +649,15 @@ std::int64_t install()
     {
         return static_cast<std::int64_t>(existing);
     }
-    const auto handle = at::addGlobalCallback(
-        at::RecordFunctionCallback(start_cb, end_cb)
-            .scopes({at::RecordScope::FUNCTION, at::RecordScope::BACKWARD_FUNCTION}));
+    auto callback = at::RecordFunctionCallback(start_cb, end_cb)
+                        .scopes({at::RecordScope::FUNCTION, at::RecordScope::BACKWARD_FUNCTION});
+    // Inputs are requested only when args capture is enabled, so start_cb
+    // can read operator args.
+    if (args_capture_enabled())
+    {
+        callback.needsInputs(true);
+    }
+    const auto handle = at::addGlobalCallback(callback);
     g_handle.store(handle);
     g_installed.store(true);
     return static_cast<std::int64_t>(handle);
@@ -569,6 +733,7 @@ PYBIND11_MODULE(roctx_recordfn, m)
           pybind11::arg("marker"),
           pybind11::arg("context"),
           pybind11::arg("backend") = std::string(""),
+          pybind11::arg("args")    = std::string(""),
           "Push a USER_SCOPE frame, emit a ROCTX range, publish chain into TLS DebugInfo.");
     m.def("pop_user_scope", &pop_user_scope, "Pop the most recent push_user_scope() frame on this thread.");
     m.def("dump_stats", &dump_stats, "Internal counters for tests/debugging.");

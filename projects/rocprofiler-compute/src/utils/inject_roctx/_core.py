@@ -21,8 +21,74 @@ from typing import Any, Callable, Optional, Protocol
 
 class NativeTierHook(Protocol):
     def active(self) -> bool: ...
-    def push(self, marker: str, context: str, backend: str) -> bool: ...
+    def push(self, marker: str, context: str, backend: str, args: str = "") -> bool: ...
     def pop(self) -> None: ...
+
+
+def _encode_args(args: str) -> str:
+    """Percent-encode ``%``, ``|``, ``;``, and newlines in an args blob."""
+    if not args:
+        return ""
+    return (
+        args
+        .replace("%", "%25")
+        .replace("|", "%7C")
+        .replace(";", "%3B")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+    )
+
+
+def _decode_args(encoded: str) -> str:
+    """Inverse of :func:`_encode_args`."""
+    if not encoded:
+        return ""
+    return (
+        encoded
+        .replace("%0A", "\n")
+        .replace("%0D", "\r")
+        .replace("%7C", "|")
+        .replace("%3B", ";")
+        .replace("%25", "%")
+    )
+
+
+# Args-capture configuration, shared by the Python-tier backends.
+_CAPTURE_ARGS_ENV = "ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS"
+_CAPTURE_ARG_VALUES_ENV = "ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES"
+
+# Maximum length of an args blob and number of items rendered.
+MAX_ARGS_LEN = 512
+MAX_ARG_ITEMS = 32
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("", "0", "false", "no", "off"):
+        return False
+    return default
+
+
+def args_capture_enabled() -> bool:
+    """Return whether operator args are captured (default True)."""
+    return _env_flag(_CAPTURE_ARGS_ENV, True)
+
+
+def args_values_enabled() -> bool:
+    """Return whether scalar arg values are captured (default False)."""
+    return _env_flag(_CAPTURE_ARG_VALUES_ENV, False)
+
+
+def cap_args(blob: str) -> str:
+    """Truncate an args blob to MAX_ARGS_LEN characters."""
+    if len(blob) > MAX_ARGS_LEN:
+        return blob[:MAX_ARGS_LEN] + "..."
+    return blob
 
 
 def _missing_range_push(_label: str) -> None:
@@ -156,11 +222,12 @@ def resolve_user_caller_location() -> str:
     return "python.dispatch:0"
 
 
-# Wire format: "<op_path>:#N@file:line/...[|<backend>]". The optional
-# "|<backend>" suffix attributes the scope to its backend.
+# Wire format: "<op_path>:#N@file:line/...[|args=<ENC>][|<backend>]". The
+# optional "|args=<ENC>" segment carries the percent-encoded leaf-operator
+# args and precedes the optional trailing "|<backend>" suffix.
 
 
-def _push_scope(marker: str, context: str, backend: str = "") -> None:
+def _push_scope(marker: str, context: str, backend: str = "", args: str = "") -> None:
     marker_stack = get_marker_stack()
     context_stack = get_context_stack()
     tier_stack = get_tier_stack()
@@ -169,7 +236,7 @@ def _push_scope(marker: str, context: str, backend: str = "") -> None:
     hook = _native_tier_hook
     if hook is not None and hook.active():
         try:
-            used_native = bool(hook.push(marker, context, backend))
+            used_native = bool(hook.push(marker, context, backend, args))
         except Exception:
             used_native = False
 
@@ -183,6 +250,8 @@ def _push_scope(marker: str, context: str, backend: str = "") -> None:
             + ":"
             + "/".join([*context_stack, context])
         )
+        if args:
+            full = f"{full}|args={_encode_args(args)}"
         if backend:
             full = f"{full}|{backend}"
         _range_push(full)
@@ -236,10 +305,12 @@ def roctx_wrapper(
     func: Callable[..., Any],
     name: Optional[str] = None,
     backend: str = "",
+    args: str = "",
 ) -> Callable[..., Any]:
     """Wrap func so each call emits a ROCTX range. Idempotent.
 
-    When set, backend attributes the scope to that backend.
+    ``backend`` attributes the scope to a backend. ``args`` is an optional
+    args blob recorded on each call.
     """
     if getattr(func, "_roctx_wrapped", False):
         return func
@@ -247,12 +318,17 @@ def roctx_wrapper(
     call_counter = {"count": 0}
 
     @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> object:
+    def wrapper(*call_args: Any, **call_kwargs: Any) -> object:
         call_counter["count"] += 1
         location = resolve_user_caller_location()
-        _push_scope(func_name, f"#{call_counter['count']}@{location}", backend=backend)
+        _push_scope(
+            func_name,
+            f"#{call_counter['count']}@{location}",
+            backend=backend,
+            args=args,
+        )
         try:
-            return func(*args, **kwargs)
+            return func(*call_args, **call_kwargs)
         finally:
             _pop_scope()
 
@@ -260,7 +336,9 @@ def roctx_wrapper(
     return wrapper
 
 
-def _marker_only_init_wrapper(name: str, backend: str = "") -> Callable[..., Any]:
+def _marker_only_init_wrapper(
+    name: str, backend: str = "", args: str = ""
+) -> Callable[..., Any]:
     """Build an __init__ that emits a ROCTX range, then calls object.__init__.
 
     Used for classes whose construction occurs in __new__ (e.g. cuda.Event,
@@ -268,10 +346,15 @@ def _marker_only_init_wrapper(name: str, backend: str = "") -> Callable[..., Any
     """
     call_counter = {"count": 0}
 
-    def marker_only_init(self: object, *args: Any, **kwargs: Any) -> None:
+    def marker_only_init(self: object, *call_args: Any, **call_kwargs: Any) -> None:
         call_counter["count"] += 1
         location = resolve_user_caller_location()
-        _push_scope(name, f"#{call_counter['count']}@{location}", backend=backend)
+        _push_scope(
+            name,
+            f"#{call_counter['count']}@{location}",
+            backend=backend,
+            args=args,
+        )
         try:
             return object.__init__(self)
         finally:

@@ -204,6 +204,41 @@ TEST(MarkerEncoding, RoundTripsThroughBuildCallTreesDecode)
     EXPECT_EQ(decoded, names);
 }
 
+TEST(ArgsEncoding, EscapesPipePercentAndNewlines)
+{
+    // The args encoder mirrors the Python _core._encode_args escaping.
+    EXPECT_EQ(encode_args("a|b"), "a%7Cb");
+    EXPECT_EQ(encode_args("100%"), "100%25");
+    EXPECT_EQ(encode_args("a;b"), "a%3Bb");
+    EXPECT_EQ(encode_args("x\ny\rz"), "x%0Ay%0Dz");
+    EXPECT_EQ(encode_args(""), "");
+    EXPECT_EQ(encode_args("types=[\"float\"];shapes=[[2, 2]]"), "types=[\"float\"]%3Bshapes=[[2, 2]]");
+}
+
+TEST(ArgsEncoding, AppendArgsSegmentPlacesEncodedBlobBeforeBackend)
+{
+    std::string full = "op:#1@x:1";
+    append_args_segment(full, "a|b");
+    full += "|torch";
+    // The encoded args sit between the marker and the trailing backend suffix.
+    EXPECT_EQ(full, "op:#1@x:1|args=a%7Cb|torch");
+
+    std::string empty_args = "op:#1@x:1";
+    append_args_segment(empty_args, "");
+    EXPECT_EQ(empty_args, "op:#1@x:1");
+}
+
+TEST_F(RoctxRecordFnTest, PushUserScopeEmitsArgsSegmentBeforeBackend)
+{
+    start_capture();
+    push_user_scope("op", "#1@x:1", "torch", "(f32[2x2])");
+    pop_user_scope();
+    const std::vector<std::string> captured = stop_capture();
+
+    ASSERT_EQ(captured.size(), 1u);
+    EXPECT_EQ(captured[0], "op:#1@x:1|args=(f32[2x2])|torch");
+}
+
 TEST_F(RoctxRecordFnTest, SaveThenConsumeReturnsSavedStack)
 {
     const std::vector<StackEntry> stack = {{"A", "a"}, {"B", "b"}};

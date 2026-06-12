@@ -25,10 +25,15 @@ from typing import Any, Callable, Optional
 
 from utils.inject_roctx import _core
 from utils.inject_roctx._core import (
+    MAX_ARG_ITEMS,
+    _encode_args,
     _marker_only_init_wrapper,
     _pop_scope,
     _push_scope,
     _walk_subclasses,
+    args_capture_enabled,
+    args_values_enabled,
+    cap_args,
     get_context_stack,
     get_marker_stack,
     resolve_user_caller_location,
@@ -118,9 +123,9 @@ class _RecordFnHook:
     def active(self) -> bool:
         return _USING_C_TIER and _roctx_recordfn is not None
 
-    def push(self, marker: str, context: str, backend: str) -> bool:
+    def push(self, marker: str, context: str, backend: str, args: str = "") -> bool:
         try:
-            _roctx_recordfn.push_user_scope(marker, context, backend)
+            _roctx_recordfn.push_user_scope(marker, context, backend, args)
             return True
         except Exception:
             return False
@@ -487,6 +492,43 @@ def dispatcher_marker_name_for(func: Callable[..., Any]) -> str:
     return raw
 
 
+def _format_dispatch_arg(obj: object) -> str:
+    """Render one dispatch arg as ``dtype[d0xd1]`` for tensors, else a type
+    name (or its value when value capture is enabled)."""
+    if torch is not None and isinstance(obj, torch.Tensor):
+        try:
+            dims = "x".join(str(int(d)) for d in obj.shape)
+        except Exception:
+            dims = "?"
+        dtype = str(obj.dtype).replace("torch.", "")
+        return f"{dtype}[{dims}]"
+    if isinstance(obj, (list, tuple)):
+        inner = ", ".join(_format_dispatch_arg(o) for o in obj[:8])
+        return f"[{inner}]"
+    if args_values_enabled():
+        if isinstance(obj, bool) or isinstance(obj, (int, float)):
+            return repr(obj)
+        if isinstance(obj, str):
+            return repr(obj[:32])
+    return type(obj).__name__
+
+
+def build_dispatch_args(
+    call_args: tuple[object, ...],
+    call_kwargs: dict[str, object],
+) -> str:
+    """Build the raw (unencoded) leaf-args blob for a TorchDispatchMode op."""
+    if not args_capture_enabled():
+        return ""
+    try:
+        parts = [_format_dispatch_arg(a) for a in call_args[:MAX_ARG_ITEMS]]
+        for key, value in list(call_kwargs.items())[:MAX_ARG_ITEMS]:
+            parts.append(f"{key}={_format_dispatch_arg(value)}")
+        return cap_args("(" + ", ".join(parts) + ")")
+    except Exception:
+        return ""
+
+
 def install_dispatcher_hook() -> str:
     """C++ tier: no-op. Python tier: enter TorchDispatchMode on this thread."""
     if _USING_C_TIER:
@@ -507,18 +549,20 @@ def install_dispatcher_hook() -> str:
 
     global _active_dispatch_mode
 
-    def start_disp(op_name: str) -> None:
+    def start_disp(op_name: str, op_args: str = "") -> None:
         idx = next_dispatcher_index(op_name)
         location = resolve_user_caller_location()
         marker_stack = get_marker_stack()
         context_stack = get_context_stack()
-        # Mirror the _push_scope wire format, including the backend suffix.
+        # Mirror the _push_scope wire format: args segment precedes backend.
         full_marker = (
             "/".join([*marker_stack, op_name])
             + ":"
             + "/".join([*context_stack, f"#{idx}@{location}"])
-            + f"|{_BACKEND_NAME}"
         )
+        if op_args:
+            full_marker += f"|args={_encode_args(op_args)}"
+        full_marker += f"|{_BACKEND_NAME}"
         rangePush(full_marker)
         marker_stack.append(op_name)
         context_stack.append(f"#{idx}@{location}")
@@ -544,9 +588,10 @@ def install_dispatcher_hook() -> str:
         ) -> object:
             kwargs = kwargs or {}
             op_name = dispatcher_marker_name_for(func)
+            op_args = build_dispatch_args(args, kwargs)
             pushed = False
             try:
-                start_disp(op_name)
+                start_disp(op_name, op_args)
                 pushed = True
             except Exception as exc:
                 warn_dispatcher_failure_once("start", exc)

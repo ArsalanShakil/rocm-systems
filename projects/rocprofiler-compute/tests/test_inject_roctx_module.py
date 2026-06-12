@@ -188,7 +188,7 @@ def test_triton_backend_wraps_compiled_kernel_call(monkeypatch):
     monkeypatch.setattr(
         triton_backend,
         "_push_scope",
-        lambda marker, ctx, backend="": pushes.append((marker, ctx, backend)),
+        lambda marker, ctx, backend="", args="": pushes.append((marker, ctx, backend)),
     )
     monkeypatch.setattr(triton_backend, "_pop_scope", lambda: pops.append(None))
 
@@ -218,7 +218,7 @@ def test_triton_backend_kernel_name_fallbacks(monkeypatch):
     monkeypatch.setattr(
         triton_backend,
         "_push_scope",
-        lambda marker, ctx, backend="": pushes.append(marker),
+        lambda marker, ctx, backend="", args="": pushes.append(marker),
     )
     monkeypatch.setattr(triton_backend, "_pop_scope", lambda: None)
 
@@ -269,7 +269,7 @@ def test_triton_backend_wraps_compiled_kernel_run(monkeypatch):
     monkeypatch.setattr(
         triton_backend,
         "_push_scope",
-        lambda marker, ctx, backend="": pushes.append((marker, backend)),
+        lambda marker, ctx, backend="", args="": pushes.append((marker, backend)),
     )
     monkeypatch.setattr(triton_backend, "_pop_scope", lambda: None)
     monkeypatch.setattr(triton_backend, "JITFunction", None)
@@ -295,7 +295,7 @@ def test_triton_backend_wraps_jitfunction_run(monkeypatch):
     monkeypatch.setattr(
         triton_backend,
         "_push_scope",
-        lambda marker, ctx, backend="": pushes.append(marker),
+        lambda marker, ctx, backend="", args="": pushes.append(marker),
     )
     monkeypatch.setattr(triton_backend, "_pop_scope", lambda: None)
     monkeypatch.setattr(triton_backend, "CompiledKernel", None)
@@ -322,7 +322,7 @@ def test_triton_backend_reentrancy_dedups_nested_launch(monkeypatch):
     monkeypatch.setattr(
         triton_backend,
         "_push_scope",
-        lambda marker, ctx, backend="": pushes.append(marker),
+        lambda marker, ctx, backend="", args="": pushes.append(marker),
     )
     monkeypatch.setattr(triton_backend, "_pop_scope", lambda: None)
     # Reset the per-thread guard.
@@ -474,7 +474,7 @@ def test_push_scope_routes_to_native_tier_when_active(core_with_python_tier):
         def active(self):
             return True
 
-        def push(self, marker, context, backend):
+        def push(self, marker, context, backend, args=""):
             seen.append((marker, context, backend))
             return True
 
@@ -502,7 +502,7 @@ def test_pop_scope_routes_each_frame_to_its_originating_tier(core_with_python_ti
         def active(self):
             return self.active_flag
 
-        def push(self, marker, context, backend):
+        def push(self, marker, context, backend, args=""):
             return True
 
         def pop(self):
@@ -567,3 +567,164 @@ def test_marker_encoding_round_trips_through_build_call_trees(core_with_python_t
     outer_node = root.children[outer]
     assert inner in outer_node.children, list(outer_node.children)
     assert "my_kernel" in outer_node.children[inner].kernels
+
+
+# ---------------------------------------------------------------------------
+# Operator args capture
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "types=Tensor;shapes=[[2, 2]]",
+        "a|b%c\nd\re",
+        "(float32[2x3], dim=1)",
+        "100% | done",
+        "a;b;c",
+        "%3B literal and ; raw",
+    ],
+)
+def test_encode_args_round_trips(raw):
+    from utils.inject_roctx import _core
+
+    encoded = _core._encode_args(raw)
+    # The encoded form must not contain the reserved delimiters or newlines.
+    assert "|" not in encoded
+    assert ";" not in encoded
+    assert "\n" not in encoded
+    assert "\r" not in encoded
+    assert _core._decode_args(encoded) == raw
+
+
+def test_push_scope_appends_args_segment_before_backend(core_with_python_tier):
+    core, pushed, _ = core_with_python_tier
+
+    core._push_scope("op", "#1@x:1", backend="torch", args="(f32[2x2])")
+    assert pushed == ["op:#1@x:1|args=(f32[2x2])|torch"]
+
+
+def test_push_scope_args_segment_without_backend(core_with_python_tier):
+    core, pushed, _ = core_with_python_tier
+
+    core._push_scope("op", "#1@x:1", args="(f32[2x2])")
+    assert pushed == ["op:#1@x:1|args=(f32[2x2])"]
+
+
+def test_push_scope_encodes_pipe_in_args(core_with_python_tier):
+    core, pushed, _ = core_with_python_tier
+
+    core._push_scope("op", "#1@x:1", backend="torch", args="a|b")
+    # The '|' inside args is encoded so the trailing backend stays parseable.
+    assert pushed == ["op:#1@x:1|args=a%7Cb|torch"]
+
+
+def test_push_scope_forwards_args_to_native_tier(core_with_python_tier):
+    core, pushed, _ = core_with_python_tier
+
+    seen: list[tuple] = []
+
+    class Hook:
+        def active(self):
+            return True
+
+        def push(self, marker, context, backend, args=""):
+            seen.append((marker, context, backend, args))
+            return True
+
+        def pop(self):
+            pass
+
+    core.set_native_tier_hook(Hook())
+    try:
+        core._push_scope("op", "#1@x:1", backend="torch", args="(f32[2x2])")
+    finally:
+        core.set_native_tier_hook(None)
+
+    assert seen == [("op", "#1@x:1", "torch", "(f32[2x2])")]
+    assert pushed == []
+
+
+def test_args_capture_env_gate(monkeypatch):
+    from utils.inject_roctx import _core
+
+    monkeypatch.delenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", raising=False)
+    assert _core.args_capture_enabled() is True
+    monkeypatch.setenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", "0")
+    assert _core.args_capture_enabled() is False
+    monkeypatch.setenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", "off")
+    assert _core.args_capture_enabled() is False
+
+    monkeypatch.delenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES", raising=False)
+    assert _core.args_values_enabled() is False
+    monkeypatch.setenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES", "1")
+    assert _core.args_values_enabled() is True
+
+
+def test_cap_args_truncates_long_blobs():
+    from utils.inject_roctx import _core
+
+    long_blob = "x" * (_core.MAX_ARGS_LEN + 50)
+    capped = _core.cap_args(long_blob)
+    assert capped.endswith("...")
+    assert len(capped) == _core.MAX_ARGS_LEN + len("...")
+    assert _core.cap_args("short") == "short"
+
+
+def test_triton_build_args_tensor_and_scalar(monkeypatch):
+    from utils.inject_roctx._backends import _triton as triton_backend
+
+    monkeypatch.delenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", raising=False)
+
+    fake_tensor = types.SimpleNamespace(shape=(2, 3), dtype="torch.float32")
+    params = [
+        types.SimpleNamespace(name="x_ptr"),
+        types.SimpleNamespace(name="n_elements"),
+    ]
+    self_obj = types.SimpleNamespace(params=params)
+
+    blob = triton_backend._build_triton_args(
+        self_obj, (fake_tensor, 1024), {"grid": (8,), "BLOCK_SIZE": 256}
+    )
+    assert "x_ptr=float32[2x3]" in blob
+    assert "n_elements=1024" in blob
+    # grid is a runtime geometry kwarg and must be skipped.
+    assert "grid" not in blob
+    assert "BLOCK_SIZE=256" in blob
+
+
+def test_triton_build_args_respects_gate(monkeypatch):
+    from utils.inject_roctx._backends import _triton as triton_backend
+
+    monkeypatch.setenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", "0")
+    blob = triton_backend._build_triton_args(
+        types.SimpleNamespace(params=None), (1, 2), {}
+    )
+    assert blob == ""
+
+
+def test_torch_build_dispatch_args_formats(monkeypatch):
+    from utils.inject_roctx._backends import _torch as torch_backend
+
+    monkeypatch.delenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARGS", raising=False)
+    monkeypatch.delenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES", raising=False)
+
+    # Stand in for torch.Tensor so the formatter takes the tensor branch.
+    class FakeTensor:
+        def __init__(self, shape, dtype):
+            self.shape = shape
+            self.dtype = dtype
+
+    fake_torch = types.SimpleNamespace(Tensor=FakeTensor)
+    monkeypatch.setattr(torch_backend, "torch", fake_torch)
+
+    t = FakeTensor((4, 8), "torch.float16")
+    blob = torch_backend.build_dispatch_args((t,), {"dim": 1})
+    assert "float16[4x8]" in blob
+    # dim value is hidden unless value capture is enabled.
+    assert "dim=int" in blob
+
+    monkeypatch.setenv("ROCPROFCOMPUTE_ROCTX_CAPTURE_ARG_VALUES", "1")
+    blob_values = torch_backend.build_dispatch_args((t,), {"dim": 1})
+    assert "dim=1" in blob_values

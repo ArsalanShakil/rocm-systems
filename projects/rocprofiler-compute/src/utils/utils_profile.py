@@ -16,6 +16,7 @@ import config
 import utils.utils_profile_csv as csv_ops
 from utils import rocpd_data
 from utils.inject_roctx import KNOWN_BACKENDS
+from utils.inject_roctx._core import _decode_args
 from utils.logger import (
     console_debug,
     console_error,
@@ -852,32 +853,54 @@ def process_rocprofv3_output(workload_dir: str, using_native_tool: bool) -> list
     return results_files_csv
 
 
-# Wire format: "<op_path>:#<ctx>|<backend>" from inject_roctx.
+# Wire format: "<op_path>:#<ctx>[|args=<ENC>][|<backend>]" from inject_roctx.
 # Recognized backend names come from utils.inject_roctx.KNOWN_BACKENDS.
 _UNKNOWN_BACKEND = "unknown"
 _BACKEND_SUFFIX_RE = re.compile(
     r"\|(" + "|".join(re.escape(b) for b in KNOWN_BACKENDS) + r")$"
 )
+# The percent-encoded args segment precedes the backend suffix.
+_ARGS_SEGMENT_RE = re.compile(r"\|args=([^|]*)$")
+
+
+def _parse_function_fields(
+    function_value: Optional[str],
+) -> tuple[str, str, str]:
+    """Return (clean_function, backend, args) for one Function cell.
+
+    Splits off the trailing ``|<backend>`` suffix and the ``|args=<ENC>``
+    segment that precedes it. Untagged or unrecognized values return
+    backend "unknown" and empty args.
+    """
+    if function_value is None:
+        return "", _UNKNOWN_BACKEND, ""
+    raw = str(function_value)
+    backend = _UNKNOWN_BACKEND
+    match = _BACKEND_SUFFIX_RE.search(raw)
+    if match is not None:
+        backend = match.group(1)
+        raw = raw[: match.start()]
+    args = ""
+    args_match = _ARGS_SEGMENT_RE.search(raw)
+    if args_match is not None:
+        args = _decode_args(args_match.group(1))
+        raw = raw[: args_match.start()]
+    return raw, backend, args
 
 
 def _parse_function_backend(function_value: Optional[str]) -> tuple[str, str]:
     """Return (clean_function, backend) for one Function cell.
 
-    Untagged or unrecognized values return "unknown".
+    The args segment, when present, is stripped from clean_function.
     """
-    if function_value is None:
-        return "", _UNKNOWN_BACKEND
-    raw = str(function_value)
-    match = _BACKEND_SUFFIX_RE.search(raw)
-    if match is None:
-        return raw, _UNKNOWN_BACKEND
-    return raw[: match.start()], match.group(1)
+    clean_function, backend, _args = _parse_function_fields(function_value)
+    return clean_function, backend
 
 
 def _augment_marker_csv(src_marker: str, dst_marker: str) -> None:
     """Copy src_marker to dst_marker, moving the wire backend suffix out of
-    Function into a dedicated Backend column. Untagged rows are tagged
-    Backend="unknown".
+    Function into a dedicated Backend column and the wire args segment into a
+    dedicated Args column. Untagged rows are tagged Backend="unknown".
     """
     rows, fieldnames = csv_ops.read_csv_as_dicts(src_marker)
     if "Function" not in fieldnames:
@@ -885,14 +908,16 @@ def _augment_marker_csv(src_marker: str, dst_marker: str) -> None:
         shutil.copyfile(src_marker, dst_marker)
         return
     augmented_fieldnames = list(fieldnames)
-    if "Backend" not in augmented_fieldnames:
-        augmented_fieldnames.append("Backend")
+    for column in ("Backend", "Args"):
+        if column not in augmented_fieldnames:
+            augmented_fieldnames.append(column)
     unknown_samples: list[str] = []
     unknown_count = 0
     for row in rows:
-        clean_function, backend = _parse_function_backend(row.get("Function", ""))
+        clean_function, backend, args = _parse_function_fields(row.get("Function", ""))
         row["Function"] = clean_function
         row["Backend"] = backend
+        row["Args"] = args
         if backend == _UNKNOWN_BACKEND:
             unknown_count += 1
             if len(unknown_samples) < 3:

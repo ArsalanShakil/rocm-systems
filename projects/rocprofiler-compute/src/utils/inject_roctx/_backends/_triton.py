@@ -13,12 +13,15 @@ import inspect
 import threading
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from utils.inject_roctx import _core
 from utils.inject_roctx._core import (
+    MAX_ARG_ITEMS,
     _pop_scope,
     _push_scope,
+    args_capture_enabled,
+    cap_args,
     resolve_user_caller_location,
 )
 from utils.logger import console_log, console_warning
@@ -100,21 +103,86 @@ def _extract_kernel_name(obj: object, default: str = "<triton_kernel>") -> str:
     return default
 
 
+def _format_triton_arg(obj: object) -> str:
+    """Render one launch arg: ``dtype[d0xd1]`` for tensors, else its value."""
+    shape = getattr(obj, "shape", None)
+    dtype = getattr(obj, "dtype", None)
+    if shape is not None and dtype is not None and not isinstance(obj, (str, bytes)):
+        try:
+            dims = "x".join(str(int(d)) for d in shape)
+        except Exception:
+            dims = "?"
+        return f"{str(dtype).replace('torch.', '')}[{dims}]"
+    if isinstance(obj, bool) or isinstance(obj, (int, float)):
+        return repr(obj)
+    if isinstance(obj, str):
+        return repr(obj[:32])
+    if isinstance(obj, (list, tuple)):
+        return "[" + ", ".join(_format_triton_arg(o) for o in obj[:8]) + "]"
+    return type(obj).__name__
+
+
+# Launch kwargs that describe runtime geometry rather than kernel arguments.
+_TRITON_SKIP_KWARGS = frozenset({"grid", "warmup", "stream", "num_warps", "num_stages"})
+
+
+def _build_triton_args(
+    self_obj: object,
+    call_args: tuple[object, ...],
+    call_kwargs: dict[str, object],
+) -> str:
+    """Build the raw (unencoded) leaf-args blob for a Triton kernel launch.
+
+    Positional args are labelled with kernel parameter names when available.
+    """
+    if not args_capture_enabled():
+        return ""
+    try:
+        names: Optional[list[Any]] = None
+        params = getattr(self_obj, "params", None)
+        if params:
+            try:
+                names = [getattr(p, "name", None) for p in params]
+            except Exception:
+                names = None
+        if names is None:
+            names = getattr(self_obj, "arg_names", None)
+
+        parts: list[str] = []
+        for i, value in enumerate(call_args[:MAX_ARG_ITEMS]):
+            label = names[i] if names and i < len(names) and names[i] else None
+            rendered = _format_triton_arg(value)
+            parts.append(f"{label}={rendered}" if label else rendered)
+        for key, value in list(call_kwargs.items())[:MAX_ARG_ITEMS]:
+            if key in _TRITON_SKIP_KWARGS:
+                continue
+            parts.append(f"{key}={_format_triton_arg(value)}")
+        return cap_args("(" + ", ".join(parts) + ")")
+    except Exception:
+        return ""
+
+
 def _run_with_marker(
     self_obj: object,
     marker_prefix: str,
     thunk: Callable[[], Any],
+    call_args: tuple[object, ...] = (),
+    call_kwargs: Optional[dict[str, object]] = None,
 ) -> object:
     """Run ``thunk`` inside a ROCTX range; nested launches reuse the outer range."""
     if _in_launch():
         return thunk()
     kernel_name = _extract_kernel_name(self_obj)
     location = resolve_user_caller_location()
+    op_args = _build_triton_args(self_obj, call_args, call_kwargs or {})
     _thread_local.in_launch = True
     pushed = False
     try:
         _push_scope(
-            f"{marker_prefix}.{kernel_name}", f"#1@{location}", backend=_BACKEND_NAME
+            f"{marker_prefix}.{kernel_name}",
+            f"#1@{location}",
+            backend=_BACKEND_NAME,
+            args=op_args,
         )
         pushed = True
         return thunk()
@@ -130,7 +198,11 @@ def _wrap_method(
     @wraps(original)
     def launch_with_roctx(self: object, *args: Any, **kwargs: Any) -> object:
         return _run_with_marker(
-            self, marker_prefix, lambda: original(self, *args, **kwargs)
+            self,
+            marker_prefix,
+            lambda: original(self, *args, **kwargs),
+            args,
+            kwargs,
         )
 
     launch_with_roctx._roctx_wrapped = True
@@ -153,7 +225,11 @@ def _wrap_property(
         @wraps(launcher)
         def launch(*args: Any, **kwargs: Any) -> object:
             return _run_with_marker(
-                self, marker_prefix, lambda: launcher(*args, **kwargs)
+                self,
+                marker_prefix,
+                lambda: launcher(*args, **kwargs),
+                args,
+                kwargs,
             )
 
         launch._roctx_launcher = True
