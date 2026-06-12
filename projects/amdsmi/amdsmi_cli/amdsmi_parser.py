@@ -1818,7 +1818,12 @@ class AMDSMIParser(argparse.ArgumentParser):
         xgmi_err_help = "XGMI error information since last read"
         energy_help = "Amount of energy consumed"
         throttle_help = (
-            "Displays throttle accumulators;\n    Only available for MI300 or newer ASICs"
+            "Displays throttle accumulators;\n    Only available for MI300 or newer ASICs and APUs"
+        )
+        apu_help = (
+            "Display APU-specific metrics (per-core power and temperatures,\n"
+            "    fabric/IPU/VPE clocks, DRAM bandwidth, throttle residency);\n"
+            "    auto-enabled on APU systems (e.g. gfx1151 Strix Halo)"
         )
 
         # Help text for Arguments only on Hypervisors
@@ -1988,6 +1993,9 @@ class AMDSMIParser(argparse.ArgumentParser):
                     action="store_true",
                     required=False,
                     help=argparse.SUPPRESS,
+                )
+                metric_parser.add_argument(
+                    "--apu", action="store_true", required=False, help=apu_help
                 )
 
             # Options to only display to Hypervisors

@@ -4639,7 +4639,20 @@ class AMDSMICommands:
                 values_dict["throttle"] = throttle_status
 
         # On APU systems, remove dGPU-only fields/sections that are entirely N/A
+        # and remove standard fields that have direct APU equivalents
         if is_apu:
+            # Direct-equivalent fields: APU struct fields supersede standard fields
+            apu_duplicates = {
+                "usage": ["gfx_activity", "mm_activity"],
+                "power": ["socket_power"],
+                "clock": ["gfx_0", "mem_0", "socclk_0"],
+            }
+            for section_key, dup_keys in apu_duplicates.items():
+                section_val = values_dict.get(section_key)
+                if isinstance(section_val, dict):
+                    for dup_key in dup_keys:
+                        section_val.pop(dup_key, None)
+
             # Remove sections that are all N/A
             for section_key in list(values_dict.keys()):
                 section_val = values_dict[section_key]
