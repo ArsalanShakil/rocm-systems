@@ -5,6 +5,7 @@
 set(CMAKE_BUILD_TYPE "RelWithDebInfo")
 
 find_package(Threads REQUIRED)
+find_package(rocprofiler-sdk-roctx REQUIRED)
 
 add_executable(openmp-host)
 target_sources(openmp-host PRIVATE openmp-host.cpp)
