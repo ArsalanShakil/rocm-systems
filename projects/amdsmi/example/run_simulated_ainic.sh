@@ -11,7 +11,7 @@
 #   ./run_simulated_ainic.sh [path/to/amd_smi_ainic_info]
 #
 # If the binary path is not given, the script looks for amd_smi_ainic_info
-# in the PATH and in common build directories relative to this script.
+# in the PATH and in common build directories relative to the repo root.
 #
 # Requirements: python3 must be available.
 #
@@ -24,12 +24,13 @@ set -euo pipefail
 # Resolve script and repo locations
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"   # rocm-systems root
+# This script lives at projects/amdsmi/example/; simulation scripts are at
+# projects/amdsmi/tests/ai-nic-sim/
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SIM_DIR="${REPO_ROOT}/projects/amdsmi/tests/ai-nic-sim"
 
-
-PYTEST_DIR="${REPO_ROOT}/projects/rocprofiler-systems/tests/pytest"
-FAKE_SYSFS_PY="${PYTEST_DIR}/fake_sysfs.py"
-NIC_SIM_PY="${PYTEST_DIR}/nic_simulator.py"
+FAKE_SYSFS_PY="${SIM_DIR}/fake_sysfs.py"
+NIC_SIM_PY="${SIM_DIR}/nic_simulator.py"
 
 # ---------------------------------------------------------------------------
 # Locate the amd_smi_ainic_info binary
@@ -37,7 +38,6 @@ NIC_SIM_PY="${PYTEST_DIR}/nic_simulator.py"
 if [[ $# -ge 1 ]]; then
     BINARY="$1"
 else
-    # Search common build directories
     BINARY=""
     for candidate in \
         "$(command -v amd_smi_ainic_info 2>/dev/null || true)" \
@@ -73,33 +73,16 @@ echo "Binary : ${BINARY}"
 for f in "${FAKE_SYSFS_PY}" "${NIC_SIM_PY}"; do
     if [[ ! -f "${f}" ]]; then
         echo "ERROR: Required Python script not found: ${f}"
-        echo "  (expected relative to repo root: ${REPO_ROOT})"
         exit 1
     fi
 done
 
 # ---------------------------------------------------------------------------
-# Create the fake sysfs tree in a temp directory
+# Create the fake sysfs tree
 # ---------------------------------------------------------------------------
 FAKE_ROOT="$(mktemp -d /tmp/ainic-sim-sysfs.XXXXXX)"
 echo "Fake sysfs : ${FAKE_ROOT}"
-
-python3 - "${FAKE_ROOT}" <<'PYEOF'
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path('${PYTEST_DIR}').resolve()))
-PYEOF
-
-# Use a proper Python invocation to call fake_sysfs.create()
-python3 -c "
-import sys
-sys.path.insert(0, '${PYTEST_DIR}')
-from pathlib import Path
-import fake_sysfs
-root = Path('${FAKE_ROOT}')
-hw = fake_sysfs.create(root)
-print('hw_counters:', hw)
-"
+python3 "${FAKE_SYSFS_PY}" "${FAKE_ROOT}" > /dev/null
 
 HW_COUNTERS_DIR="${FAKE_ROOT}/sys/devices/pci0000:e0/0000:e2:00.0/0000:e2:00.1/infiniband/rocep226s0/ports/1/hw_counters"
 
@@ -111,7 +94,6 @@ echo "Starting NIC simulator (interval=${NIC_SIM_INTERVAL}s) ..."
 python3 "${NIC_SIM_PY}" "${HW_COUNTERS_DIR}" --interval "${NIC_SIM_INTERVAL}" &
 SIM_PID=$!
 
-# Ensure we always kill the simulator and clean up on exit
 cleanup() {
     echo ""
     echo "Stopping NIC simulator (pid ${SIM_PID}) ..."

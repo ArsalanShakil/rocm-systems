@@ -10,36 +10,30 @@ Usage:
     python3 nic_simulator.py <hw_counters_dir> [--interval SECONDS]
 
 Where <hw_counters_dir> is the path to the hw_counters directory created by
-fake_sysfs.create(), e.g.:
-    /tmp/fake-sysfs/sys/devices/pci0000:e0/0000:e2:00.0/0000:e2:00.1/
-                    infiniband/rocep226s0/ports/1/hw_counters/
+fake_sysfs.create().
 
-The process runs until it receives SIGTERM or SIGINT (Ctrl-C).  It is
-intended to be launched by pytest fixtures as a background subprocess.
+The process runs until it receives SIGTERM or SIGINT (Ctrl-C).
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import signal
 import sys
 import time
 from pathlib import Path
 
-# How many bytes/packets to add per tick (chosen to produce clearly
-# non-zero deltas within a 1-second profiling window).
 INCREMENTS: dict[str, int] = {
-    "rx_rdma_ucast_bytes":    1_000_000,
-    "tx_rdma_ucast_bytes":    800_000,
-    "rx_rdma_ucast_pkts":     1_000,
-    "tx_rdma_ucast_pkts":     800,
-    "rx_rdma_cnp_pkts":       5,
-    "tx_rdma_cnp_pkts":       3,
-    "tx_rdma_ack_timeout":    1,
-    "resp_tx_pkt_seq_err":    1,
-    "req_rx_pkt_seq_err":     1,
-    "req_rx_impl_nak_seq_err": 1,
+    "rx_rdma_ucast_bytes":     1_000_000,
+    "tx_rdma_ucast_bytes":       800_000,
+    "rx_rdma_ucast_pkts":          1_000,
+    "tx_rdma_ucast_pkts":            800,
+    "rx_rdma_cnp_pkts":                5,
+    "tx_rdma_cnp_pkts":                3,
+    "tx_rdma_ack_timeout":             1,
+    "resp_tx_pkt_seq_err":             1,
+    "req_rx_pkt_seq_err":              1,
+    "req_rx_impl_nak_seq_err":         1,
 }
 
 
@@ -74,8 +68,7 @@ def run(hw_counters_dir: Path, interval: float) -> None:
         for counter_name, delta in INCREMENTS.items():
             path = hw_counters_dir / counter_name
             if path.exists() and delta > 0:
-                new_value = _read_counter(path) + delta
-                _write_counter(path, new_value)
+                _write_counter(path, _read_counter(path) + delta)
         time.sleep(interval)
 
     print("[nic_simulator] stopped", flush=True)

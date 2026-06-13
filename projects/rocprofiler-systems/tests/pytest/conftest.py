@@ -299,7 +299,6 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line("markers", "slow: mark test as slow running")
     config.addinivalue_line("markers", "loops: mark test as testing loop instrumentation")
-    config.addinivalue_line("markers", "ainic_sim: AI NIC simulation tests (fake sysfs + NIC simulator)")
 
     # Can be described using generic desc below
     non_functional_markers = [
@@ -329,7 +328,6 @@ def pytest_configure(config: pytest.Config) -> None:
         "time_window",
         "transpose",
         "nic",
-        "ainic",
         "network",
         "fork",
         "user_api",
