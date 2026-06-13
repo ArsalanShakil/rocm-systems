@@ -167,7 +167,10 @@ def gen_pk_binop(
         u_op_map = {
             'add': ('a_lo + b_lo', 'a_hi + b_hi'),
             'sub': ('a_lo - b_lo', 'a_hi - b_hi'),
-            'mul': ('a_lo * b_lo', 'a_hi * b_hi'),
+            'mul': (
+                'static_cast<uint32_t>(a_lo) * b_lo',
+                'static_cast<uint32_t>(a_hi) * b_hi',
+            ),
             'max': ('a_lo > b_lo ? a_lo : b_lo', 'a_hi > b_hi ? a_hi : b_hi'),
             'min': ('a_lo < b_lo ? a_lo : b_lo', 'a_hi < b_hi ? a_hi : b_hi'),
             'shl': (
@@ -243,12 +246,24 @@ def gen_pk_ternary(
         if op == 'fma':
             L.append('    float rlo = std::fma(a_lo, b_lo, c_lo);')
             L.append('    float rhi = std::fma(a_hi, b_hi, c_hi);')
-        elif op in ('minimum3', 'min3'):
+        elif op == 'min3':
             L.append('    float rlo = std::fmin(std::fmin(a_lo, b_lo), c_lo);')
             L.append('    float rhi = std::fmin(std::fmin(a_hi, b_hi), c_hi);')
-        elif op in ('maximum3', 'max3'):
+        elif op == 'max3':
             L.append('    float rlo = std::fmax(std::fmax(a_lo, b_lo), c_lo);')
             L.append('    float rhi = std::fmax(std::fmax(a_hi, b_hi), c_hi);')
+        elif op == 'minimum3':
+            L.append(
+                '    auto ieee_min = [](float x, float y) -> float { if (std::isnan(x) || std::isnan(y)) return std::numeric_limits<float>::quiet_NaN(); if (x == y) return std::signbit(x) ? x : y; return x < y ? x : y; };'
+            )
+            L.append('    float rlo = ieee_min(ieee_min(a_lo, b_lo), c_lo);')
+            L.append('    float rhi = ieee_min(ieee_min(a_hi, b_hi), c_hi);')
+        elif op == 'maximum3':
+            L.append(
+                '    auto ieee_max = [](float x, float y) -> float { if (std::isnan(x) || std::isnan(y)) return std::numeric_limits<float>::quiet_NaN(); if (x == y) return std::signbit(x) ? y : x; return x > y ? x : y; };'
+            )
+            L.append('    float rlo = ieee_max(ieee_max(a_lo, b_lo), c_lo);')
+            L.append('    float rhi = ieee_max(ieee_max(a_hi, b_hi), c_hi);')
         else:  # mad
             L.append('    float rlo = a_lo * b_lo + c_lo;')
             L.append('    float rhi = a_hi * b_hi + c_hi;')
@@ -323,8 +338,12 @@ def gen_pk_ternary(
                 '    uint16_t rhi = static_cast<uint16_t>(std::max(std::max(a_hi, b_hi), c_hi));'
             )
         else:
-            L.append('    uint16_t rlo = static_cast<uint16_t>(a_lo * b_lo + c_lo);')
-            L.append('    uint16_t rhi = static_cast<uint16_t>(a_hi * b_hi + c_hi);')
+            L.append(
+                '    uint16_t rlo = static_cast<uint16_t>(static_cast<uint32_t>(a_lo) * b_lo + c_lo);'
+            )
+            L.append(
+                '    uint16_t rhi = static_cast<uint16_t>(static_cast<uint32_t>(a_hi) * b_hi + c_hi);'
+            )
         L.append(
             f'    {d}.write_lane(wf, lane, static_cast<uint32_t>(rlo) | (static_cast<uint32_t>(rhi) << 16));'
         )
@@ -354,8 +373,12 @@ def gen_pk_ternary(
             L.append('    uint16_t rlo = std::max(std::max(a_lo, b_lo), c_lo);')
             L.append('    uint16_t rhi = std::max(std::max(a_hi, b_hi), c_hi);')
         else:
-            L.append('    uint16_t rlo = static_cast<uint16_t>(a_lo * b_lo + c_lo);')
-            L.append('    uint16_t rhi = static_cast<uint16_t>(a_hi * b_hi + c_hi);')
+            L.append(
+                '    uint16_t rlo = static_cast<uint16_t>(static_cast<uint32_t>(a_lo) * b_lo + c_lo);'
+            )
+            L.append(
+                '    uint16_t rhi = static_cast<uint16_t>(static_cast<uint32_t>(a_hi) * b_hi + c_hi);'
+            )
         L.append(
             f'    {d}.write_lane(wf, lane, static_cast<uint32_t>(rlo) | (static_cast<uint32_t>(rhi) << 16));'
         )

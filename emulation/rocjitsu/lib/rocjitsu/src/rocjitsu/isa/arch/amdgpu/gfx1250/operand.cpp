@@ -812,6 +812,8 @@ std::string Operand::name() const {
 }
 
 std::optional<RegisterRef> Operand::to_register_ref() const {
+  if (size_bits_ == 0)
+    return std::nullopt;
   // Liveness tracks operands as contiguous 32-bit register lanes.
   const auto reg_width = static_cast<uint8_t>(size_bits_ > 32 ? size_bits_ / 32 : 1);
   if (auto packed = packed_16bit_vgpr_source(packed_16bit_source_, size_bits_, encoding_value_))
@@ -989,6 +991,10 @@ std::optional<RegisterRef> Operand::to_register_ref() const {
 namespace {
 
 uint32_t resolve_src_scalar(const amdgpu::Wavefront &wf, int ev) {
+  if (ev == 102)
+    return static_cast<uint32_t>(wf.scratch_base());
+  if (ev == 103)
+    return static_cast<uint32_t>(wf.scratch_base() >> 32);
   if (ev <= 105)
     return wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
   if (ev == 106)
@@ -1031,6 +1037,14 @@ uint32_t resolve_src_scalar(const amdgpu::Wavefront &wf, int ev) {
     return 0xC0800000u; // -4.0f
   if (ev == 248)
     return 0x3E22F983u; // 1/(2*pi)
+  if (ev == 235)
+    return static_cast<uint32_t>(wf.shared_aperture_base() >> 32); // SRC_SHARED_BASE
+  if (ev == 236)
+    return static_cast<uint32_t>(wf.shared_aperture_limit() >> 32); // SRC_SHARED_LIMIT
+  if (ev == 237)
+    return static_cast<uint32_t>(wf.private_aperture_base() >> 32); // SRC_PRIVATE_BASE
+  if (ev == 238)
+    return static_cast<uint32_t>(wf.private_aperture_limit() >> 32); // SRC_PRIVATE_LIMIT
   if (ev == 249)
     return 0u; // SRC_POPS_EXITING_WAVE_ID (not used in compute)
   if (ev == 250)
@@ -1051,10 +1065,12 @@ uint32_t resolve_src_scalar(const amdgpu::Wavefront &wf, int ev) {
 bool can_resolve_src_scalar(int ev) {
   return (ev >= 0 && ev <= 107) || (ev >= 108 && ev <= 123) || ev == 124 || ev == 125 ||
          ev == 126 || ev == 127 || (ev >= 128 && ev <= 208) || ev == 230 || ev == 231 ||
-         (ev >= 240 && ev <= 253);
+         (ev >= 235 && ev <= 238) || (ev >= 240 && ev <= 253);
 }
 
 uint64_t resolve_src_scalar64(const amdgpu::Wavefront &wf, int ev) {
+  if (ev == 102)
+    return wf.scratch_base();
   if (ev <= 105) {
     uint32_t lo = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
     uint32_t hi = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1));
@@ -1097,10 +1113,28 @@ uint64_t resolve_src_scalar64(const amdgpu::Wavefront &wf, int ev) {
     return 0xC010000000000000ULL; // -4.0
   if (ev == 248)
     return 0x3FC45F306DC9C883ULL; // 1/(2*pi)
+  if (ev == 235)
+    return wf.shared_aperture_base(); // SRC_SHARED_BASE
+  if (ev == 236)
+    return wf.shared_aperture_limit(); // SRC_SHARED_LIMIT
+  if (ev == 237)
+    return wf.private_aperture_base(); // SRC_PRIVATE_BASE
+  if (ev == 238)
+    return wf.private_aperture_limit(); // SRC_PRIVATE_LIMIT
   throw std::logic_error("Unsupported encoding value for scalar64 read: " + std::to_string(ev));
 }
 
 void resolve_dst_write(amdgpu::Wavefront &wf, int ev, uint32_t val) {
+  if (ev == 102) {
+    uint64_t sb = wf.scratch_base();
+    wf.set_scratch_base((sb & 0xFFFFFFFF00000000ULL) | val);
+    return;
+  }
+  if (ev == 103) {
+    uint64_t sb = wf.scratch_base();
+    wf.set_scratch_base((sb & 0x00000000FFFFFFFFULL) | (static_cast<uint64_t>(val) << 32));
+    return;
+  }
   if (ev <= 105) {
     wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev), val);
     return;
@@ -1135,6 +1169,10 @@ void resolve_dst_write(amdgpu::Wavefront &wf, int ev, uint32_t val) {
 }
 
 void resolve_dst_write64(amdgpu::Wavefront &wf, int ev, uint64_t val) {
+  if (ev == 102) {
+    wf.set_scratch_base(val);
+    return;
+  }
   if (ev <= 105) {
     wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev),
                        static_cast<uint32_t>(val));
@@ -1249,8 +1287,10 @@ uint32_t Operand::read_lane(const amdgpu::Wavefront &wf, uint32_t lane) const {
     uint32_t raw = wf.cu().read_vgpr(wf.vgpr_alloc().base + off, lane);
     return (raw >> packed->shift) & 0xffffu;
   }
-  if (auto off = Isa::resolved_vgpr_offset(wf, opr_type_, ev, vgpr_msb_role()))
-    return wf.cu().read_vgpr(wf.vgpr_alloc().base + *off, lane);
+  if (auto off = Isa::resolved_vgpr_offset(wf, opr_type_, ev, vgpr_msb_role())) {
+    uint32_t voff = wf.gpr_idx_en() ? amdgpu::apply_gpr_idx(wf, *off, false) : *off;
+    return wf.cu().read_vgpr(wf.vgpr_alloc().base + voff, lane);
+  }
   if (is_immediate_type(opr_type_))
     return static_cast<uint32_t>(ev);
   return resolve_src_scalar(wf, ev);
@@ -1262,7 +1302,8 @@ void Operand::write_scalar(amdgpu::Wavefront &wf, uint32_t val) const {
 
 void Operand::write_lane(amdgpu::Wavefront &wf, uint32_t lane, uint32_t val) const {
   if (auto off = Isa::resolved_vgpr_offset(wf, opr_type_, encoding_value_, vgpr_msb_role())) {
-    wf.cu().write_vgpr(wf.vgpr_alloc().base + *off, lane, val);
+    uint32_t voff = wf.gpr_idx_en() ? amdgpu::apply_gpr_idx(wf, *off, true) : *off;
+    wf.cu().write_vgpr(wf.vgpr_alloc().base + voff, lane, val);
     return;
   }
   throw std::logic_error("write_lane called on non-VGPR operand type");
@@ -1273,7 +1314,8 @@ uint64_t Operand::read_lane64(const amdgpu::Wavefront &wf, uint32_t lane) const 
     return delegate()->read_lane64(wf, lane);
   int ev = encoding_value_;
   if (auto off = Isa::resolved_vgpr_offset(wf, opr_type_, ev, vgpr_msb_role())) {
-    uint32_t idx = wf.vgpr_alloc().base + *off;
+    uint32_t voff = wf.gpr_idx_en() ? amdgpu::apply_gpr_idx(wf, *off, false) : *off;
+    uint32_t idx = wf.vgpr_alloc().base + voff;
     uint32_t lo = wf.cu().read_vgpr(idx, lane);
     uint32_t hi = wf.cu().read_vgpr(idx + 1, lane);
     return static_cast<uint64_t>(hi) << 32 | lo;
@@ -1287,7 +1329,8 @@ uint64_t Operand::read_lane64(const amdgpu::Wavefront &wf, uint32_t lane) const 
 
 void Operand::write_lane64(amdgpu::Wavefront &wf, uint32_t lane, uint64_t val) const {
   if (auto off = Isa::resolved_vgpr_offset(wf, opr_type_, encoding_value_, vgpr_msb_role())) {
-    uint32_t idx = wf.vgpr_alloc().base + *off;
+    uint32_t voff = wf.gpr_idx_en() ? amdgpu::apply_gpr_idx(wf, *off, true) : *off;
+    uint32_t idx = wf.vgpr_alloc().base + voff;
     wf.cu().write_vgpr(idx, lane, static_cast<uint32_t>(val));
     wf.cu().write_vgpr(idx + 1, lane, static_cast<uint32_t>(val >> 32));
     return;

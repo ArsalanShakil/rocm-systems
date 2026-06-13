@@ -212,8 +212,8 @@ void VPkMadI16Vop3p::execute_impl(amdgpu::Wavefront &wf) {
     int16_t a_hi = static_cast<int16_t>(sel0_hi ? (raw0 >> 16) : raw0);
     int16_t b_hi = static_cast<int16_t>(sel1_hi ? (raw1 >> 16) : raw1);
     int16_t c_hi = static_cast<int16_t>(sel2_hi ? (raw2 >> 16) : raw2);
-    uint16_t rlo = static_cast<uint16_t>(a_lo * b_lo + c_lo);
-    uint16_t rhi = static_cast<uint16_t>(a_hi * b_hi + c_hi);
+    uint16_t rlo = static_cast<uint16_t>(static_cast<uint32_t>(a_lo) * b_lo + c_lo);
+    uint16_t rhi = static_cast<uint16_t>(static_cast<uint32_t>(a_hi) * b_hi + c_hi);
     vdst.write_lane(wf, lane, static_cast<uint32_t>(rlo) | (static_cast<uint32_t>(rhi) << 16));
   }
 }
@@ -271,8 +271,8 @@ void VPkMulLoU16Vop3p::execute_impl(amdgpu::Wavefront &wf) {
     uint16_t b_lo = static_cast<uint16_t>(sel1_lo ? (raw1 >> 16) : raw1);
     uint16_t a_hi = static_cast<uint16_t>(sel0_hi ? (raw0 >> 16) : raw0);
     uint16_t b_hi = static_cast<uint16_t>(sel1_hi ? (raw1 >> 16) : raw1);
-    uint16_t rlo = static_cast<uint16_t>(a_lo * b_lo);
-    uint16_t rhi = static_cast<uint16_t>(a_hi * b_hi);
+    uint16_t rlo = static_cast<uint16_t>(static_cast<uint32_t>(a_lo) * b_lo);
+    uint16_t rhi = static_cast<uint16_t>(static_cast<uint32_t>(a_hi) * b_hi);
     vdst.write_lane(wf, lane, static_cast<uint32_t>(rlo) | (static_cast<uint32_t>(rhi) << 16));
   }
 }
@@ -762,8 +762,8 @@ void VPkMadU16Vop3p::execute_impl(amdgpu::Wavefront &wf) {
     uint16_t a_hi = static_cast<uint16_t>(sel0_hi ? (raw0 >> 16) : raw0);
     uint16_t b_hi = static_cast<uint16_t>(sel1_hi ? (raw1 >> 16) : raw1);
     uint16_t c_hi = static_cast<uint16_t>(sel2_hi ? (raw2 >> 16) : raw2);
-    uint16_t rlo = static_cast<uint16_t>(a_lo * b_lo + c_lo);
-    uint16_t rhi = static_cast<uint16_t>(a_hi * b_hi + c_hi);
+    uint16_t rlo = static_cast<uint16_t>(static_cast<uint32_t>(a_lo) * b_lo + c_lo);
+    uint16_t rhi = static_cast<uint16_t>(static_cast<uint32_t>(a_hi) * b_hi + c_hi);
     vdst.write_lane(wf, lane, static_cast<uint32_t>(rlo) | (static_cast<uint32_t>(rhi) << 16));
   }
 }
@@ -3408,8 +3408,15 @@ void VPkMinimum3F16Vop3p::execute_impl(amdgpu::Wavefront &wf) {
     if (inst_.neg_hi & 4) {
       c_hi = -c_hi;
     }
-    float rlo = std::fmin(std::fmin(a_lo, b_lo), c_lo);
-    float rhi = std::fmin(std::fmin(a_hi, b_hi), c_hi);
+    auto ieee_min = [](float x, float y) -> float {
+      if (std::isnan(x) || std::isnan(y))
+        return std::numeric_limits<float>::quiet_NaN();
+      if (x == y)
+        return std::signbit(x) ? x : y;
+      return x < y ? x : y;
+    };
+    float rlo = ieee_min(ieee_min(a_lo, b_lo), c_lo);
+    float rhi = ieee_min(ieee_min(a_hi, b_hi), c_hi);
     vdst.write_lane(wf, lane,
                     util::f32_to_f16(rlo) | (static_cast<uint32_t>(util::f32_to_f16(rhi)) << 16));
   }
@@ -3505,8 +3512,15 @@ void VPkMaximum3F16Vop3p::execute_impl(amdgpu::Wavefront &wf) {
     if (inst_.neg_hi & 4) {
       c_hi = -c_hi;
     }
-    float rlo = std::fmax(std::fmax(a_lo, b_lo), c_lo);
-    float rhi = std::fmax(std::fmax(a_hi, b_hi), c_hi);
+    auto ieee_max = [](float x, float y) -> float {
+      if (std::isnan(x) || std::isnan(y))
+        return std::numeric_limits<float>::quiet_NaN();
+      if (x == y)
+        return std::signbit(x) ? y : x;
+      return x > y ? x : y;
+    };
+    float rlo = ieee_max(ieee_max(a_lo, b_lo), c_lo);
+    float rhi = ieee_max(ieee_max(a_hi, b_hi), c_hi);
     vdst.write_lane(wf, lane,
                     util::f32_to_f16(rlo) | (static_cast<uint32_t>(util::f32_to_f16(rhi)) << 16));
   }

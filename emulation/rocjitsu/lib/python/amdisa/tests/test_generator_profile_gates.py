@@ -68,6 +68,7 @@ def test_gfx1250_profile_enables_generator_backed_quirks():
     assert profile.use_hwreg_helpers
     assert profile.hwreg_wave_sched_mode_id == 26
     assert profile.generate_scaled_wmma_vop3px2
+    assert profile.smem_address_uses_access_size
 
 
 def test_rdna4_profile_keeps_gfx1250_quirks_disabled():
@@ -78,6 +79,7 @@ def test_rdna4_profile_keeps_gfx1250_quirks_disabled():
     assert not profile.use_hwreg_helpers
     assert profile.hwreg_wave_sched_mode_id is None
     assert not profile.generate_scaled_wmma_vop3px2
+    assert not profile.smem_address_uses_access_size
 
 
 def test_packed_16bit_source_gate_is_limited_to_e32_16bit_sources():
@@ -158,3 +160,54 @@ def test_bf16_mad_mix_half_updates_read_destination_operand():
     assert not codegen._dst_is_also_source(SimpleNamespace(name='V_FMA_MIX_F32_BF16'))
     assert codegen._dst_is_also_source(SimpleNamespace(name='V_FMA_MIXLO_BF16'))
     assert codegen._dst_is_also_source(SimpleNamespace(name='V_FMA_MIXHI_BF16'))
+
+
+def test_gfx1250_ds_atomic_routes_data_through_vgpr_resolver():
+    codegen = object.__new__(CodeGenerator)
+    codegen.isa_spec = SimpleNamespace(
+        arch_name='gfx1250',
+        profile=Gfx1250Profile(),
+    )
+
+    expr = codegen._vgpr_base_expr('data0', role='Src1')
+    assert 'resolved_vgpr_offset' in expr
+    assert 'VgprMsbRole::Src1' in expr
+
+    expr_cmp = codegen._vgpr_base_expr('data1', role='Src2')
+    assert 'resolved_vgpr_offset' in expr_cmp
+    assert 'VgprMsbRole::Src2' in expr_cmp
+
+
+def test_rdna4_ds_atomic_uses_raw_encoding():
+    codegen = object.__new__(CodeGenerator)
+    codegen.isa_spec = SimpleNamespace(
+        arch_name='rdna4',
+        profile=Rdna4Profile(),
+    )
+
+    expr = codegen._vgpr_base_expr('data0', role='Src1')
+    assert 'resolved_vgpr_offset' not in expr
+    assert 'inst_.data0' in expr
+
+
+def test_ev124_125_arch_gating_in_generated_operand():
+    import pathlib
+
+    gen_root = (
+        pathlib.Path(__file__).resolve().parents[4]
+        / 'lib'
+        / 'rocjitsu'
+        / 'src'
+        / 'rocjitsu'
+        / 'isa'
+        / 'arch'
+        / 'amdgpu'
+    )
+
+    rdna4_op = (gen_root / 'rdna4' / 'operand.cpp').read_text()
+    assert 'if (ev == 124)\n    return 0u; // NULL' in rdna4_op
+    assert 'if (ev == 125)\n    return wf.m0()' in rdna4_op
+
+    cdna4_op = (gen_root / 'cdna4' / 'operand.cpp').read_text()
+    assert 'if (ev == 124)\n    return wf.m0()' in cdna4_op
+    assert 'ev == 125' not in cdna4_op.split('can_resolve_src_scalar')[1].split('}')[0]
