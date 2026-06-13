@@ -199,9 +199,7 @@ class TestAINICSim:
         output = result.stdout
 
         # Exactly 1 AI NIC device discovered
-        assert "Total AI NIC devices found: 1" in output, (
-            f"Expected exactly 1 AI NIC device.\n"stdout:\n{output}"
-        )
+        assert "Total AI NIC devices found: 1" in output, f"Expected exactly 1 AI NIC device.\n"stdout:\n{output}"
 
         # RDMA counter names appear in the output
         expected_counters = [
