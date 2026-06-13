@@ -88,16 +88,16 @@ static void show_asic_info(amdsmi_processor_handle handle) {
     return;
   }
   print_section("ASIC");
-  print_field("Vendor name",     info.vendor_name);
-  print_field("Product name",    info.product_name);
-  print_field("Part number",     info.part_number);
-  print_field("Serial number",   info.serial_number);
-  print_field("Vendor ID",       info.vendor_id,     /*hex=*/true);
-  print_field("Subvendor ID",    info.subvendor_id,  /*hex=*/true);
-  print_field("Device ID",       info.device_id,     /*hex=*/true);
-  print_field("Subsystem ID",    info.subsystem_id,  /*hex=*/true);
-  print_field("Revision",        info.revision);
-  print_field("Permanent addr",  info.permanent_address);
+  print_field("Vendor name", info.vendor_name);
+  print_field("Product name", info.product_name);
+  print_field("Part number", info.part_number);
+  print_field("Serial number", info.serial_number);
+  print_field("Vendor ID", info.vendor_id,     /*hex=*/true);
+  print_field("Subvendor ID", info.subvendor_id,  /*hex=*/true);
+  print_field("Device ID", info.device_id,     /*hex=*/true);
+  print_field("Subsystem ID", info.subsystem_id,  /*hex=*/true);
+  print_field("Revision", info.revision);
+  print_field("Permanent addr", info.permanent_address);
 }
 
 static void show_bus_info(amdsmi_processor_handle handle) {
@@ -108,16 +108,14 @@ static void show_bus_info(amdsmi_processor_handle handle) {
   }
   print_section("PCIe Bus");
   std::cout << SEP << SEP << std::left << std::setw(28) << "BDF"
-            << ": " << std::setfill('0') << std::hex
-            << std::setw(4) << info.bdf.domain_number << ":"
-            << std::setw(2) << (unsigned)info.bdf.bus_number << ":"
-            << std::setw(2) << (unsigned)info.bdf.device_number << "."
-            << std::setw(1) << (unsigned)info.bdf.function_number
-            << std::dec << std::setfill(' ') << "\n";
+            << ": " << std::setfill('0') << std::hex << std::setw(4) << info.bdf.domain_number
+            << ":" << std::setw(2) << (unsigned)info.bdf.bus_number << ":" << std::setw(2)
+            << (unsigned)info.bdf.device_number << "." << std::setw(1)
+            << (unsigned)info.bdf.function_number << std::dec << std::setfill(' ') << "\n";
   print_field("Max PCIe width (lanes)", info.max_pcie_width);
-  print_field("Max PCIe speed (GT/s)",  info.max_pcie_speed);
+  print_field("Max PCIe speed (GT/s)", info.max_pcie_speed);
   print_field("PCIe interface version", info.pcie_interface_version);
-  print_field("Slot type",              info.slot_type);
+  print_field("Slot type", info.slot_type);
 }
 
 static void show_driver_info(amdsmi_processor_handle handle) {
@@ -138,8 +136,8 @@ static void show_numa_info(amdsmi_processor_handle handle) {
     return;
   }
   print_section("NUMA");
-  print_field("NUMA node",     info.node);
-  print_field("CPU affinity",  info.affinity);
+  print_field("NUMA node", info.node);
+  print_field("CPU affinity", info.affinity);
 }
 
 static void show_port_info(amdsmi_processor_handle handle) {
@@ -154,25 +152,26 @@ static void show_port_info(amdsmi_processor_handle handle) {
     const amdsmi_nic_port_t& p = info.ports[i];
     std::cout << SEP << SEP << "  [port " << i << "]\n";
     auto pf = [&](const char* name, const char* val) {
-      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val << "\n";
+      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val
+                << "\n";
     };
     auto pfn = [&](const char* name, uint64_t val) {
       std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val << "\n";
     };
-    pf("netdev",        p.netdev);
-    pf("type",          p.type);
-    pf("MAC address",   p.mac_address);
-    pf("link state",    p.link_state);
-    pf("autoneg",       p.autoneg);
+    pf("netdev", p.netdev);
+    pf("type", p.type);
+    pf("MAC address", p.mac_address);
+    pf("link state", p.link_state);
+    pf("autoneg", p.autoneg);
     pf("pause autoneg", p.pause_autoneg);
-    pf("pause rx",      p.pause_rx);
-    pf("pause tx",      p.pause_tx);
-    pfn("port number",  p.port_num);
-    pfn("ifindex",      p.ifindex);
-    pfn("carrier",      p.carrier);
-    pfn("MTU",          p.mtu);
-    pfn("link speed",   p.link_speed);
-    pfn("active FEC",   p.active_fec);
+    pf("pause rx", p.pause_rx);
+    pf("pause tx", p.pause_tx);
+    pfn("port number", p.port_num);
+    pfn("ifindex", p.ifindex);
+    pfn("carrier", p.carrier);
+    pfn("MTU", p.mtu);
+    pfn("link speed", p.link_speed);
+    pfn("active FEC", p.active_fec);
   }
 }
 
@@ -191,39 +190,39 @@ static void show_rdma_info(amdsmi_processor_handle handle) {
     auto df = [&](const char* name, const char* val) {
       std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val << "\n";
     };
-    df("node GUID",       dev.node_guid);
-    df("node type",       dev.node_type);
-    df("sys image GUID",  dev.sys_image_guid);
-    df("firmware version",dev.fw_ver);
+    df("node GUID", dev.node_guid);
+    df("node type", dev.node_type);
+    df("sys image GUID", dev.sys_image_guid);
+    df("firmware version", dev.fw_ver);
     std::cout << SEP << SEP << "    " << dev.num_rdma_ports << " RDMA port(s)\n";
 
     for (uint8_t p = 0; p < dev.num_rdma_ports; ++p) {
       const amdsmi_nic_rdma_port_info_t& port = dev.rdma_port_info[p];
       std::cout << SEP << SEP << "      [rdma port " << (int)p << "]\n";
       auto pf = [&](const char* name, const char* val) {
-        std::cout << SEP << SEP << "        " << std::left << std::setw(22) << name << ": " << val << "\n";
+        std::cout << SEP << SEP << "        " << std::left << std::setw(22) << name << ": " << val
+                  << "\n";
       };
       auto pfn = [&](const char* name, uint64_t val) {
-        std::cout << SEP << SEP << "        " << std::left << std::setw(22) << name << ": " << val << "\n";
+        std::cout << SEP << SEP << "        " << std::left << std::setw(22) << name << ": " << val
+                  << "\n";
       };
-      pf("netdev",     port.netdev);
-      pf("state",      port.state);
+      pf("netdev", port.netdev);
+      pf("state", port.state);
       pfn("rdma port", port.rdma_port);
-      pfn("max MTU",   port.max_mtu);
-      pfn("active MTU",port.active_mtu);
+      pfn("max MTU", port.max_mtu);
+      pfn("active MTU", port.active_mtu);
 
       // Fetch live RDMA statistics
       uint32_t num_stats = 0;
-      amdsmi_status_t s =
-          amdsmi_get_nic_rdma_port_statistics(handle, p, &num_stats, nullptr);
+      amdsmi_status_t s = amdsmi_get_nic_rdma_port_statistics(handle, p, &num_stats, nullptr);
       if (s == AMDSMI_STATUS_SUCCESS && num_stats > 0) {
         std::vector<amdsmi_nic_stat_t> stats(num_stats);
         s = amdsmi_get_nic_rdma_port_statistics(handle, p, &num_stats, stats.data());
         if (s == AMDSMI_STATUS_SUCCESS) {
           std::cout << SEP << SEP << "        --- hw_counters (" << num_stats << ") ---\n";
           for (uint32_t k = 0; k < num_stats; ++k) {
-            std::cout << SEP << SEP << "        "
-                      << std::left << std::setw(36) << stats[k].name
+            std::cout << SEP << SEP << "        " << std::left << std::setw(36) << stats[k].name
                       << ": " << stats[k].value << "\n";
           }
         }
@@ -261,8 +260,8 @@ static void show_all_nic_devices() {
   uint32_t total_nics = 0;
   for (uint32_t si = 0; si < soc_count; ++si) {
     uint32_t nic_count = 0;
-    status = amdsmi_get_processor_handles_by_type(
-        sockets[si], AMDSMI_PROCESSOR_TYPE_AMD_NIC, nullptr, &nic_count);
+    status = amdsmi_get_processor_handles_by_type(sockets[si], AMDSMI_PROCESSOR_TYPE_AMD_NIC,
+                                                  nullptr, &nic_count);
     if (status != AMDSMI_STATUS_SUCCESS || nic_count == 0) continue;
 
     std::vector<amdsmi_processor_handle> handles(nic_count);
@@ -271,8 +270,8 @@ static void show_all_nic_devices() {
     if (status != AMDSMI_STATUS_SUCCESS) continue;
 
     for (uint32_t ni = 0; ni < nic_count; ++ni) {
-      std::cout << "\n=== AI NIC device " << total_nics
-                << " (socket " << si << ", device " << ni << ") ===\n";
+      std::cout << "\n=== AI NIC device " << total_nics << " (socket " << si << ", device " << ni
+                << ") ===\n";
       show_asic_info(handles[ni]);
       show_bus_info(handles[ni]);
       show_driver_info(handles[ni]);

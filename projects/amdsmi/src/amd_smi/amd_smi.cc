@@ -1223,9 +1223,9 @@ amdsmi_status_t amdsmi_get_nic_rdma_port_statistics(amdsmi_processor_handle proc
   int port_num = nic_info.rdma_dev.rdma_dev_info[0].rdma_port_info[rdma_port_index].rdma_port;
 
   std::string directory_path = nic_sysfs_root() + "/sys/class/net/" + netdev +
-                               "/device/infiniband/" + rdmadev +
-                               "/subsystem/" + rdmadev + "/subsystem/" + rdmadev + "/ports/" +
-                               std::to_string(port_num) + "/hw_counters/";
+                               "/device/infiniband/" + rdmadev + "/subsystem/" + rdmadev +
+                               "/subsystem/" + rdmadev + "/ports/" + std::to_string(port_num) +
+                               "/hw_counters/";
   if (!std::filesystem::exists(directory_path)) {
     ss << __PRETTY_FUNCTION__ << " | Directory does not exist: " << directory_path;
     LOG_ERROR(ss);

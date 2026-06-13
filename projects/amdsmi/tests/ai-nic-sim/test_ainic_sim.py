@@ -41,7 +41,7 @@ import pytest
 
 _HERE = Path(__file__).parent
 _FAKE_SYSFS_PY = _HERE / "fake_sysfs.py"
-_NIC_SIM_PY    = _HERE / "nic_simulator.py"
+_NIC_SIM_PY = _HERE / "nic_simulator.py"
 
 sys.path.insert(0, str(_HERE))
 import fake_sysfs  # noqa: E402
@@ -50,6 +50,7 @@ import fake_sysfs  # noqa: E402
 def _find_ainic_info_binary() -> Path | None:
     """Search common build locations for the amd_smi_ainic_info binary."""
     from shutil import which
+
     found = which("amd_smi_ainic_info")
     if found:
         return Path(found)
@@ -125,18 +126,14 @@ def nic_simulator(hw_counters_dir: Path):
 class TestAINICSim:
     """Simulation-based tests for the amd-smi AI NIC API."""
 
-    def test_fake_sysfs_structure(
-        self, fake_sysfs_root: Path, hw_counters_dir: Path
-    ) -> None:
+    def test_fake_sysfs_structure(self, fake_sysfs_root: Path, hw_counters_dir: Path) -> None:
         """Verify the fake sysfs tree has the expected structure."""
         # PCI bus device symlinks
         assert (fake_sysfs_root / "sys/bus/pci/devices" / fake_sysfs.BRIDGE_BDF).is_symlink()
         assert (fake_sysfs_root / "sys/bus/pci/devices" / fake_sysfs.PORT_BDF).is_symlink()
 
         # Bridge PCI IDs
-        bridge_dev = (
-            fake_sysfs_root / "sys/devices/pci0000:e0" / fake_sysfs.BRIDGE_BDF
-        )
+        bridge_dev = fake_sysfs_root / "sys/devices/pci0000:e0" / fake_sysfs.BRIDGE_BDF
         assert (bridge_dev / "vendor").read_text().strip() == fake_sysfs.VENDOR_ID_HEX
         assert (bridge_dev / "device").read_text().strip() == fake_sysfs.BRIDGE_DEV_HEX
 
@@ -163,9 +160,7 @@ class TestAINICSim:
         )
 
     def test_nic_simulator_increments_counters(
-        self,
-        nic_simulator: subprocess.Popen,
-        hw_counters_dir: Path,
+        self, nic_simulator: subprocess.Popen, hw_counters_dir: Path
     ) -> None:
         """Verify the NIC simulator is actually incrementing hw_counter values."""
         counter_path = hw_counters_dir / "rx_rdma_ucast_bytes"
@@ -179,12 +174,10 @@ class TestAINICSim:
     @pytest.mark.skipif(
         _BINARY is None,
         reason="amd_smi_ainic_info not found — build amdsmi first "
-               "(cmake --build <build_dir> --target amd_smi_ainic_info)",
+        "(cmake --build <build_dir> --target amd_smi_ainic_info)",
     )
     def test_amdsmi_reads_simulated_nic(
-        self,
-        fake_sysfs_root: Path,
-        nic_simulator: subprocess.Popen,
+        self, fake_sysfs_root: Path, nic_simulator: subprocess.Popen
     ) -> None:
         """
         Run amd_smi_ainic_info with the fake sysfs and verify:
@@ -196,13 +189,7 @@ class TestAINICSim:
         env = os.environ.copy()
         env["SMI_NIC_SYSFS_ROOT"] = str(fake_sysfs_root)
 
-        result = subprocess.run(
-            [str(_BINARY)],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
+        result = subprocess.run([str(_BINARY)], env=env, capture_output=True, text=True, timeout=15)
 
         assert result.returncode == 0, (
             f"amd_smi_ainic_info failed (exit {result.returncode})\n"
@@ -213,8 +200,7 @@ class TestAINICSim:
 
         # Exactly 1 AI NIC device discovered
         assert "Total AI NIC devices found: 1" in output, (
-            "Expected exactly 1 AI NIC device.\n"
-            f"stdout:\n{output}"
+            f"Expected exactly 1 AI NIC device.\n"stdout:\n{output}"
         )
 
         # RDMA counter names appear in the output
@@ -231,10 +217,7 @@ class TestAINICSim:
             "req_rx_impl_nak_seq_err",
         ]
         missing = [c for c in expected_counters if c not in output]
-        assert not missing, (
-            f"RDMA counter names missing from output: {missing}\n"
-            f"stdout:\n{output}"
-        )
+        assert not missing, f"RDMA counter names missing from output: {missing}\nstdout:\n{output}"
 
         # At least one counter value is non-zero
         nonzero = False

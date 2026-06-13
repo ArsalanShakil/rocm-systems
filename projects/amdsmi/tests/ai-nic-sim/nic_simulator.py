@@ -24,16 +24,16 @@ import time
 from pathlib import Path
 
 INCREMENTS: dict[str, int] = {
-    "rx_rdma_ucast_bytes":     1_000_000,
-    "tx_rdma_ucast_bytes":       800_000,
-    "rx_rdma_ucast_pkts":          1_000,
-    "tx_rdma_ucast_pkts":            800,
-    "rx_rdma_cnp_pkts":                5,
-    "tx_rdma_cnp_pkts":                3,
-    "tx_rdma_ack_timeout":             1,
-    "resp_tx_pkt_seq_err":             1,
-    "req_rx_pkt_seq_err":              1,
-    "req_rx_impl_nak_seq_err":         1,
+    "rx_rdma_ucast_bytes": 1_000_000,
+    "tx_rdma_ucast_bytes": 800_000,
+    "rx_rdma_ucast_pkts": 1_000,
+    "tx_rdma_ucast_pkts": 800,
+    "rx_rdma_cnp_pkts": 5,
+    "tx_rdma_cnp_pkts": 3,
+    "tx_rdma_ack_timeout": 1,
+    "resp_tx_pkt_seq_err": 1,
+    "req_rx_pkt_seq_err": 1,
+    "req_rx_impl_nak_seq_err": 1,
 }
 
 
@@ -61,8 +61,7 @@ def run(hw_counters_dir: Path, interval: float) -> None:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
-    print(f"[nic_simulator] started (dir={hw_counters_dir}, interval={interval}s)",
-          flush=True)
+    print(f"[nic_simulator] started (dir={hw_counters_dir}, interval={interval}s)", flush=True)
 
     while running:
         for counter_name, delta in INCREMENTS.items():
@@ -76,10 +75,9 @@ def run(hw_counters_dir: Path, interval: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Simulate AI NIC hw_counters")
-    parser.add_argument("hw_counters_dir", type=Path,
-                        help="Path to the hw_counters directory")
-    parser.add_argument("--interval", type=float, default=0.05,
-                        help="Update interval in seconds (default: 0.05)")
+    parser.add_argument("hw_counters_dir", type=Path, help="Path to the hw_counters directory")
+    parser.add_argument(
+        "--interval", type=float, default=0.05, help="Update interval in seconds (default: 0.05)")
     args = parser.parse_args()
 
     if not args.hw_counters_dir.is_dir():

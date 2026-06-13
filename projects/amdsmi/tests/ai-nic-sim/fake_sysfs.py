@@ -34,15 +34,15 @@ from pathlib import Path
 # Simulated hardware identifiers
 # ---------------------------------------------------------------------------
 
-BRIDGE_BDF = "0000:e2:00.0"   # Pensando PCIe bridge (vendor=0x1dd8, device=0x0008)
-PORT_BDF   = "0000:e2:00.1"   # Pensando Ethernet/IB port (vendor=0x1dd8, device=0x1002)
-IFACE      = "enp226s0"       # Linux net interface name
-IB_DEV     = "rocep226s0"     # InfiniBand device name
-IB_PORT    = "1"              # InfiniBand port number (directory name under ports/)
+BRIDGE_BDF = "0000:e2:00.0"  # Pensando PCIe bridge (vendor=0x1dd8, device=0x0008)
+PORT_BDF = "0000:e2:00.1"  # Pensando Ethernet/IB port (vendor=0x1dd8, device=0x1002)
+IFACE = "enp226s0"  # Linux net interface name
+IB_DEV = "rocep226s0"  # InfiniBand device name
+IB_PORT = "1"  # InfiniBand port number (directory name under ports/)
 
-VENDOR_ID_HEX   = "0x1dd8"
-BRIDGE_DEV_HEX  = "0x0008"
-PORT_DEV_HEX    = "0x1002"
+VENDOR_ID_HEX = "0x1dd8"
+BRIDGE_DEV_HEX = "0x0008"
+PORT_DEV_HEX = "0x1002"
 
 HW_COUNTERS = [
     "rx_rdma_ucast_bytes",
@@ -80,36 +80,36 @@ def create(root: Path) -> Path:
 
     bridge_dev = root / "sys/devices/pci0000:e0" / BRIDGE_BDF
     bridge_dev.mkdir(parents=True, exist_ok=True)
-    _write(bridge_dev / "vendor",           VENDOR_ID_HEX)
-    _write(bridge_dev / "device",           BRIDGE_DEV_HEX)
+    _write(bridge_dev / "vendor", VENDOR_ID_HEX)
+    _write(bridge_dev / "device", BRIDGE_DEV_HEX)
     _write(bridge_dev / "subsystem_vendor", VENDOR_ID_HEX)
     _write(bridge_dev / "subsystem_device", "0x0000")
-    _write(bridge_dev / "revision",         "0x00")
-    _write(bridge_dev / "class",            "0x060400")
-    _write(bridge_dev / "max_link_width",   "16")
-    _write(bridge_dev / "max_link_speed",   "16")
-    _write(bridge_dev / "numa_node",        "0")
+    _write(bridge_dev / "revision", "0x00")
+    _write(bridge_dev / "class", "0x060400")
+    _write(bridge_dev / "max_link_width", "16")
+    _write(bridge_dev / "max_link_speed", "16")
+    _write(bridge_dev / "numa_node", "0")
 
     port_dev = bridge_dev / PORT_BDF
     port_dev.mkdir(parents=True, exist_ok=True)
-    _write(port_dev / "vendor",           VENDOR_ID_HEX)
-    _write(port_dev / "device",           PORT_DEV_HEX)
+    _write(port_dev / "vendor", VENDOR_ID_HEX)
+    _write(port_dev / "device", PORT_DEV_HEX)
     _write(port_dev / "subsystem_vendor", VENDOR_ID_HEX)
     _write(port_dev / "subsystem_device", "0x0000")
-    _write(port_dev / "revision",         "0x00")
-    _write(port_dev / "numa_node",        "0")
+    _write(port_dev / "revision", "0x00")
+    _write(port_dev / "numa_node", "0")
 
     ib_dev_dir = port_dev / "infiniband" / IB_DEV
     ib_dev_dir.mkdir(parents=True, exist_ok=True)
-    _write(ib_dev_dir / "node_guid",       "0xaabbccddeeff0011")
-    _write(ib_dev_dir / "node_type",       "1: CA")
-    _write(ib_dev_dir / "sys_image_guid",  "0xaabbccddeeff0011")
-    _write(ib_dev_dir / "fw_ver",          "1.15.0")
+    _write(ib_dev_dir / "node_guid", "0xaabbccddeeff0011")
+    _write(ib_dev_dir / "node_type", "1: CA")
+    _write(ib_dev_dir / "sys_image_guid", "0xaabbccddeeff0011")
+    _write(ib_dev_dir / "fw_ver", "1.15.0")
 
     ib_port_dir = ib_dev_dir / "ports" / IB_PORT
     ib_port_dir.mkdir(parents=True, exist_ok=True)
-    _write(ib_port_dir / "state",      "4: ACTIVE")
-    _write(ib_port_dir / "max_mtu",    "4096")
+    _write(ib_port_dir / "state", "4: ACTIVE")
+    _write(ib_port_dir / "max_mtu", "4096")
     _write(ib_port_dir / "active_mtu", "4096")
 
     hw_counters_dir = ib_port_dir / "hw_counters"
@@ -122,22 +122,19 @@ def create(root: Path) -> Path:
 
     net_iface_dir = root / "sys/class/net" / IFACE
     net_iface_dir.mkdir(parents=True, exist_ok=True)
-    _write(net_iface_dir / "address",   "aa:bb:cc:dd:ee:ff")
-    _write(net_iface_dir / "dev_port",  "0")
-    _write(net_iface_dir / "type",      "32")
-    _write(net_iface_dir / "ifindex",   "5")
-    _write(net_iface_dir / "carrier",   "1")
-    _write(net_iface_dir / "mtu",       "4096")
+    _write(net_iface_dir / "address", "aa:bb:cc:dd:ee:ff")
+    _write(net_iface_dir / "dev_port", "0")
+    _write(net_iface_dir / "type", "32")
+    _write(net_iface_dir / "ifindex", "5")
+    _write(net_iface_dir / "carrier", "1")
+    _write(net_iface_dir / "mtu", "4096")
     _write(net_iface_dir / "operstate", "up")
-    _write(net_iface_dir / "speed",     "100000")
+    _write(net_iface_dir / "speed", "100000")
     stats_dir = net_iface_dir / "statistics"
     stats_dir.mkdir(exist_ok=True)
     _write(stats_dir / "rx_bytes", "0")
     _write(stats_dir / "tx_bytes", "0")
-    _symlink(
-        net_iface_dir / "device",
-        "../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF,
-    )
+    _symlink(net_iface_dir / "device", "../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF)
 
     ib_class_dir = root / "sys/class/infiniband"
     ib_class_dir.mkdir(parents=True, exist_ok=True)
@@ -145,22 +142,17 @@ def create(root: Path) -> Path:
         ib_class_dir / IB_DEV,
         "../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF + "/infiniband/" + IB_DEV,
     )
-    _symlink(
-        ib_dev_dir / "subsystem",
-        "../../../../../../class/infiniband",
-    )
+    _symlink(ib_dev_dir / "subsystem", "../../../../../../class/infiniband")
 
     pci_dev_dir = root / "sys/bus/pci/devices"
     pci_dev_dir.mkdir(parents=True, exist_ok=True)
     _symlink(pci_dev_dir / BRIDGE_BDF, "../../../devices/pci0000:e0/" + BRIDGE_BDF)
-    _symlink(pci_dev_dir / PORT_BDF,
-             "../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF)
+    _symlink(pci_dev_dir / PORT_BDF, "../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF)
 
     ionic_driver_dir = root / "sys/bus/pci/drivers/ionic"
     ionic_driver_dir.mkdir(parents=True, exist_ok=True)
     _symlink(
-        ionic_driver_dir / PORT_BDF,
-        "../../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF,
+        ionic_driver_dir / PORT_BDF, "../../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF,
     )
 
     rdma_driver_dir = root / "sys/bus/auxiliary/drivers/ionic_rdma.rdma"
