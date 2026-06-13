@@ -96,7 +96,6 @@ target_include_directories(${SMI_AINIC_EXAMPLE_EXE} PRIVATE ${ROCM_DIR}/include 
 target_link_libraries(${SMI_AINIC_EXAMPLE_EXE} PRIVATE ${_AMDSMI_LINK_TARGET})
 target_link_directories(${SMI_AINIC_EXAMPLE_EXE} PRIVATE ${ROCM_DIR}/lib)
 
-
 # amd_smi_ainic_info: standalone AI NIC info tool.
 # Uses only public <amd_smi/amdsmi.h> — no internal headers.
 # Works against real hardware and against a simulated sysfs tree
