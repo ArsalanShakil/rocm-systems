@@ -77,7 +77,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Simulate AI NIC hw_counters")
     parser.add_argument("hw_counters_dir", type=Path, help="Path to the hw_counters directory")
     parser.add_argument(
-        "--interval", type=float, default=0.05, help="Update interval in seconds (default: 0.05)")
+        "--interval", type=float, default=0.05, help="Update interval in seconds (default: 0.05)"
+    )
     args = parser.parse_args()
 
     if not args.hw_counters_dir.is_dir():

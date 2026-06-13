@@ -92,10 +92,10 @@ static void show_asic_info(amdsmi_processor_handle handle) {
   print_field("Product name", info.product_name);
   print_field("Part number", info.part_number);
   print_field("Serial number", info.serial_number);
-  print_field("Vendor ID", info.vendor_id,     /*hex=*/true);
-  print_field("Subvendor ID", info.subvendor_id,  /*hex=*/true);
-  print_field("Device ID", info.device_id,     /*hex=*/true);
-  print_field("Subsystem ID", info.subsystem_id,  /*hex=*/true);
+  print_field("Vendor ID", info.vendor_id, /*hex=*/true);
+  print_field("Subvendor ID", info.subvendor_id, /*hex=*/true);
+  print_field("Device ID", info.device_id, /*hex=*/true);
+  print_field("Subsystem ID", info.subsystem_id, /*hex=*/true);
   print_field("Revision", info.revision);
   print_field("Permanent addr", info.permanent_address);
 }
@@ -125,7 +125,7 @@ static void show_driver_info(amdsmi_processor_handle handle) {
     return;
   }
   print_section("Driver");
-  print_field("Driver name",    info.name);
+  print_field("Driver name", info.name);
   print_field("Driver version", info.version);
 }
 
@@ -156,7 +156,8 @@ static void show_port_info(amdsmi_processor_handle handle) {
                 << "\n";
     };
     auto pfn = [&](const char* name, uint64_t val) {
-      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val << "\n";
+      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val
+                << "\n";
     };
     pf("netdev", p.netdev);
     pf("type", p.type);
@@ -188,7 +189,8 @@ static void show_rdma_info(amdsmi_processor_handle handle) {
     const amdsmi_nic_rdma_dev_info_t& dev = info.rdma_dev_info[d];
     std::cout << SEP << SEP << "  [rdma_dev " << (int)d << ": " << dev.rdma_dev << "]\n";
     auto df = [&](const char* name, const char* val) {
-      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val << "\n";
+      std::cout << SEP << SEP << "    " << std::left << std::setw(26) << name << ": " << val
+                << "\n";
     };
     df("node GUID", dev.node_guid);
     df("node type", dev.node_type);
@@ -265,8 +267,8 @@ static void show_all_nic_devices() {
     if (status != AMDSMI_STATUS_SUCCESS || nic_count == 0) continue;
 
     std::vector<amdsmi_processor_handle> handles(nic_count);
-    status = amdsmi_get_processor_handles_by_type(
-        sockets[si], AMDSMI_PROCESSOR_TYPE_AMD_NIC, handles.data(), &nic_count);
+    status = amdsmi_get_processor_handles_by_type(sockets[si], AMDSMI_PROCESSOR_TYPE_AMD_NIC,
+                                                  handles.data(), &nic_count);
     if (status != AMDSMI_STATUS_SUCCESS) continue;
 
     for (uint32_t ni = 0; ni < nic_count; ++ni) {

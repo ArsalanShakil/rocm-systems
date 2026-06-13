@@ -152,7 +152,7 @@ def create(root: Path) -> Path:
     ionic_driver_dir = root / "sys/bus/pci/drivers/ionic"
     ionic_driver_dir.mkdir(parents=True, exist_ok=True)
     _symlink(
-        ionic_driver_dir / PORT_BDF, "../../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF,
+        ionic_driver_dir / PORT_BDF, "../../../../devices/pci0000:e0/" + BRIDGE_BDF + "/" + PORT_BDF
     )
 
     rdma_driver_dir = root / "sys/bus/auxiliary/drivers/ionic_rdma.rdma"
