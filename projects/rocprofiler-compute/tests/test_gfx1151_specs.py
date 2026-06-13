@@ -570,20 +570,41 @@ class TestParserNumMemoryChannels:
         )
 
     def test_create_sys_vars_uses_num_memory_channels(self):
-        """create_sys_vars() must read from sys_info.num_memory_channels."""
+        """create_sys_vars() must expose ammolite__num_memory_channels and
+        must not expose the stale ammolite__num_hbm_channels key.
+
+        Verified behaviorally (not via source inspection) so the test
+        remains valid across refactors.
+        """
         try:
-            from src.utils.metrics.evaluation_pipeline import create_sys_vars as _csv
+            from src.utils.metrics.evaluation_pipeline import create_sys_vars
         except ImportError:
-            from utils.metrics.evaluation_pipeline import create_sys_vars as _csv
+            from utils.metrics.evaluation_pipeline import create_sys_vars
+        import pandas as pd
 
-        import inspect
-
-        source = inspect.getsource(_csv)
-        assert "num_memory_channels" in source, (
-            "create_sys_vars() does not reference num_memory_channels"
+        sys_info = pd.Series({
+            "se_per_gpu": 2,
+            "pipes_per_gpu": 2,
+            "cu_per_gpu": 32,
+            "simd_per_cu": 2,
+            "sqc_per_gpu": 16,
+            "lds_banks_per_cu": 32,
+            "cur_sclk": 2800.0,
+            "cur_mclk": 2133.0,
+            "max_mclk": 2133.0,
+            "max_sclk": 2800.0,
+            "max_waves_per_cu": 32,
+            "num_memory_channels": 8.0,
+            "num_xcd": 1,
+            "wave_size": 32,
+            "total_l2_chan": 8,
+        })
+        result = create_sys_vars(sys_info)
+        assert "ammolite__num_memory_channels" in result, (
+            "create_sys_vars() did not produce ammolite__num_memory_channels"
         )
-        assert "num_hbm_channels" not in source, (
-            "create_sys_vars() still contains stale num_hbm_channels"
+        assert "ammolite__num_hbm_channels" not in result, (
+            "create_sys_vars() still produces stale ammolite__num_hbm_channels"
         )
 
     def test_create_sys_vars_evaluates_num_memory_channels(self):

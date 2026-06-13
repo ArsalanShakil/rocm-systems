@@ -76,6 +76,9 @@ def get_build_in_vars(gpu_series: str) -> dict[str, str]:
                 "ROUND(AVG((((End_Timestamp - Start_Timestamp) / 1000) * "
                 "$max_sclk)), 0)"
             ),
+            # Key name is a legacy display label; the formula uses
+            # $num_memory_channels which covers both HBM-based (MI series)
+            # and LPDDR5X-based (e.g. gfx1151 Strix Halo) memory subsystems.
             "hbmBandwidth": "($max_mclk / 1000 * 32 * $num_memory_channels)",
         },
         "rdna35": {

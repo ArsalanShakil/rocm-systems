@@ -5,7 +5,7 @@ import argparse
 from typing import Optional
 
 from rocprof_compute_soc.soc_base import OmniSoC_Base
-from utils.logger import demarcate
+from utils.logger import console_warning, demarcate
 from utils.mi_gpu_spec import mi_gpu_specs
 from utils.specs import MachineSpecs
 
@@ -36,7 +36,15 @@ class gfx1151_soc(OmniSoC_Base):
         # GL1 (Shader Array) cache count: RDNA3.5 has 4 CUs per Shader Array.
         # num_gl1c is used by analysis config formulas for GL1 bandwidth ceilings.
         if self._mspec.cu_per_gpu is not None:
-            self._mspec.num_gl1c = str(int(self._mspec.cu_per_gpu) // 4)
+            try:
+                self._mspec.num_gl1c = str(int(self._mspec.cu_per_gpu) // 4)
+            except (ValueError, TypeError):
+                console_warning(
+                    f"gfx1151: could not convert cu_per_gpu "
+                    f"{self._mspec.cu_per_gpu!r} to int; "
+                    "num_gl1c will be set to None."
+                )
+                self._mspec.num_gl1c = None
         else:
             self._mspec.num_gl1c = None
 

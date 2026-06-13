@@ -45,6 +45,10 @@ VERSION_LOC: list[str] = [
 
 # GPU architectures that are APUs (integrated graphics, no HBM, no XCDs,
 # no compute/memory partitioning).  Add new APU arch prefixes here.
+# NOTE: "gfx115" is intentionally broad to cover gfx1151/gfx1152.  If a
+# future gfx115x part is *not* an APU (e.g. a discrete GPU with its own
+# HBM/XCD), this prefix must be narrowed or per-chip exceptions must be
+# added to is_apu_arch() to avoid misclassification.
 _APU_ARCH_PREFIXES: tuple[str, ...] = ("gfx115",)
 
 # Fields that are not applicable to APU architectures and should be hidden.
@@ -63,6 +67,16 @@ def is_apu_arch(gpu_arch: Optional[str]) -> bool:
     if not gpu_arch:
         return False
     return any(gpu_arch.startswith(prefix) for prefix in _APU_ARCH_PREFIXES)
+
+
+def _fmt_chip_id(value: Any) -> Any:
+    """Return *value* formatted as a four-digit hex literal when it is a
+    plain decimal chip-ID string (e.g. ``"29570"`` → ``"0x7382"``).
+    Non-string and non-numeric values are returned unchanged.
+    """
+    if isinstance(value, str) and value.isdigit():
+        return f"0x{int(value):04X}"
+    return value
 
 
 def run(cmd: list[str]) -> Optional[str]:
@@ -191,6 +205,18 @@ def generate_machine_specs(
                     "It has been automatically remapped to 'num_memory_channels'. "
                     "Re-profiling is recommended to update the stored sysinfo."
                 )
+            # Drop any keys not recognised by the current MachineSpecs
+            # dataclass so that sysinfo files produced by older or newer
+            # versions of the tool (e.g. containing a since-removed field
+            # such as 'timestamp') load without TypeError.
+            _known_fields = {f.name for f in fields(MachineSpecs)}
+            for _stale_key in list(set(sysinfo_norm) - _known_fields):
+                console_warning(
+                    f"Loaded sysinfo contains unrecognised field "
+                    f"{_stale_key!r} which will be ignored. "
+                    "Re-profiling is recommended."
+                )
+                sysinfo_norm.pop(_stale_key)
             return MachineSpecs(**sysinfo_norm)
         except KeyError:
             console_error(
@@ -888,8 +914,8 @@ class MachineSpecs:
             value = getattr(self, name)
 
             # Format Chip ID as hexadecimal for display
-            if name == "gpu_chip_id" and isinstance(value, str) and value.isdigit():
-                value = f"0x{int(value):04X}"
+            if name == "gpu_chip_id":
+                value = _fmt_chip_id(value)
 
             data[name] = value
 
@@ -928,8 +954,8 @@ class MachineSpecs:
                 _data: dict[str, Any] = {}
                 value = getattr(self, name)
                 # Format Chip ID as hexadecimal for display
-                if name == "gpu_chip_id" and isinstance(value, str) and value.isdigit():
-                    value = f"0x{int(value):04X}"
+                if name == "gpu_chip_id":
+                    value = _fmt_chip_id(value)
                 if class_field.metadata:
                     # check out of table before any re-naming for pretty-printing
                     if (
