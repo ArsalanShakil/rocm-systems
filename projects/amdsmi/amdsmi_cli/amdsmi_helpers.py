@@ -1737,20 +1737,6 @@ class AMDSMIHelpers:
         bytes_value = pages * page_size
         return bytes_value / (1024**3)
 
-    def user_choice_exception(self, msg=None):
-        if len(sys.argv) > 2:
-            cmd = " ".join(sys.argv[1:3])
-        elif len(sys.argv) == 2:
-            cmd = sys.argv[1]
-        else:
-            cmd = "unknown"
-
-        if msg is None:
-            msg = "Confirmation not given. Exiting without setting value"
-        raise amdsmi_cli_exceptions.AmdSmiPermissionDeniedException(
-            cmd, self.get_output_format(), msg
-        )
-
     def read_pending_gtt_pages(self):
         """Read the pending GTT pages_limit written by `amd-smi set --gtt`.
 
@@ -1791,7 +1777,7 @@ class AMDSMIHelpers:
                 continue
         return None
 
-    def user_choice_exception(self, msg=None):
+    def user_permission_exception(self, msg=None):
         if len(sys.argv) > 2:
             cmd = " ".join(sys.argv[1:3])
         elif len(sys.argv) == 2:
@@ -1830,7 +1816,7 @@ class AMDSMIHelpers:
         if user_input in ["y", "Y", "yes", "Yes", "YES"]:
             return
         else:
-            self.user_choice_exception()
+            self.user_permission_exception()
 
     def confirm_changing_memory_partition_gpu_reload_warning(self, auto_respond=False):
         """Print the warning for running outside of specification and prompt user to accept the terms.
@@ -1870,7 +1856,7 @@ class AMDSMIHelpers:
             return
         else:
             msg = f"Confirmation not given. Exiting without setting value"
-            self.user_choice_exception(msg)
+            self.user_permission_exception(msg)
 
     def is_valid_profile(self, profile):
         profile_presets = (
@@ -2726,9 +2712,8 @@ class AMDSMIHelpers:
                 num_entries = num_entries + len(entries)
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                    raise PermissionError(
-                        "Error opening CPER file. This command requires elevation"
-                    ) from e
+                    msg = "Error opening CPER file. This command requires elevation"
+                    self.user_permission_exception(msg)
                 if (
                     e.get_error_code()
                     == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NOT_SUPPORTED
@@ -2736,7 +2721,7 @@ class AMDSMIHelpers:
                     == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_FILE_NOT_FOUND
                 ):
                     output_format = self.get_output_format()
-                    command = (sys.argv[1] if len(sys.argv) > 1 else "unknown",)
+                    command = sys.argv[1] if len(sys.argv) > 1 else "unknown"
                     msg = "Error accessing CPER files. This command requires CPER to be enabled."
                     raise amdsmi_cli_exceptions.AmdSmiInvalidFilePathException(
                         command, output_format, msg
@@ -2747,7 +2732,7 @@ class AMDSMIHelpers:
                 else:
                     msg = f"Cannot retrieve CPER entries: {e}."
                     logging.debug(msg)
-                amdsmi_cli_exceptions.AmdSmiLibraryErrorException(
+                raise amdsmi_cli_exceptions.AmdSmiLibraryErrorException(
                     output_format, msg, e.get_error_code()
                 )
 
@@ -3263,7 +3248,8 @@ class AMDSMIHelpers:
             return msg
         except amdsmi_exception.AmdSmiLibraryException as e:
             if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                raise PermissionError("Command requires elevation") from e
+                msg = "Command requires elevation"
+                self.user_permission_exception(msg)
             error_msg = f"[{e.get_error_info(detailed=False)}] Unable to set {power_type_key} power cap to {requested_power_cap} W"
             output_format = self.get_output_format()
             raise amdsmi_cli_exceptions.AmdSmiInvalidParameterValueException(
