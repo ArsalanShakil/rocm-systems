@@ -53,7 +53,7 @@ class SetValueCommands:
             core_msr_floor_limit (list, optional): Value override for args.core_msr_floor_limit. Defaults to None.
 
         Raises:
-            AmdSmiRequiredCommandException: Value error if no core value is provided
+            AmdSmiRequiredCommandException: if no core value is provided
             IndexError: Index error if core list is empty
 
         Return:
@@ -287,7 +287,7 @@ class SetValueCommands:
             cpu_sdps_limit (int, optional): Value override for args.cpu_sdps_limit. Defaults to None.
 
         Raises:
-            AmdSmiRequiredCommandException: Value error if no core value is provided
+            AmdSmiRequiredCommandException: if no core value is provided
             IndexError: Index error if cpu list is empty
 
         Return:
@@ -879,7 +879,7 @@ class SetValueCommands:
             ptl_format(string, optional): Value override for args.ptl_format. Defaults to None.
             compute_partition_mem_alloc_mode (str, optional): Value override for args.compute_partition_mem_alloc_mode. Defaults to None.
         Raises:
-            AmdSmiRequiredCommandException: Value error if no core value is provided
+            AmdSmiRequiredCommandException: if no core value is provided
             IndexError: Index error if gpu list is empty
 
         Return:
@@ -1733,7 +1733,7 @@ class SetValueCommands:
             val = args.clk_limit.val
             val_changed = True  # Assume Clock limit value is changed
 
-            # Validate the value against the extreme
+            # Validate the value against the extremum
             try:
                 # Parser only allows three options sclk, mclk or fclk
                 if clk_type == "sclk":
@@ -1793,7 +1793,7 @@ class SetValueCommands:
                     logging.debug(error_msg)
                 else:
                     logging.debug(
-                        f"Failed to get clock extreme info for gpu {gpu_id} | {e.get_error_info()}"
+                        f"Failed to get clock extremum info for gpu {gpu_id} | {e.get_error_info()}"
                     )
                     error_msg = f"[{e.get_error_info(detailed=False)}] Unable to change {args.clk_limit.lim_type} of {args.clk_limit.clk_type} to {args.clk_limit.val} MHz"
                 self.logger.store_output(args.gpu, "clk_limit", error_msg)
@@ -2065,7 +2065,7 @@ class SetValueCommands:
             xgmi_plpd (int, optional): Value override for args.xgmi_plpd. Defaults to None.
             process_isolation (int, optional): Value override for args.process_isolation. Defaults to None.
         Raises:
-            AmdSmiInvalidParameterValueException: Value error if no value is provided
+            AmdSmiInvalidParameterValueException: if no value is provided
             IndexError: Index error if gpu list is empty
 
         Return:
