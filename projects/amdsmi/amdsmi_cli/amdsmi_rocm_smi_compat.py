@@ -14,7 +14,7 @@ import sys
 import os
 import logging
 
-from amdsmi_cli_exceptions import AmdSmiInvalidFilePathException
+from amdsmi_cli_exceptions import AmdSmiCommandNotSupportedException
 
 # Version information
 SMI_MAJ = 4

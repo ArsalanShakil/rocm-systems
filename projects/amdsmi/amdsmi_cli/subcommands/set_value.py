@@ -1077,7 +1077,7 @@ class SetValueCommands:
                     result = f"Successfully set fan speed to {hw_value} RPM/PWM ({fan_percentage}%)"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     result = format_fan_error(
                         f"[{e.get_error_info(detailed=False)}] Unable to set fan speed to {hw_value} RPM/PWM ({fan_percentage}%)",
@@ -1102,7 +1102,7 @@ class SetValueCommands:
                     result = f"Successfully set performance level {args.perf_level}"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     result = f"[{e.get_error_info(detailed=False)}] Unable to set performance level to {args.perf_level}."
                     perf_options = (
@@ -1179,7 +1179,7 @@ class SetValueCommands:
                     raise e
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
 
                     # Get available profiles for error message
                     try:
@@ -1216,7 +1216,7 @@ class SetValueCommands:
                     result = f"Successfully enabled performance determinism and set GFX clock frequency to {args.perf_determinism} MHz"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     result = f"[{e.get_error_info(detailed=False)}] Unable to enable performance determinism and set GFX clock frequency to {args.perf_determinism} MHz"
 
@@ -1283,7 +1283,7 @@ class SetValueCommands:
                     self.logger.clear_multiple_devices_output()
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     elif (
                         e.get_error_code()
                         == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NOT_SUPPORTED
@@ -1362,7 +1362,7 @@ class SetValueCommands:
                         self.logger.store_output(args.gpu, "memory_partition", result)
                         self.logger.print_output()
                         self.logger.clear_multiple_devices_output()
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     elif e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_INVAL:
                         detected_exception = e
                         print(f"Valid Memory partition Modes: {memory_dict['caps']}\n")
@@ -1387,7 +1387,7 @@ class SetValueCommands:
                     result = f"Successfully set soc pstate dpm policy to {args.soc_pstate}"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_INVAL:
                         soc_pstate_info = amdsmi_interface.amdsmi_get_soc_pstate(args.gpu)
@@ -1422,7 +1422,7 @@ class SetValueCommands:
                     result = f"Successfully set XGMI per-link power down policy to {args.xgmi_plpd}"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_INVAL:
                         xgmi_plpd_info = amdsmi_interface.amdsmi_get_xgmi_plpd(args.gpu)
@@ -1481,7 +1481,7 @@ class SetValueCommands:
                     results_clk_lvl["perf_level"] = "Successfully set performance level to MANUAL"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     results_clk_lvl["perf_level"] = (
                         f"[{e.get_error_info(detailed=False)}] Unable to set performance level to MANUAL"
@@ -1594,7 +1594,7 @@ class SetValueCommands:
                             e.get_error_code()
                             == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM
                         ):
-                            raise PermissionError("Command requires elevation") from e
+                            self.helpers.raise_permission_exception("Command requires elevation")
                         detected_exception = e
 
                         results_clk_lvl["set_clock"] = (
@@ -1628,7 +1628,7 @@ class SetValueCommands:
                             e.get_error_code()
                             == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM
                         ):
-                            raise PermissionError("Command requires elevation") from e
+                            self.helpers.raise_permission_exception("Command requires elevation")
                         detected_exception = e
                         results_clk_lvl["set_clock"] = (
                             f"[{e.get_error_info(detailed=False)}] Unable to set {clk_type} perf level(s) to {perf_levels_str}"
@@ -1654,7 +1654,7 @@ class SetValueCommands:
                     result = f"Successfully set PTL state to {status_string}"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     result = f"[{e.get_error_info(detailed=False)}] Unable to set ptl status to {args.ptl_status}"
                 self.logger.store_output(args.gpu, "ptlstatus", result)
@@ -1688,7 +1688,7 @@ class SetValueCommands:
                         result = f"Successfully set PTL format to {requested_str}"
                 except amdsmi_exception.AmdSmiLibraryException as e:
                     if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                        raise PermissionError("Command requires elevation") from e
+                        self.helpers.raise_permission_exception("Command requires elevation")
                     detected_exception = e
                     result = f"[{e.get_error_info(detailed=False)}] Unable to set PTL format to {requested_str}"
                     self.logger.store_output(args.gpu, "ptlformat", result)
@@ -1807,7 +1807,7 @@ class SetValueCommands:
                     amdsmi_interface.amdsmi_set_gpu_clk_limit(args.gpu, clk_type, lim_type, val)
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                    raise PermissionError("Command requires elevation") from e
+                    self.helpers.raise_permission_exception("Command requires elevation")
                 elif (
                     e.get_error_code()
                     == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NOT_SUPPORTED
@@ -1854,7 +1854,7 @@ class SetValueCommands:
                     result = f"Successfully set process isolation to {status_string}"
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                    raise PermissionError("Command requires elevation") from e
+                    self.helpers.raise_permission_exception("Command requires elevation")
                 detected_exception = e
                 result = f"[{e.get_error_info(detailed=False)}] Unable to set process isolation to {status_string}"
 
@@ -1922,7 +1922,7 @@ class SetValueCommands:
 
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                    raise PermissionError("Command requires elevation") from e
+                    self.helpers.raise_permission_exception("Command requires elevation")
                 if (
                     e.get_error_code()
                     == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NOT_SUPPORTED
@@ -1965,7 +1965,7 @@ class SetValueCommands:
                     self.logger.store_output(args.gpu, "compute_partition_mem_alloc_mode", out)
                     self.logger.print_output()
                     self.logger.clear_multiple_devices_output()
-                    raise PermissionError("Command requires elevation") from e
+                    self.helpers.raise_permission_exception("Command requires elevation")
                 else:
                     self.logger.store_output(args.gpu, "compute_partition_mem_alloc_mode", out)
                     self.logger.print_output()
@@ -2103,7 +2103,7 @@ class SetValueCommands:
                 return
             except amdsmi_exception.AmdSmiLibraryException as e:
                 if e.get_error_code() == amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NO_PERM:
-                    raise PermissionError("Command requires elevation") from e
+                    self.helpers.raise_permission_exception("Command requires elevation")
                 error_msg = (
                     f"[{e.get_error_info(detailed=False)}] Unable to set GTT to {gb_value:.2f} GB"
                 )
