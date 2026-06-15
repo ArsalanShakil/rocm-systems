@@ -777,8 +777,7 @@ class AMDSMIParser(argparse.ArgumentParser):
             def __call__(self, parser, args, values, option_string=None):
                 if args.watch is None:
                     raise argparse.ArgumentError(
-                        self,
-                        f"invalid argument: '{self.dest}' needs to be paired with -w/--watch. Error code: 202",
+                        self, f"invalid argument: '{self.dest}' needs to be paired with -w/--watch."
                     )
                 else:
                     setattr(args, self.dest, values)
