@@ -1362,6 +1362,17 @@ class NDRangeKernelCommand : public Command {
                        uint64_t prevGridSum = 0, uint64_t allGridSum = 0, uint32_t firstDevice = 0,
                        bool forceProfiling = false);
 
+  //! Construct an ExecuteKernel command, building sizes_ in place from the raw
+  //! work-size arrays. Avoids constructing and copying a temporary NDRangeContainer
+  //! on the kernel-launch fast path.
+  NDRangeKernelCommand(HostQueue& queue, const EventWaitList& eventWaitList, Kernel& kernel,
+                       size_t dimensions, const size_t* globalWorkOffset,
+                       const size_t* globalWorkSize, const size_t* localWorkSize,
+                       const size_t* clusterWorkSize, uint32_t sharedMemBytes = 0,
+                       uint32_t extraParam = 0, uint32_t gridId = 0, uint32_t numGrids = 0,
+                       uint64_t prevGridSum = 0, uint64_t allGridSum = 0, uint32_t firstDevice = 0,
+                       bool forceProfiling = false);
+
   virtual void submit(device::VirtualDevice& device) { device.submitKernel(*this); }
 
   //! Release all resources associated with this command (

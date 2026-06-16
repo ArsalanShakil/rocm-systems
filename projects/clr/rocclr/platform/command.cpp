@@ -433,10 +433,23 @@ NDRangeKernelCommand::NDRangeKernelCommand(HostQueue& queue, const EventWaitList
                                            uint32_t gridId, uint32_t numGrids, uint64_t prevGridSum,
                                            uint64_t allGridSum, uint32_t firstDevice,
                                            bool forceProfiling)
+    : NDRangeKernelCommand(queue, eventWaitList, kernel, sizes.dimensions(),
+                           sizes.offset().Data(), sizes.global().Data(), sizes.local().Data(),
+                           sizes.cluster().Data(), sharedMemBytes, extraParam, gridId, numGrids,
+                           prevGridSum, allGridSum, firstDevice, forceProfiling) {}
+
+NDRangeKernelCommand::NDRangeKernelCommand(HostQueue& queue, const EventWaitList& eventWaitList,
+                                           Kernel& kernel, size_t dimensions,
+                                           const size_t* globalWorkOffset,
+                                           const size_t* globalWorkSize, const size_t* localWorkSize,
+                                           const size_t* clusterWorkSize, uint32_t sharedMemBytes,
+                                           uint32_t extraParam, uint32_t gridId, uint32_t numGrids,
+                                           uint64_t prevGridSum, uint64_t allGridSum,
+                                           uint32_t firstDevice, bool forceProfiling)
     : Command(queue, CL_COMMAND_NDRANGE_KERNEL, eventWaitList,
               AMD_SERIALIZE_KERNEL | (HIP_LAUNCH_BLOCKING << 1)),
       kernel_(kernel),
-      sizes_(sizes),
+      sizes_(dimensions, globalWorkOffset, globalWorkSize, localWorkSize, clusterWorkSize),
       sharedMemBytes_(sharedMemBytes),
       extraParam_(extraParam),
       gridId_(gridId),
