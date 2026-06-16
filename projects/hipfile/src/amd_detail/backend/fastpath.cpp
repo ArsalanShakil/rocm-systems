@@ -169,10 +169,11 @@ ssize_t
 Fastpath::_io_impl(IoType type, shared_ptr<IFile> file, shared_ptr<IBuffer> buffer, size_t size,
                    hoff_t file_offset, hoff_t buffer_offset)
 {
-    StatsIoTracker ioTracker{type, StatsBackend::Fastpath};
     if (!Context<Configuration>::get()->fastpath()) {
         throw BackendDisabled();
     }
+
+    StatsIoTracker ioTracker{type, StatsBackend::Fastpath, file, buffer, size, file_offset, buffer_offset};
 
     void *devptr{reinterpret_cast<void *>(reinterpret_cast<intptr_t>(buffer->getBuffer()) + buffer_offset)};
     hipAmdFileHandle_t handle{};

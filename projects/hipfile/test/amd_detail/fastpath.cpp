@@ -494,9 +494,13 @@ struct FastpathIoParam : public FastpathTestBase, public TestWithParam<IoType> {
     void expect_validate()
     {
         EXPECT_CALL(mcfg, fastpath()).WillOnce(Return(DEFAULT_ENABLE));
-        EXPECT_CALL(*mbuffer, getBuffer).WillOnce(Return(reinterpret_cast<void *>(DEFAULT_BUFFER_ADDR)));
+        EXPECT_CALL(*mbuffer, getBuffer)
+            .Times(2)
+            .WillRepeatedly(Return(reinterpret_cast<void *>(DEFAULT_BUFFER_ADDR)));
         EXPECT_CALL(*mbuffer, getLength).WillOnce(Return(DEFAULT_BUFFER_LENGTH));
         EXPECT_CALL(*mfile, unbufferedFd).WillOnce(Return(DEFAULT_UNBUFFERED_FD));
+        EXPECT_CALL(*mfile, dioOffsetAlign).WillOnce(Return(DEFAULT_OFFSET_ALIGN));
+        EXPECT_CALL(*mfile, dioMemAlign).WillOnce(Return(DEFAULT_MEM_ALIGN));
     }
 
     // Setup expectations on the mocks called to validate IO arguments and
@@ -511,9 +515,11 @@ struct FastpathIoParam : public FastpathTestBase, public TestWithParam<IoType> {
     void expect_validate(optional<int> fd, void *bufptr, size_t buflen)
     {
         EXPECT_CALL(mcfg, fastpath()).WillOnce(Return(DEFAULT_ENABLE));
-        EXPECT_CALL(*mbuffer, getBuffer).WillOnce(Return(bufptr));
+        EXPECT_CALL(*mbuffer, getBuffer).Times(2).WillRepeatedly(Return(bufptr));
         EXPECT_CALL(*mbuffer, getLength).WillOnce(Return(buflen));
         EXPECT_CALL(*mfile, unbufferedFd).WillOnce(Return(fd));
+        EXPECT_CALL(*mfile, dioOffsetAlign).WillOnce(Return(DEFAULT_OFFSET_ALIGN));
+        EXPECT_CALL(*mfile, dioMemAlign).WillOnce(Return(DEFAULT_MEM_ALIGN));
     }
 
     // Setup expectations on the mocks called to validate IO arguments and
