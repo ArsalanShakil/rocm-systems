@@ -69,7 +69,7 @@ def is_apu_arch(gpu_arch: Optional[str]) -> bool:
     return any(gpu_arch.startswith(prefix) for prefix in _APU_ARCH_PREFIXES)
 
 
-def _fmt_chip_id(value: Any) -> Any:
+def _fmt_chip_id(value: object) -> object:
     """Return *value* formatted as a four-digit hex literal when it is a
     plain decimal chip-ID string (e.g. ``"29570"`` → ``"0x7382"``).
     Non-string and non-numeric values are returned unchanged.

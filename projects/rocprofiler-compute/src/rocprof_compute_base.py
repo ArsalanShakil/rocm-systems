@@ -734,7 +734,6 @@ class RocProfCompute:
     def run_analysis(self) -> None:
         # Lazy import pandas and file_io since they are only used in analysis
         # mode. This keeps analysis deps out of the profile path.
-        import pandas as pd
 
         from utils import file_io
 

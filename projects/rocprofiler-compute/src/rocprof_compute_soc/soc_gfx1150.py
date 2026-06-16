@@ -5,12 +5,16 @@ import argparse
 from typing import Optional
 
 from rocprof_compute_soc.soc_base import OmniSoC_Base
-from utils.logger import demarcate
+from utils.logger import console_warning, demarcate
 from utils.mi_gpu_spec import mi_gpu_specs
 from utils.specs import MachineSpecs
 
 
 class gfx1150_soc(OmniSoC_Base):
+    # LPDDR5X memory: 256-bit total bus width / 32-bit per channel = 8 channels.
+    # gfx1150 (Strix Point) uses LPDDR5X, not HBM.
+    _NUM_MEMORY_CHANNELS: int = 8
+
     def __init__(self, args: argparse.Namespace, mspec: MachineSpecs) -> None:
         super().__init__(args, mspec)
         self.set_arch("gfx1150")
@@ -36,6 +40,27 @@ class gfx1150_soc(OmniSoC_Base):
         self._mspec.l2_banks = 8  # Typical for APU
         self._mspec.lds_banks_per_cu = 32  # Standard RDNA3.5 LDS config
         self._mspec.pipes_per_gpu = 2  # APU typically has fewer pipes
+
+        # LPDDR5X: 256-bit bus / 32-bit per channel = 8 memory channels.
+        # This is set here so generate_machine_specs() skips the NPS-based
+        # HBM channel derivation (which is MI-GPU-specific and not applicable
+        # to this LPDDR5X APU).
+        self._mspec.num_memory_channels = str(self._NUM_MEMORY_CHANNELS)
+
+        # GL1 (Shader Array) cache count: RDNA3.5 has 4 CUs per Shader Array.
+        # num_gl1c is used by analysis config formulas for GL1 bandwidth ceilings.
+        if self._mspec.cu_per_gpu is not None:
+            try:
+                self._mspec.num_gl1c = str(int(self._mspec.cu_per_gpu) // 4)
+            except (ValueError, TypeError):
+                console_warning(
+                    f"gfx1150: could not convert cu_per_gpu "
+                    f"{self._mspec.cu_per_gpu!r} to int; "
+                    "num_gl1c will be set to None."
+                )
+                self._mspec.num_gl1c = None
+        else:
+            self._mspec.num_gl1c = None
 
     # -----------------------
     # Required child methods
