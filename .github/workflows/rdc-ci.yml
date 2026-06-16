@@ -23,7 +23,7 @@ jobs:
     runs-on:
       - self-hosted
       - ${{ vars.RUNNER_TYPE }}
-    container: rocm/dev-ubuntu-22.04:6.3
+    container: rocm/rocm-build-ubuntu-22.04:6.3
     outputs:
       TODAY: ${{ steps.metadata.outputs.TODAY }}
 
