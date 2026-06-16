@@ -47,7 +47,6 @@ enum ncclGinOptFlags {
 #define NCCL_GIN_BACKEND_MASK_ALL                                               \
   (((NCCL_GIN_PROXY_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_PROXY | \
    ((NCCL_GIN_GDAKI_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_GDAKI | \
-   ((NCCL_GIN_ROCSHMEM_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_ROCSHMEM_API | \
    ((NCCL_GIN_ROCSHMEM_ENABLE) ? 1u : 0u) << (unsigned)NCCL_NET_DEVICE_GIN_ROCSHMEM_GDA)
 
 struct ncclGinCtx {
@@ -155,9 +154,6 @@ NCCL_DEVICE_INLINE static decltype(auto) ncclGinCallImpl(unsigned beMask, ncclGi
       return ApiFn<NCCL_NET_DEVICE_GIN_GDAKI>::call(ctx, static_cast<Arg&&>(arg)...);
 #endif
 #if NCCL_GIN_ROCSHMEM_ENABLE
-    case (int)NCCL_NET_DEVICE_GIN_ROCSHMEM_API:
-      if (!(1 & (beMask >> (int)NCCL_NET_DEVICE_GIN_ROCSHMEM_API))) __builtin_unreachable();
-      return ApiFn<NCCL_NET_DEVICE_GIN_ROCSHMEM_API>::call(ctx, static_cast<Arg&&>(arg)...);
     case (int)NCCL_NET_DEVICE_GIN_ROCSHMEM_GDA:
       if (!(1 & (beMask >> (int)NCCL_NET_DEVICE_GIN_ROCSHMEM_GDA))) __builtin_unreachable();
       return ApiFn<NCCL_NET_DEVICE_GIN_ROCSHMEM_GDA>::call(ctx, static_cast<Arg&&>(arg)...);

@@ -214,29 +214,23 @@ if (NOT BUILD_TESTS_ONLY)
   #############################################################################
   # PACKAGE DEPENDENCIES
   #############################################################################
-  # libnuma: needed by GDA (compile-time headers, dlopen at runtime) and by
-  # hsakmt (numa::numa link dependency).  Use the ROCm sysdeps config when
-  # available; fall back to a plain system import target otherwise.
-  find_package(NUMA QUIET
-    PATHS /opt/rocm/core/lib/rocm_sysdeps /opt/rocm
-    PATH_SUFFIXES lib/cmake/NUMA)
-  if(NOT TARGET numa::numa)
-    find_library(_NUMA_LIB NAMES numa)
-    find_path(_NUMA_INC NAMES numa.h)
-    if(_NUMA_LIB AND _NUMA_INC)
-      add_library(numa::numa SHARED IMPORTED)
-      set_target_properties(numa::numa PROPERTIES
-        IMPORTED_LOCATION "${_NUMA_LIB}"
-        INTERFACE_INCLUDE_DIRECTORIES "${_NUMA_INC}")
-    endif()
-  endif()
+  # GDA Requires libnuma
+  if(USE_GDA)
+    find_path(NUMA_INCLUDE_DIR NAMES numa.h)
+    find_library(NUMA_LIBRARY NAMES numa)
 
-  if(USE_GDA AND NOT TARGET numa::numa)
-    message(STATUS "libnuma not found. Unable to build GDA")
-    set(USE_GDA OFF)
-    set(GDA_IONIC OFF)
-    set(GDA_BNXT OFF)
-    set(GDA_MLX5 OFF)
+    include(FindPackageHandleStandardArgs)
+    find_package_handle_standard_args(NUMA DEFAULT_MSG NUMA_LIBRARY NUMA_INCLUDE_DIR)
+
+    # Usually you would have to add libnuma to target but we use dlopen
+
+    if (NOT NUMA_FOUND)
+      message(STATUS "libnuma not found. Unable to build GDA")
+      set(USE_GDA OFF)
+      set(GDA_IONIC OFF)
+      set(GDA_BNXT OFF)
+      set(GDA_MLX5 OFF)
+    endif()
   endif()
 
   if (NOT USE_EXTERNAL_MPI STREQUAL "OFF")
@@ -263,26 +257,7 @@ if (NOT BUILD_TESTS_ONLY)
   find_package(hsa-runtime64 REQUIRED)
 
   if (USE_SDMA)
-    if(NOT TARGET numa::numa)
-      message(FATAL_ERROR "numa::numa required by hsakmt but libnuma not found. "
-                          "Install libnuma-dev (or equivalent).")
-    endif()
     find_package(hsakmt REQUIRED PATHS /opt/rocm)
-    # hsakmtTargets.cmake contains two classes of paths baked in from the ROCm
-    # RHEL CI build environment that break on any other system:
-    #   /usr/lib64/libc.so      — bare libc path instead of -lc (always implicit)
-    #   -L/__w/rockrel/...      — hardcoded CI search path for libdrm/libdrm_amdgpu
-    # Strip both, then inject the correct ROCm sysdeps libdrm search path so
-    # the -ldrm/-ldrm_amdgpu flags that follow can actually resolve.
-    get_target_property(_hsakmt_iface_libs hsakmt::hsakmt INTERFACE_LINK_LIBRARIES)
-    list(FILTER _hsakmt_iface_libs EXCLUDE REGEX "(/libc\\.so|/__w/)")
-    get_target_property(_numa_loc numa::numa IMPORTED_LOCATION)
-    get_filename_component(_numa_libdir "${_numa_loc}" DIRECTORY)
-    list(PREPEND _hsakmt_iface_libs "-L${_numa_libdir}")
-    unset(_numa_loc)
-    unset(_numa_libdir)
-    set_target_properties(hsakmt::hsakmt PROPERTIES INTERFACE_LINK_LIBRARIES "${_hsakmt_iface_libs}")
-    unset(_hsakmt_iface_libs)
   endif()
 
   set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
