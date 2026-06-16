@@ -436,7 +436,7 @@ hipError_t FatBinaryInfo::ExtractFatBinaryUsingCOMGR(const std::vector<hip::Devi
   if (!is_compressed && !is_uncompressed) {
     if (IsCodeObjectElf(image_)) {
       // Load the binary directly
-      auto elf_size = amd::Elf::getElfSize(image_);
+      auto elf_size = amd::Elf::getElfSize(image_, image_size_);
       for (auto* device : devices) {
         if (hipSuccess != AddDevProgram(device, image_, elf_size, fdesc))
           return hipErrorInvalidImage;

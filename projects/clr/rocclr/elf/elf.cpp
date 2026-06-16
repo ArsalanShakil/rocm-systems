@@ -800,15 +800,31 @@ bool Elf::dumpImage(std::istream& is, char** buff, size_t* len) const {
   return true;
 }
 
-uint64_t Elf::getElfSize(const void* emi) {
+uint64_t Elf::getElfSize(const void* emi, const size_t buf_size) {
+  if (emi == nullptr || (buf_size != 0 && buf_size <= EI_CLASS)) {
+    return 0;
+  }
   const unsigned char eclass = static_cast<const unsigned char*>(emi)[EI_CLASS];
+  if (buf_size != 0 && ((eclass == ELFCLASS32 && buf_size < sizeof(Elf32_Ehdr)) ||
+                        (eclass == ELFCLASS64 && buf_size < sizeof(Elf64_Ehdr)))) {
+    return 0;
+  }
+
   uint64_t total_size = 0;
   if (eclass == ELFCLASS32) {
     auto ehdr = static_cast<const Elf32_Ehdr*>(emi);
+    if (buf_size != 0) {
+      if (ehdr->e_shoff >= buf_size) {
+        return 0;
+      }
+      if (static_cast<uint64_t>(ehdr->e_shnum) * sizeof(Elf32_Shdr) > buf_size - ehdr->e_shoff) {
+        return 0;
+      }
+    }
     auto shdr = reinterpret_cast<const Elf32_Shdr*>(static_cast<const char*>(emi) + ehdr->e_shoff);
 
     auto max_offset = ehdr->e_shoff;
-    total_size = max_offset + ehdr->e_shentsize * ehdr->e_shnum;
+    total_size = max_offset + ehdr->e_shentsize * static_cast<uint64_t>(ehdr->e_shnum);
 
     for (decltype(ehdr->e_shnum) i = 0; i < ehdr->e_shnum; ++i) {
       auto cur_offset = shdr[i].sh_offset;
@@ -822,10 +838,18 @@ uint64_t Elf::getElfSize(const void* emi) {
     }
   } else if (eclass == ELFCLASS64) {
     auto ehdr = static_cast<const Elf64_Ehdr*>(emi);
+    if (buf_size != 0) {
+      if (ehdr->e_shoff >= buf_size) {
+        return 0;
+      }
+      if (static_cast<uint64_t>(ehdr->e_shnum) * sizeof(Elf64_Shdr) > buf_size - ehdr->e_shoff) {
+        return 0;
+      }
+    }
     auto shdr = reinterpret_cast<const Elf64_Shdr*>(static_cast<const char*>(emi) + ehdr->e_shoff);
 
     auto max_offset = ehdr->e_shoff;
-    total_size = max_offset + ehdr->e_shentsize * ehdr->e_shnum;
+    total_size = max_offset + ehdr->e_shentsize * static_cast<uint64_t>(ehdr->e_shnum);
 
     for (decltype(ehdr->e_shnum) i = 0; i < ehdr->e_shnum; ++i) {
       auto cur_offset = shdr[i].sh_offset;
@@ -838,7 +862,7 @@ uint64_t Elf::getElfSize(const void* emi) {
       }
     }
   }
-  return total_size;
+  return (buf_size != 0 && total_size > buf_size) ? 0 : total_size;
 }
 
 bool Elf::isElfMagic(const char* p) {
