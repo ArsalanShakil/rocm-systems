@@ -9,6 +9,9 @@
 /// All mutable state is consolidated in InterposerContext.
 
 #include "rocjitsu/base/rj_compiler.h"
+#include "rocjitsu/config/config_loader.h"
+#include "rocjitsu/kmd/linux/guest_gpu_driver.h"
+#include "rocjitsu/kmd/linux/linux_kfd_driver.h"
 #include "rocjitsu/kmd/linux/remote_driver.h"
 #include "rocjitsu/kmd/linux/rpc.h"
 #include "rocjitsu/kmd/linux/simulated_driver.h"
@@ -22,18 +25,24 @@
 #include "util/dynamic_loader.h"
 #include "util/log.h"
 
+#include "embedded_schema.h"
+
 #include <cassert>
 #include <cerrno>
 #include <charconv>
 #include <csignal>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <exception>
 #include <fcntl.h>
 #include <linux/memfd.h>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <signal.h>
 #include <sstream>
 #include <string>
@@ -49,10 +58,13 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 extern "C" rocjitsu::ExecutionPlugin *createKernelLoggingPlugin();
 extern "C" rocjitsu::ExecutionPlugin *createRaceDetectorPlugin();
 
+using rocjitsu::GuestGPUDriver;
+using rocjitsu::LinuxKfdDriver;
 using rocjitsu::RemoteDriver;
 using rocjitsu::SimulatedDriver;
 using rocjitsu::Sysfs;
@@ -73,6 +85,32 @@ static int connect_to_daemon() {
 }
 
 namespace {
+
+/// @brief Return the child-process rocjitsu config path.
+///
+/// @details DBT guest mode receives `RJ_CONFIG` directly from the launcher so
+/// both KMD and HSA hook layers read the same JSON file. Normal local
+/// simulation keeps the older runtime config-file path because non-DBT launcher
+/// code and tests already use that handoff.
+std::optional<std::string> child_config_path() {
+  if (const char *path = std::getenv("RJ_CONFIG"); path != nullptr && *path != '\0')
+    return std::string(path);
+
+  auto cfg_file = rocjitsu::rpc_default_config_file_path();
+  char cfg_buf[4096]{};
+  int cfg_fd = static_cast<int>(syscall(SYS_openat, AT_FDCWD, cfg_file.c_str(), O_RDONLY, 0));
+  if (cfg_fd < 0)
+    return std::nullopt;
+
+  auto n = syscall(SYS_read, cfg_fd, cfg_buf, sizeof(cfg_buf) - 1);
+  syscall(SYS_close, cfg_fd);
+  if (n <= 0)
+    return std::nullopt;
+
+  while (n > 0 && (cfg_buf[n - 1] == '\n' || cfg_buf[n - 1] == '\r'))
+    cfg_buf[--n] = '\0';
+  return std::string(cfg_buf);
+}
 
 void rj_sigsegv_handler(int, siginfo_t *, void *) {
   signal(SIGSEGV, SIG_DFL);
@@ -165,6 +203,7 @@ public:
   /// the next open("/dev/kfd") creates a fresh connection.
   void reset_after_fork() {
     rj_vm_ = nullptr;
+    guest_driver_.reset();
     remote_ = nullptr;
     remote_kfd_fd_ = -1;
     new (&init_mutex_) std::mutex();
@@ -175,12 +214,18 @@ public:
     in_construction = false;
   }
 
-  SimulatedDriver *driver() { return rj_vm_ ? rj_vm_->vm->driver() : nullptr; }
+  LinuxKfdDriver *driver() {
+    if (guest_driver_)
+      return guest_driver_.get();
+    return rj_vm_ ? rj_vm_->vm->driver() : nullptr;
+  }
   int driver_fd() {
     auto *d = driver();
     return d ? d->fd() : -1;
   }
-  bool initialized() const { return rj_vm_ != nullptr || remote_ != nullptr; }
+  bool initialized() const {
+    return rj_vm_ != nullptr || guest_driver_ != nullptr || remote_ != nullptr;
+  }
 
   /// @brief Get the remote driver instance, or nullptr if not connected.
   RemoteDriver *remote() { return remote_; }
@@ -229,7 +274,7 @@ public:
     return remote_;
   }
 
-  SimulatedDriver *lookup(int fd) {
+  LinuxKfdDriver *lookup(int fd) {
     auto *d = driver();
     return (d && fd >= 0 && fd == d->fd()) ? d : nullptr;
   }
@@ -320,27 +365,39 @@ public:
     handle_to_drm_fd_[handle] = fd;
   }
 
-  SimulatedDriver *get_or_create() {
+  const Sysfs::GpuInfo *drm_gpu_info_for_handle(void *handle) {
+    int fd = drm_fd_for_handle(handle);
+    if (fd < 0)
+      return nullptr;
+    auto *d = driver();
+    return d ? d->gpu_info_for_render_minor(drm_render_minor(fd)) : nullptr;
+  }
+
+  LinuxKfdDriver *get_or_create() {
     std::lock_guard lock(init_mutex_);
-    if (!rj_vm_) {
+    if (!rj_vm_ && !guest_driver_) {
       in_construction = true;
-      auto cfg_file = rocjitsu::rpc_default_config_file_path();
-      char cfg_buf[4096]{};
-      int cfg_fd = static_cast<int>(syscall(SYS_openat, AT_FDCWD, cfg_file.c_str(), O_RDONLY, 0));
-      if (cfg_fd < 0) {
-        util::Logger::debug_print("rocjitsu: no config file at ", cfg_file);
+      std::optional<std::string> cfg_path = child_config_path();
+      if (!cfg_path) {
+        util::Logger::debug_print("rocjitsu: no child config path");
         in_construction = false;
         return nullptr;
       }
-      auto n = syscall(SYS_read, cfg_fd, cfg_buf, sizeof(cfg_buf) - 1);
-      syscall(SYS_close, cfg_fd);
-      if (n <= 0) {
+
+      try {
+        auto loaded = rocjitsu::config::load_config(*cfg_path, rocjitsu::kEmbeddedSchema);
+        if (loaded.dbt_guest.enabled) {
+          guest_driver_ = std::make_unique<GuestGPUDriver>(std::move(loaded.dbt_guest));
+          in_construction = false;
+          return driver();
+        }
+      } catch (const std::exception &e) {
+        util::Logger::debug_print("rocjitsu: failed to load child config: ", e.what());
         in_construction = false;
         return nullptr;
       }
-      while (n > 0 && (cfg_buf[n - 1] == '\n' || cfg_buf[n - 1] == '\r'))
-        cfg_buf[--n] = '\0';
-      if (rj_vm_create(cfg_buf, RJ_VM_MODE_LOCAL, &rj_vm_) != ROCJITSU_STATUS_SUCCESS) {
+
+      if (rj_vm_create(cfg_path->c_str(), RJ_VM_MODE_LOCAL, &rj_vm_) != ROCJITSU_STATUS_SUCCESS) {
         util::Logger::debug_print("rocjitsu: failed to create VM");
         in_construction = false;
         return nullptr;
@@ -405,6 +462,7 @@ public:
 
 private:
   rj_vm_t *rj_vm_ = nullptr;
+  std::unique_ptr<GuestGPUDriver> guest_driver_;
   RemoteDriver *remote_ = nullptr;
   int remote_kfd_fd_ = -1;
 
@@ -447,7 +505,7 @@ extern "C" {
 
 static std::string redirect_sysfs_path(const char *path);
 static std::string redirect_sys_dev_char(const char *path);
-static const Sysfs::GpuInfo *interposer_gpu_info();
+static const Sysfs::GpuInfo *interposer_gpu_info(uint32_t render_minor);
 
 int open(const char *path, int flags, ...) {
   mode_t mode = 0;
@@ -474,6 +532,11 @@ int open(const char *path, int flags, ...) {
     auto minor_str = std::string_view(path).substr(16);
     if (!minor_str.empty())
       render_minor = static_cast<uint32_t>(std::atoi(minor_str.data()));
+    auto *drv = InterposerContext::ctx.driver();
+    const bool local_handles_render = drv && drv->handles_drm_render_minor(render_minor);
+    const bool remote_handles_render = InterposerContext::ctx.remote_kfd_fd() >= 0;
+    if (!local_handles_render && !remote_handles_render)
+      return InterposerContext::real.openat(AT_FDCWD, path, flags, mode);
     auto raw_drm_fd = static_cast<int>(syscall(SYS_memfd_create, "rocjitsu_drm", MFD_CLOEXEC));
     if (raw_drm_fd >= 0) {
       int high_fd = fcntl(raw_drm_fd, F_DUPFD_CLOEXEC, 512);
@@ -760,7 +823,7 @@ int ioctl(int fd, unsigned long request, ...) {
           };
           if (info->return_size >= sizeof(drm_amdgpu_info_device)) {
             auto *dev = static_cast<drm_amdgpu_info_device *>(out);
-            auto *gpu = interposer_gpu_info();
+            auto *gpu = interposer_gpu_info(InterposerContext::ctx.drm_render_minor(fd));
             if (gpu) {
               dev->device_id = gpu->device_id;
               dev->family = gpu->family_id;
@@ -1005,14 +1068,23 @@ int munmap(void *addr, size_t length) {
 
 // -- libdrm interposition --
 
-int amdgpu_device_initialize(int /*fd*/, uint32_t *major_version, uint32_t *minor_version,
+int amdgpu_device_initialize(int fd, uint32_t *major_version, uint32_t *minor_version,
                              void **device_handle) {
+  if (!InterposerContext::ctx.is_drm(fd)) {
+    using fn_t = int (*)(int, uint32_t *, uint32_t *, void **);
+    static fn_t real_amdgpu_device_initialize =
+        util::lookup_symbol<fn_t>(RTLD_NEXT, "amdgpu_device_initialize");
+    return real_amdgpu_device_initialize
+               ? real_amdgpu_device_initialize(fd, major_version, minor_version, device_handle)
+               : -1;
+  }
   if (InterposerContext::ctx.driver_fd() < 0 && InterposerContext::ctx.remote_kfd_fd() < 0)
     return -1;
   *major_version = 3;
   *minor_version = 57;
   static int dummy_handle = 1;
   *device_handle = &dummy_handle;
+  InterposerContext::ctx.track_drm_handle(*device_handle, fd);
   return 0;
 }
 
@@ -1021,11 +1093,34 @@ int amdgpu_device_initialize2(int fd, bool /*deduplicate_device*/, uint32_t *maj
   return amdgpu_device_initialize(fd, major_version, minor_version, device_handle);
 }
 
-int amdgpu_device_deinitialize(void * /*device_handle*/) { return 0; }
+int amdgpu_device_deinitialize(void *device_handle) {
+  if (InterposerContext::ctx.drm_fd_for_handle(device_handle) < 0) {
+    using fn_t = int (*)(void *);
+    static fn_t real_amdgpu_device_deinitialize =
+        util::lookup_symbol<fn_t>(RTLD_NEXT, "amdgpu_device_deinitialize");
+    return real_amdgpu_device_deinitialize ? real_amdgpu_device_deinitialize(device_handle) : 0;
+  }
+  return 0;
+}
 
-int amdgpu_device_get_fd(void * /*device_handle*/) {
-  int fd = InterposerContext::ctx.remote_kfd_fd();
-  return fd >= 0 ? fd : InterposerContext::ctx.driver_fd();
+int amdgpu_device_get_fd(void *device_handle) {
+  int tracked_fd = InterposerContext::ctx.drm_fd_for_handle(device_handle);
+  if (tracked_fd >= 0)
+    return tracked_fd;
+  using fn_t = int (*)(void *);
+  static fn_t real_amdgpu_device_get_fd =
+      util::lookup_symbol<fn_t>(RTLD_NEXT, "amdgpu_device_get_fd");
+  return real_amdgpu_device_get_fd ? real_amdgpu_device_get_fd(device_handle) : -1;
+}
+
+const char *amdgpu_get_marketing_name(void *device_handle) {
+  if (const Sysfs::GpuInfo *gpu = InterposerContext::ctx.drm_gpu_info_for_handle(device_handle))
+    return gpu->marketing_name;
+
+  using fn_t = const char *(*)(void *);
+  static fn_t real_amdgpu_get_marketing_name =
+      util::lookup_symbol<fn_t>(RTLD_NEXT, "amdgpu_get_marketing_name");
+  return real_amdgpu_get_marketing_name ? real_amdgpu_get_marketing_name(device_handle) : nullptr;
 }
 
 // -- fopen / freopen interposition (sysfs redirect) --
@@ -1154,10 +1249,14 @@ static std::string redirect_sys_dev_char(const char *path) {
 
   std::string drm_base;
   auto *drv = InterposerContext::ctx.driver();
-  if (drv)
-    drm_base = drv->topology().drm_path();
-  else
+  if (drv) {
+    auto direct = drv->redirect_sysfs_path(path);
+    if (!direct.empty())
+      return direct;
+    drm_base = drv->drm_path();
+  } else {
     drm_base = InterposerContext::ctx.remote_drm_path();
+  }
   if (drm_base.empty())
     return {};
 
@@ -1170,10 +1269,21 @@ static std::string redirect_sys_dev_char(const char *path) {
   return drm_base + "/" + entry + suffix;
 }
 
-static const Sysfs::GpuInfo *interposer_gpu_info() {
+static const Sysfs::GpuInfo *interposer_gpu_info(uint32_t render_minor) {
   auto *drv = InterposerContext::ctx.driver();
   if (drv)
-    return &drv->topology().gpu_info();
+    return drv->gpu_info_for_render_minor(render_minor);
+  return nullptr;
+}
+
+static const Sysfs::GpuInfo *first_interposer_gpu_info() {
+  auto *drv = InterposerContext::ctx.driver();
+  if (!drv)
+    return nullptr;
+  for (uint32_t minor = 128; minor < 512; ++minor) {
+    if (auto *gpu = drv->gpu_info_for_render_minor(minor))
+      return gpu;
+  }
   return nullptr;
 }
 
@@ -1186,7 +1296,7 @@ static std::string redirect_dev_dri(const char *path) {
   std::string drm_base;
   auto *drv = InterposerContext::ctx.driver();
   if (drv)
-    drm_base = drv->topology().drm_path();
+    drm_base = drv->drm_path();
   else
     drm_base = InterposerContext::ctx.remote_drm_path();
   if (drm_base.empty())
@@ -1560,7 +1670,7 @@ int drmGetDevice(int fd, drmDevice **device) {
   *device = nullptr;
   if (!InterposerContext::real.ready() || !InterposerContext::ctx.is_drm(fd))
     return -ENODEV;
-  auto *gpu = interposer_gpu_info();
+  auto *gpu = interposer_gpu_info(InterposerContext::ctx.drm_render_minor(fd));
   if (!gpu)
     return -ENODEV;
   *device = alloc_drm_device(*gpu, 0);
@@ -1574,7 +1684,7 @@ int drmGetDevice2(int fd, uint32_t /*flags*/, drmDevice **device) {
 int drmGetDevices(drmDevice **devices, int max_devices) {
   if (!devices || max_devices <= 0)
     return 0;
-  auto *gpu = interposer_gpu_info();
+  auto *gpu = first_interposer_gpu_info();
   if (!gpu)
     return 0;
   devices[0] = alloc_drm_device(*gpu, 0);

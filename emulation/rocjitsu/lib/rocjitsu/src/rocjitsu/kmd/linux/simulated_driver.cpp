@@ -114,6 +114,20 @@ std::string SimulatedDriver::redirect_sysfs_path(const char *path) const {
   return {};
 }
 
+bool SimulatedDriver::handles_drm_render_minor(uint32_t minor) const {
+  if (topology().drm_path().empty())
+    return false;
+  if (num_gpus() <= 1)
+    return true;
+  return minor >= 128 && minor < 128 + num_gpus();
+}
+
+const Sysfs::GpuInfo *SimulatedDriver::gpu_info_for_render_minor(uint32_t /*minor*/) const {
+  if (topology().drm_path().empty())
+    return nullptr;
+  return &topology().gpu_info();
+}
+
 void SimulatedDriver::setup_topology(const config::KfdDeviceConfig &dev, uint32_t num_xcc) {
   if (!dev.present)
     return;

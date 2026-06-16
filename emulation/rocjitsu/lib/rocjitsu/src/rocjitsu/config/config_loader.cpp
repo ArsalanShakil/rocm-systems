@@ -6,10 +6,6 @@
 #include "rocjitsu/vm/virtual_machine.h"
 
 #include "rocjitsu/vm/amdgpu/command_processor.h"
-
-rocjitsu::SoC *rocjitsu::config::LoadedConfig::soc() {
-  return dynamic_cast<SoC *>(build_result.root.get());
-}
 #include "rocjitsu/vm/amdgpu/compute_unit.h"
 #include "rocjitsu/vm/amdgpu/gpu_memory.h"
 #include "rocjitsu/vm/amdgpu/hbm_controller.h"
@@ -37,6 +33,8 @@ rocjitsu::SoC *rocjitsu::config::LoadedConfig::soc() {
 
 namespace rocjitsu {
 namespace config {
+
+SoC *LoadedConfig::soc() { return dynamic_cast<SoC *>(build_result.root.get()); }
 
 namespace {
 
@@ -680,6 +678,54 @@ TopologyBuildResult build_topology(const fb::TopologyDef *topology_def, simdojo:
   return result;
 }
 
+/// @brief Convert a FlatBuffers KFD identity table into the runtime config form.
+///
+/// @details This copies only scalar/string topology values. The resulting
+/// config owns its marketing-name string so it is safe after the FlatBuffers
+/// parser storage goes out of scope.
+KfdDeviceConfig kfd_device_from_fb(const fb::KfdDeviceInfo *d) {
+  KfdDeviceConfig dev;
+  if (!d)
+    return dev;
+
+  dev.present = true;
+  dev.gpu_id = d->gpu_id();
+  dev.gfx_target_version = d->gfx_target_version();
+  dev.vendor_id = d->vendor_id();
+  dev.device_id = d->device_id();
+  dev.family_id = d->family_id();
+  dev.unique_id = d->unique_id();
+  if (d->marketing_name())
+    dev.marketing_name = d->marketing_name()->str();
+  dev.drm_render_minor = d->drm_render_minor();
+  dev.simd_count = d->simd_count();
+  dev.max_waves_per_simd = d->max_waves_per_simd();
+  dev.num_shader_engines = d->num_shader_engines();
+  dev.num_shader_arrays_per_engine = d->num_shader_arrays_per_engine();
+  dev.num_cu_per_sh = d->num_cu_per_sh();
+  dev.simd_per_cu = d->simd_per_cu();
+  dev.wave_front_size = d->wave_front_size();
+  dev.max_slots_scratch_cu = d->max_slots_scratch_cu();
+  dev.local_mem_size = d->local_mem_size();
+  dev.lds_size_kb = d->lds_size_kb();
+  dev.mem_width = d->mem_width();
+  dev.mem_clk_max = d->mem_clk_max();
+  dev.l1_size_kb = d->l1_size_kb();
+  dev.l1_line_size = d->l1_line_size();
+  dev.l1_assoc = d->l1_assoc();
+  dev.l2_size_kb = d->l2_size_kb();
+  dev.l2_line_size = d->l2_line_size();
+  dev.l2_assoc = d->l2_assoc();
+  dev.num_sdma_engines = d->num_sdma_engines();
+  dev.num_sdma_xgmi_engines = d->num_sdma_xgmi_engines();
+  dev.num_cp_queues = d->num_cp_queues();
+  dev.max_engine_clk_fcompute = d->max_engine_clk_fcompute();
+  dev.location_id = d->location_id();
+  dev.hive_id = d->hive_id();
+  dev.domain = d->domain();
+  return dev;
+}
+
 LoadedConfig build_from_fb(const rocjitsu::fb::SimulationConfig *fb_config) {
   LoadedConfig result;
   result.engine_config = engine_config_from_fb(fb_config);
@@ -699,43 +745,19 @@ LoadedConfig build_from_fb(const rocjitsu::fb::SimulationConfig *fb_config) {
 
   // Extract KFD device identity from vm.gpu.device if present.
   if (fb_config->vm() && fb_config->vm()->gpu() && fb_config->vm()->gpu()->device()) {
-    auto *d = fb_config->vm()->gpu()->device();
-    auto &dev = result.device;
-    dev.present = true;
-    dev.gpu_id = d->gpu_id();
-    dev.gfx_target_version = d->gfx_target_version();
-    dev.vendor_id = d->vendor_id();
-    dev.device_id = d->device_id();
-    dev.family_id = d->family_id();
-    dev.unique_id = d->unique_id();
-    if (d->marketing_name())
-      dev.marketing_name = d->marketing_name()->str();
-    dev.drm_render_minor = d->drm_render_minor();
-    dev.simd_count = d->simd_count();
-    dev.max_waves_per_simd = d->max_waves_per_simd();
-    dev.num_shader_engines = d->num_shader_engines();
-    dev.num_shader_arrays_per_engine = d->num_shader_arrays_per_engine();
-    dev.num_cu_per_sh = d->num_cu_per_sh();
-    dev.simd_per_cu = d->simd_per_cu();
-    dev.wave_front_size = d->wave_front_size();
-    dev.max_slots_scratch_cu = d->max_slots_scratch_cu();
-    dev.local_mem_size = d->local_mem_size();
-    dev.lds_size_kb = d->lds_size_kb();
-    dev.mem_width = d->mem_width();
-    dev.mem_clk_max = d->mem_clk_max();
-    dev.l1_size_kb = d->l1_size_kb();
-    dev.l1_line_size = d->l1_line_size();
-    dev.l1_assoc = d->l1_assoc();
-    dev.l2_size_kb = d->l2_size_kb();
-    dev.l2_line_size = d->l2_line_size();
-    dev.l2_assoc = d->l2_assoc();
-    dev.num_sdma_engines = d->num_sdma_engines();
-    dev.num_sdma_xgmi_engines = d->num_sdma_xgmi_engines();
-    dev.num_cp_queues = d->num_cp_queues();
-    dev.max_engine_clk_fcompute = d->max_engine_clk_fcompute();
-    dev.location_id = d->location_id();
-    dev.hive_id = d->hive_id();
-    dev.domain = d->domain();
+    result.device = kfd_device_from_fb(fb_config->vm()->gpu()->device());
+  }
+
+  if (auto *guest = fb_config->dbt_guest()) {
+    result.dbt_guest.enabled = guest->enabled();
+    if (guest->guest_isa())
+      result.dbt_guest.guest_isa = guest->guest_isa()->str();
+    if (guest->host_isa())
+      result.dbt_guest.host_isa = guest->host_isa()->str();
+    result.dbt_guest.host_gpu_id = guest->host_gpu_id();
+    result.dbt_guest.log_level = guest->log_level();
+    result.dbt_guest.signal_backtrace = guest->signal_backtrace();
+    result.dbt_guest.guest_device = kfd_device_from_fb(guest->guest_device());
   }
 
   if (fb_config->vm() && fb_config->vm()->gpu())

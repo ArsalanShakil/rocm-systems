@@ -7,8 +7,8 @@
 #include "rocjitsu/base/rj_compiler.h"
 #include "rocjitsu/config/config_loader.h"
 #include "rocjitsu/kmd/linux/kfd_process.h"
+#include "rocjitsu/kmd/linux/linux_kfd_driver.h"
 #include "rocjitsu/kmd/linux/sysfs.h"
-#include "rocjitsu/vm/driver.h"
 #include "rocjitsu/vm/soc.h"
 
 #include "simdojo/sim/simulation.h"
@@ -76,7 +76,7 @@ struct IpcObject {
 /// the process created by open(). The daemon uses the process_id-aware
 /// overloads so each client thread identifies itself by connection, not by
 /// shared mutable state.
-class SimulatedDriver : public Driver {
+class SimulatedDriver : public LinuxKfdDriver {
 public:
   [[nodiscard]] bool daemon_mode() const { return daemon_mode_; }
 
@@ -115,15 +115,18 @@ public:
   void setup_topology(const Sysfs::GpuInfo &gpu);
   void setup_topology(const config::KfdDeviceConfig &dev, uint32_t num_xcc);
   void setup_topology(const std::vector<config::KfdDeviceConfig> &devs, uint32_t num_xcc);
-  bool is_doorbell_range(const void *addr, size_t length) const;
+  bool is_doorbell_range(const void *addr, size_t length) const override;
   uint32_t gpu_id() const { return gpus_.empty() ? 0 : gpus_[0].gpu_id; }
   uint32_t num_gpus() const { return static_cast<uint32_t>(gpus_.size()); }
   const Sysfs &topology() const { return topology_; }
-  std::string topology_path() const { return topology_.path(); }
-  [[nodiscard]] int fd() const { return fd_; }
+  std::string topology_path() const override { return topology_.path(); }
+  std::string drm_path() const override { return topology_.drm_path(); }
+  [[nodiscard]] int fd() const override { return fd_; }
   [[nodiscard]] uint32_t local_process_id() const { return local_process_id_; }
-  [[nodiscard]] bool owns_fd(int fd) const;
-  std::string redirect_sysfs_path(const char *path) const;
+  [[nodiscard]] bool owns_fd(int fd) const override;
+  std::string redirect_sysfs_path(const char *path) const override;
+  [[nodiscard]] bool handles_drm_render_minor(uint32_t minor) const override;
+  [[nodiscard]] const Sysfs::GpuInfo *gpu_info_for_render_minor(uint32_t minor) const override;
   [[nodiscard]] int claim_fd(int real_fd);
   [[nodiscard]] bool owns_reserved_fd(int fd) const;
 
