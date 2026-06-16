@@ -41,7 +41,7 @@ class NDRange : public EmbeddedObject {
 
  public:
   //! Construct a new index space of the given dimensions.
-  explicit NDRange(size_t dimensions);
+  explicit NDRange(size_t dimensions) : dimensions_(dimensions) { *this = 0; }
 
   NDRange(size_t dataX, size_t dataY, size_t dataZ) : dimensions_(3) {
     data_[0] = dataX;
@@ -50,16 +50,16 @@ class NDRange : public EmbeddedObject {
   }
 
   //! Copy constructor.
-  NDRange(const NDRange& space);
+  NDRange(const NDRange& space) = default;
 
   //! Destroy the index space.
-  ~NDRange();
+  ~NDRange() = default;
 
   //! Copy operator
   inline NDRange& operator=(const NDRange& space);
 
   //! Make all elements of this space equal to x.
-  NDRange& operator=(size_t x);
+  inline NDRange& operator=(size_t x);
 
   //! Return the number of dimensions.
   size_t dimensions() const { return dimensions_; }
@@ -90,20 +90,20 @@ class NDRange : public EmbeddedObject {
   inline friend NDRange operator%(const NDRange& x, const NDRange& y);
 
   //! Return true if this index space is identical to \a x.
-  bool operator==(const NDRange& x) const;
+  inline bool operator==(const NDRange& x) const;
 
   //! Return true if this index space and \a x are different.
   bool operator!=(const NDRange& x) const { return !(*this == x); }
 
   //! Return true if all elements are equal to \a x.
-  bool operator==(size_t x) const;
+  inline bool operator==(size_t x) const;
 
   //! Return true if one element of this space is not equal to \a x.
   bool operator!=(size_t x) const { return !(*this == x); }
 
 #ifdef DEBUG
   //! Print this index space on the given stream.
-  void printOn(FILE* file) const;
+  inline void printOn(FILE* file) const;
 #endif  // DEBUG
 
   const size_t* Data() const { return data_; }
@@ -279,6 +279,13 @@ inline NDRange& NDRange::operator=(const NDRange& space) {
   return *this;
 }
 
+inline NDRange& NDRange::operator=(size_t x) {
+  for (size_t i = 0; i < dimensions_; ++i) {
+    data_[i] = x;
+  }
+  return *this;
+}
+
 #define DEFINE_NDRANGE_BINARY_OP(op)                                                               \
   inline NDRange operator op(const NDRange& x, const NDRange& y) {                                 \
     assert(x.dimensions_ == y.dimensions_ && "dimensions mismatch");                               \
@@ -299,6 +306,36 @@ DEFINE_NDRANGE_BINARY_OP(/);
 DEFINE_NDRANGE_BINARY_OP(%);
 
 #undef DEFINE_NDRANGE_BINARY_OP
+
+inline bool NDRange::operator==(const NDRange& x) const {
+  assert(dimensions_ == x.dimensions_ && "dimensions mismatch");
+
+  for (size_t i = 0; i < dimensions_; ++i) {
+    if (data_[i] != x.data_[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool NDRange::operator==(size_t x) const {
+  for (size_t i = 0; i < dimensions_; ++i) {
+    if (data_[i] != x) {
+      return false;
+    }
+  }
+  return true;
+}
+
+#ifdef DEBUG
+inline void NDRange::printOn(FILE* file) const {
+  fprintf(file, "[");
+  for (size_t i = dimensions_ - 1; i > 0; --i) {
+    fprintf(file, SIZE_T_FMT ", ", data_[i]);
+  }
+  fprintf(file, SIZE_T_FMT "]", data_[0]);
+}
+#endif  // DEBUG
 
 }  // namespace amd
 
