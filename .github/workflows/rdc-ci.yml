@@ -51,6 +51,8 @@ jobs:
           gzip \
           jq \
           libcap-dev \
+          libdrm-dev \
+          pkg-config \
           tar \
           unzip \
           wget \
@@ -65,6 +67,18 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-rdc-ccache-${{ github.ref_name }}-
           ${{ runner.os }}-rdc-ccache-
+
+    - name: Build and install amd-smi
+      working-directory: projects/amdsmi
+      run: |
+        cmake -B build \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+          -DCMAKE_INSTALL_PREFIX=${ROCM_DIR} \
+          -DENABLE_ESMI_LIB=OFF
+        make -C build -j $(nproc)
+        make -C build install
 
     - name: Build RDC
       run: |
