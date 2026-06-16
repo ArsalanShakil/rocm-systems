@@ -52,6 +52,9 @@ jobs:
           jq \
           libcap-dev \
           libdrm-dev \
+          libmnl-dev \
+          libnl-3-dev \
+          libnl-genl-3-dev \
           pkg-config \
           tar \
           unzip \
