@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023-2025 Advanced Micro Devices, Inc.
+// Copyright (c) 2023-2026 Advanced Micro Devices, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -130,9 +130,9 @@ struct config : output_config
     bool   hip_runtime_api_trace         = get_env("ROCPROF_HIP_RUNTIME_API_TRACE", false);
     bool   hip_compiler_api_trace        = get_env("ROCPROF_HIP_COMPILER_API_TRACE", false);
     bool   rccl_api_trace                = get_env("ROCPROF_RCCL_API_TRACE", false);
-    bool   ompt_trace                    = get_env("ROCPROF_OMPT_TRACE", false);
     bool   rocdecode_api_trace           = get_env("ROCPROF_ROCDECODE_API_TRACE", false);
     bool   rocjpeg_api_trace             = get_env("ROCPROF_ROCJPEG_API_TRACE", false);
+    bool   ompt_trace                    = get_env("ROCPROF_OMPT_TRACE", false);
     bool   list_metrics                  = get_env("ROCPROF_LIST_METRICS", false);
     bool   list_metrics_output_file      = get_env("ROCPROF_OUTPUT_LIST_METRICS_FILE", false);
     bool   advanced_thread_trace         = get_env("ROCPROF_ADVANCED_THREAD_TRACE", false);
@@ -219,9 +219,9 @@ config::get_attach_invariants() const
                            hip_runtime_api_trace,
                            hip_compiler_api_trace,
                            rccl_api_trace,
-                           ompt_trace,
                            rocdecode_api_trace,
                            rocjpeg_api_trace,
+                           ompt_trace,
                            advanced_thread_trace,
                            att_serialize_all,
                            att_param_shader_engine_mask,
@@ -289,10 +289,10 @@ config::save(ArchiveT& ar) const
     CFG_SERIALIZE_MEMBER(hip_runtime_api_trace);
     CFG_SERIALIZE_MEMBER(hip_compiler_api_trace);
     CFG_SERIALIZE_MEMBER(rccl_api_trace);
-    CFG_SERIALIZE_MEMBER(ompt_trace);
-    CFG_SERIALIZE_MEMBER(ompt_trace_operations);
     CFG_SERIALIZE_MEMBER(rocdecode_api_trace);
     CFG_SERIALIZE_MEMBER(rocjpeg_api_trace);
+    CFG_SERIALIZE_MEMBER(ompt_trace);
+    CFG_SERIALIZE_MEMBER(ompt_trace_operations);
 
     CFG_SERIALIZE_MEMBER(mpi_rank);
     CFG_SERIALIZE_MEMBER(mpi_size);

@@ -6,6 +6,11 @@ Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projec
 
 ### Added
 
+- OpenMP (OMPT) tracing support for rocprofv3: new `--ompt-trace` flag to trace OpenMP Tools (OMPT) events.
+  - Accepts a bare boolean or a space-separated category list (`all, thread, parallel, task, sync, mutex, target, device, error`).
+  - Folded into `--sys-trace` and `--runtime-trace`, and configurable via `ROCPROF_OMPT_TRACE` / `ROCPROF_OMPT_TRACE_OPERATIONS`.
+  - OMPT records are emitted in all output formats (CSV, JSON, Perfetto, OTF2, rocpd) plus the stats CSV.
+
 ### Changed
 - Bump rocpd schema to version 3.0.1 which supports NIC agent types.
 

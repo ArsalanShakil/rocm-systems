@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023-2025 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2023-2026 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -28,8 +28,14 @@
 #include <string>
 #include <string_view>
 
+namespace
+{
 constexpr float  EPS_FLOAT  = 1.0e-7f;
 constexpr double EPS_DOUBLE = 1.0e-15;
+
+// Number of times the target kernel repeats the multiply per element. Kept as a
+// tunable constant so the kernel can be made heavier for timing-sensitive tests.
+constexpr int INNER_ITERS = 1;
 
 #pragma omp declare target
 template <typename T>
@@ -41,10 +47,6 @@ mul(T a, T b)
 }
 #pragma omp end declare target
 
-#ifndef ROCPROFILER_OPENMP_TARGET_INNER_ITERS
-#    define ROCPROFILER_OPENMP_TARGET_INNER_ITERS 1
-#endif
-
 template <typename T>
 void
 vmul(T* a, T* b, T* c, int N)
@@ -53,10 +55,11 @@ vmul(T* a, T* b, T* c, int N)
 #pragma omp teams distribute parallel for
     for(int i = 0; i < N; i++)
     {
-        for(int j = 0; j < ROCPROFILER_OPENMP_TARGET_INNER_ITERS; ++j)
+        for(int j = 0; j < INNER_ITERS; ++j)
             c[i] = mul(a[i], b[i]);
     }
 }
+}  // namespace
 
 int
 main(int argc, char** argv)

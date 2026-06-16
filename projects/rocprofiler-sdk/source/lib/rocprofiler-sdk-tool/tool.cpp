@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023-2025 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2023-2026 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -204,11 +204,11 @@ struct buffer_ids
     rocprofiler_buffer_id_t counter_collection      = {};
     rocprofiler_buffer_id_t scratch_memory          = {};
     rocprofiler_buffer_id_t rccl_api_trace          = {};
-    rocprofiler_buffer_id_t ompt_trace              = {};
     rocprofiler_buffer_id_t pc_sampling_host_trap   = {};
     rocprofiler_buffer_id_t rocdecode_api_trace     = {};
     rocprofiler_buffer_id_t rocjpeg_api_trace       = {};
     rocprofiler_buffer_id_t pc_sampling_stochastic  = {};
+    rocprofiler_buffer_id_t ompt_trace              = {};
 
     auto as_array() const
     {
@@ -221,11 +221,11 @@ struct buffer_ids
                                                        counter_collection,
                                                        scratch_memory,
                                                        rccl_api_trace,
-                                                       ompt_trace,
                                                        pc_sampling_host_trap,
                                                        rocdecode_api_trace,
                                                        rocjpeg_api_trace,
-                                                       pc_sampling_stochastic};
+                                                       pc_sampling_stochastic,
+                                                       ompt_trace};
     }
     auto pc_sampling_buffers_as_array() const
     {
@@ -2435,6 +2435,14 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
         std::vector<rocprofiler_tracing_operation_t> operations = {};
     };
 
+    // Resolve the --ompt-trace category list (forwarded via ROCPROF_OMPT_TRACE_OPERATIONS)
+    // into the explicit operation IDs that rocprofiler_configure_buffer_tracing_service
+    // expects. Contract:
+    //   (a) an empty input string returns an empty vector, i.e. the "all operations" case;
+    //   (b) the SDK interprets num_operations == 0 as "enable every operation in the
+    //       domain", so an empty vector means trace all OMPT ops (no filtering);
+    //   (c) any unknown category token is fatal (ROCP_FATAL aborts the run) rather than
+    //       silently skipped, so a typo can never be misread as the "all operations" case.
     auto resolve_ompt_ops = [](const std::string& csv) {
         using ompt_ops_t                 = std::vector<rocprofiler_tracing_operation_t>;
         static const auto category_table = std::unordered_map<std::string_view, ompt_ops_t>{
@@ -2530,10 +2538,6 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                       buffer_service_config{tool::get_config().rccl_api_trace,
                                             ROCPROFILER_BUFFER_TRACING_RCCL_API,
                                             get_buffers().rccl_api_trace},
-                      buffer_service_config{tool::get_config().ompt_trace,
-                                            ROCPROFILER_BUFFER_TRACING_OMPT,
-                                            get_buffers().ompt_trace,
-                                            ompt_ops},
                       buffer_service_config{tool::get_config().memory_allocation_trace,
                                             ROCPROFILER_BUFFER_TRACING_MEMORY_ALLOCATION,
                                             get_buffers().memory_allocation_trace},
@@ -2564,7 +2568,11 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                                             get_buffers().kfd_trace},
                       buffer_service_config{tool::get_config().kfd_queue_trace,
                                             ROCPROFILER_BUFFER_TRACING_KFD_QUEUE,
-                                            get_buffers().kfd_trace}})
+                                            get_buffers().kfd_trace},
+                      buffer_service_config{tool::get_config().ompt_trace,
+                                            ROCPROFILER_BUFFER_TRACING_OMPT,
+                                            get_buffers().ompt_trace,
+                                            ompt_ops}})
 
     {
         if(itr.option)
@@ -2647,9 +2655,6 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                       callback_service_config{tool::get_config().rccl_api_trace,
                                               ROCPROFILER_CALLBACK_TRACING_RCCL_API,
                                               dummy_callback_tracing_callback},
-                      callback_service_config{tool::get_config().ompt_trace,
-                                              ROCPROFILER_CALLBACK_TRACING_OMPT,
-                                              dummy_callback_tracing_callback},
                       callback_service_config{tool::get_config().memory_allocation_trace,
                                               ROCPROFILER_CALLBACK_TRACING_MEMORY_ALLOCATION,
                                               dummy_callback_tracing_callback},
@@ -2658,6 +2663,9 @@ tool_init(rocprofiler_client_finalize_t fini_func, void* tool_data)
                                               dummy_callback_tracing_callback},
                       callback_service_config{tool::get_config().rocjpeg_api_trace,
                                               ROCPROFILER_CALLBACK_TRACING_ROCJPEG_API,
+                                              dummy_callback_tracing_callback},
+                      callback_service_config{tool::get_config().ompt_trace,
+                                              ROCPROFILER_CALLBACK_TRACING_OMPT,
                                               dummy_callback_tracing_callback}})
     {
         if(itr.option)
@@ -3322,13 +3330,13 @@ generate_output(cleanup_mode _cleanup_mode)
                          scratch_memory_output.get_generator(),
                          kfd_output.get_generator(),
                          rccl_output.get_generator(),
-                         ompt_output.get_generator(),
                          memory_allocation_output.get_generator(),
                          rocdecode_output.get_generator(),
                          rocjpeg_output.get_generator(),
                          pc_sampling_host_trap_output.get_generator(),
                          pc_sampling_stochastic_output.get_generator(),
-                         spm_counters_output.get_generator());
+                         spm_counters_output.get_generator(),
+                         ompt_output.get_generator());
         json_ar.finish_process();
 
         tool::close_json(json_ar);
@@ -3348,10 +3356,10 @@ generate_output(cleanup_mode _cleanup_mode)
                              marker_output.get_generator(),
                              scratch_memory_output.get_generator(),
                              rccl_output.get_generator(),
-                             ompt_output.get_generator(),
                              memory_allocation_output.get_generator(),
                              rocdecode_output.get_generator(),
-                             rocjpeg_output.get_generator());
+                             rocjpeg_output.get_generator(),
+                             ompt_output.get_generator());
     }
 
     if(tool::get_config().rocpd_output && outdata.num_output > 0 &&
@@ -3369,10 +3377,10 @@ generate_output(cleanup_mode _cleanup_mode)
                           scratch_memory_output.get_generator(),
                           kfd_output.get_generator(),
                           rccl_output.get_generator(),
-                          ompt_output.get_generator(),
                           rocdecode_output.get_generator(),
                           counters_output.get_generator(),
-                          spm_counters_output.get_generator());
+                          spm_counters_output.get_generator(),
+                          ompt_output.get_generator());
     }
 
     if(tool::get_config().otf2_output && outdata.num_output > 0 &&
@@ -3401,10 +3409,10 @@ generate_output(cleanup_mode _cleanup_mode)
                          &marker_elem_data,
                          &scratch_memory_elem_data,
                          &rccl_elem_data,
-                         &ompt_elem_data,
                          &memory_allocation_elem_data,
                          &rocdecode_elem_data,
-                         &rocjpeg_elem_data);
+                         &rocjpeg_elem_data,
+                         &ompt_elem_data);
     }
 
     if(tool::get_config().summary_output && outdata.num_output > 0 &&

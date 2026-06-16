@@ -2,7 +2,7 @@
 
 # MIT License
 #
-# Copyright (c) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2024-2026 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -223,6 +223,9 @@ def test_ompt_target_correlates_with_kernel_dispatch(json_data):
         )
 
     kind_entry = _get_ompt_kind_record(data)
+    assert (
+        kind_entry is not None
+    ), f"strings.buffer_records has no '{OMPT_KIND_NAME}' entry"
     op_names = kind_entry["operations"]
 
     target_submit_records = [
@@ -355,6 +358,9 @@ def test_rocpd_contains_ompt_records(rocpd_conn, json_data):
 
     # Invariant #3: target_* per-op counts must match between JSON and rocpd.
     kind_entry = _get_ompt_kind_record(data)
+    assert (
+        kind_entry is not None
+    ), f"strings.buffer_records has no '{OMPT_KIND_NAME}' entry"
     op_names = kind_entry["operations"]
     js_op_counts = Counter(op_names[r["operation"]] for r in js_ompt)
     rocpd_op_counts = _rocpd_ompt_region_op_counts(cur, tables)
@@ -401,6 +407,9 @@ def test_granular_target_filter_only_target_ops(json_data):
         )
 
     kind_entry = _get_ompt_kind_record(data)
+    assert (
+        kind_entry is not None
+    ), f"strings.buffer_records has no '{OMPT_KIND_NAME}' entry"
     op_names = kind_entry["operations"]
 
     seen_ops = {op_names[r["operation"]] for r in ompt_records}
@@ -443,6 +452,9 @@ def _seen_ompt_ops(json_data):
     if not ompt_records:
         return None
     kind_entry = _get_ompt_kind_record(data)
+    assert (
+        kind_entry is not None
+    ), f"strings.buffer_records has no '{OMPT_KIND_NAME}' entry"
     op_names = kind_entry["operations"]
     return {op_names[r["operation"]] for r in ompt_records}
 

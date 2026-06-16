@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023-2025 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2023-2026 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -52,7 +52,6 @@ DEFINE_BUFFER_TYPE_NAME(COUNTER_COLLECTION,
                         "counter_collection",
                         "counter_collection_stats")
 DEFINE_BUFFER_TYPE_NAME(RCCL, "RCCL_API", "rccl_api_trace", "rccl_api_stats")
-DEFINE_BUFFER_TYPE_NAME(OMPT, "OMPT", "ompt_trace", "ompt_stats")
 DEFINE_BUFFER_TYPE_NAME(MEMORY_ALLOCATION,
                         "MEMORY_ALLOCATION",
                         "memory_allocation_trace",
@@ -77,6 +76,7 @@ DEFINE_BUFFER_TYPE_NAME(SPM_COUNTER_VALUES,
                         "SPM_COUNTER_VALUES",
                         "SPM_counter_values",
                         "SPM_counter_values")
+DEFINE_BUFFER_TYPE_NAME(OMPT, "OMPT", "ompt_trace", "ompt_stats")
 
 #undef DEFINE_BUFFER_TYPE_NAME
 
