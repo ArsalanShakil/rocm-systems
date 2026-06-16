@@ -983,6 +983,55 @@ code_object_tracing_callback(rocprofiler_callback_tracing_record_t record,
                 std::string output_filename =
                     get_output_filename(tool::get_config(), filename, ".out");
 
+                // Debug: validate memory_base before writing — detects freed/unmapped memory
+                // and non-ELF data, both of which produce an unloadable .out file.
+                // NOLINTNEXTLINE(performance-no-int-to-ptr)
+                const auto* mem_ptr = reinterpret_cast<const char*>(obj_data->memory_base);
+                ROCP_ERROR_IF(obj_data->memory_base == 0)
+                    << "[ATT codeobj] memory_base is null for code_object_id="
+                    << obj_data->code_object_id;
+
+                // mincore() returns ENOMEM if any page in the range is not mapped — a
+                // reliable indicator that the pointer is dangling (freed heap or unmapped).
+                if(obj_data->memory_base != 0 && obj_data->memory_size != 0)
+                {
+                    const auto  page_size = static_cast<size_t>(::getpagesize());
+                    const auto  base_addr = obj_data->memory_base & ~(page_size - 1);
+                    const auto  end_addr =
+                        (obj_data->memory_base + obj_data->memory_size + page_size - 1) &
+                        ~(page_size - 1);
+                    const auto  npages = (end_addr - base_addr) / page_size;
+                    auto        vec    = std::vector<unsigned char>(npages, 0);
+                    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+                    int rc          = ::mincore(reinterpret_cast<void*>(base_addr),
+                                           end_addr - base_addr,
+                                           vec.data());
+                    int mincore_err = errno;
+                    ROCP_ERROR_IF(rc != 0)
+                        << "[ATT codeobj] memory_base=0x" << std::hex << obj_data->memory_base
+                        << " size=" << std::dec << obj_data->memory_size
+                        << " is not mapped (mincore errno=" << mincore_err
+                        << ") — code object data is likely from freed memory."
+                        << " code_object_id=" << obj_data->code_object_id;
+
+                    // ELF magic check: first 4 bytes must be 0x7f 'E' 'L' 'F'
+                    if(rc == 0 && obj_data->memory_size >= 4)
+                    {
+                        const bool has_elf_magic = (mem_ptr[0] == '\x7f' && mem_ptr[1] == 'E' &&
+                                                    mem_ptr[2] == 'L' && mem_ptr[3] == 'F');
+                        ROCP_ERROR_IF(!has_elf_magic)
+                            << "[ATT codeobj] memory_base=0x" << std::hex << obj_data->memory_base
+                            << " does not start with ELF magic (got 0x" << std::hex
+                            << static_cast<unsigned>(static_cast<uint8_t>(mem_ptr[0])) << " 0x"
+                            << static_cast<unsigned>(static_cast<uint8_t>(mem_ptr[1])) << " 0x"
+                            << static_cast<unsigned>(static_cast<uint8_t>(mem_ptr[2])) << " 0x"
+                            << static_cast<unsigned>(static_cast<uint8_t>(mem_ptr[3])) << std::dec
+                            << ") — data is corrupt or from freed memory."
+                            << " code_object_id=" << obj_data->code_object_id
+                            << " size=" << obj_data->memory_size;
+                    }
+                }
+
                 // NOLINTNEXTLINE(performance-no-int-to-ptr)
                 output_stream.stream->write(reinterpret_cast<char*>(obj_data->memory_base),
                                             obj_data->memory_size);
@@ -1024,10 +1073,14 @@ code_object_tracing_callback(rocprofiler_callback_tracing_record_t record,
                         binary = nullptr;
                     }
                 }
-                // NOLINTBEGIN(performance-no-int-to-ptr)
-                output_stream.stream->write(reinterpret_cast<char*>(obj_data->memory_base),
-                                            obj_data->memory_size);
-                // NOLINTEND(performance-no-int-to-ptr)
+                ROCP_ERROR_IF(!binary)
+                    << "[ATT codeobj] failed to read code object from file uri=" << obj_data->uri
+                    << " code_object_id=" << obj_data->code_object_id;
+                if(binary)
+                {
+                    output_stream.stream->write(reinterpret_cast<char*>(binary), buffer_size);
+                    delete[] binary;
+                }
                 tool_metadata->code_object_load.wlock(
                     [](auto&                                 data_vec,
                        std::string                           file_name,
