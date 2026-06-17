@@ -264,7 +264,7 @@ class AMDSMICommands(
 
         except ImportError as e:
             error_code = 192
-            logging.error(f"Could not import ROCm-SMI compatibility module: {e}", file=sys.stderr)
+            logging.error(f"Could not import ROCm-SMI compatibility module: {e}")
             logging.error(
                 "Make sure amdsmi_rocm_smi_compat.py is in the amdsmi_cli directory",
                 file=sys.stderr,

@@ -999,7 +999,7 @@ def main():
     try:
         import amdsmi
         from amdsmi import amdsmi_interface
-    except ImportError:
+    except ImportError as e:
         error_code = 192
         print("Could not import amdsmi module", file=sys.stderr)
         print("Install with: pip install amdsmi", file=sys.stderr)
