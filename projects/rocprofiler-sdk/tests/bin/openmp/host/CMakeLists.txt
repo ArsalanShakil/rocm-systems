@@ -2,8 +2,6 @@
 #
 #
 
-set(CMAKE_BUILD_TYPE "RelWithDebInfo")
-
 find_package(Threads REQUIRED)
 
 add_executable(openmp-host)
