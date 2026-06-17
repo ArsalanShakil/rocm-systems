@@ -8,6 +8,7 @@
 #include "hipfile-warnings.h"
 #include "hipfile.h"
 
+#include "ais-capability.h"
 #include "test-common.h"
 #include "test-options.h"
 
@@ -63,6 +64,8 @@ struct HipFileIo : public testing::TestWithParam<IoTestParam> {
         // Enable the desired backend
         switch (GetParam().backend) {
             case IoTestBackend::Fastpath:
+                if (!hipFile::test::fastpathAvailable())
+                    GTEST_SKIP() << "SKIP: fastpath not available in this environment";
                 Context<Configuration>::get()->fastpath(true);
                 break;
 
@@ -131,6 +134,9 @@ struct HipFileIoHipInit : public testing::Test {
 
     void SetUp() override
     {
+        if (!hipFile::test::fastpathAvailable())
+            GTEST_SKIP() << "SKIP: fastpath not available in this environment";
+
         Context<Configuration>::get()->fastpath(true);
         Context<Configuration>::get()->fallback(false);
 
