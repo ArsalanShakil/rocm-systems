@@ -119,8 +119,12 @@ def rdcd_server(rdcd_path, has_gpu):
 
 
 def run_rdci(rdci_path, *args, timeout=30):
-    """Run rdci with the given arguments and return CompletedProcess."""
-    cmd = [rdci_path, "-u"] + list(args)
+    """Run rdci with the given subsystem arguments and return CompletedProcess."""
+    cmd = [rdci_path] + list(args)
+    if len(cmd) > 1:
+        cmd.insert(2, "-u")
+    else:
+        cmd.append("-u")
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 

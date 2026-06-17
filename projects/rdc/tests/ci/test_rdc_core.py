@@ -52,9 +52,11 @@ class TestInstallation:
 class TestCLIUsage:
     """Verify rdci prints help and rejects invalid input gracefully."""
 
-    def test_rdci_help(self, rdci_path):
-        result = subprocess.run([rdci_path, "--help"], capture_output=True, text=True, timeout=10)
+    @pytest.mark.parametrize("flag", ["--help", "-h"])
+    def test_rdci_help(self, rdci_path, flag):
+        result = subprocess.run([rdci_path, flag], capture_output=True, text=True, timeout=10)
         combined = (result.stdout + result.stderr).lower()
+        assert result.returncode == 0
         assert "usage" in combined or "subsystem" in combined or len(combined) > 0
 
     @pytest.mark.parametrize(
@@ -84,7 +86,9 @@ class TestCLIUsage:
         result = subprocess.run(
             [rdci_path, "nonexistent_command"], capture_output=True, text=True, timeout=10
         )
+        combined = (result.stdout + result.stderr).lower()
         assert result.returncode != 0
+        assert "unknown subsystem" in combined or "usage" in combined
 
     def test_invalid_args_to_group(self, rdci_path):
         result = subprocess.run(
@@ -118,13 +122,13 @@ class TestDiscovery:
     """Verify GPU discovery via rdci."""
 
     def test_discovery_lists_gpus(self, rdci_path, rdcd_server):
-        r = run_rdci(rdci_path, "discovery", "localhost")
+        r = run_rdci(rdci_path, "discovery", "-l")
         assert r.returncode == 0, f"rdci discovery failed: {r.stderr}"
         lines = r.stdout.strip().splitlines()
         assert len(lines) >= 1, "No GPUs discovered"
 
     def test_discovery_shows_attributes(self, rdci_path, rdcd_server):
-        r = run_rdci(rdci_path, "discovery", "localhost", "-i")
+        r = run_rdci(rdci_path, "discovery", "-i")
         assert r.returncode == 0, f"rdci discovery -i failed: {r.stderr}"
 
 
@@ -226,7 +230,7 @@ class TestNegativeCLI:
 
     def test_dmon_no_daemon(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "dmon", "-f", "100", "-c", "1", "--host", "localhost:59999"],
+            [rdci_path, "dmon", "-u", "-f", "100", "-c", "1", "--host", "localhost:59999"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -235,7 +239,7 @@ class TestNegativeCLI:
 
     def test_stats_no_daemon(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "stats", "-j", "nonexistent", "--host", "localhost:59999"],
+            [rdci_path, "stats", "-u", "-j", "nonexistent", "--host", "localhost:59999"],
             capture_output=True,
             text=True,
             timeout=15,

@@ -29,9 +29,9 @@ class TestGoogleTestSuite:
             f"rdctst batch mode failed (rc={result.returncode}):\n{result.stderr[-2000:]}"
         )
 
-    def test_rdctst_list_tests(self, rdctst_path):
+    def test_rdctst_help(self, rdctst_path):
         result = subprocess.run(
-            [rdctst_path, "--gtest_list_tests"], capture_output=True, text=True, timeout=30
+            [rdctst_path, "--rdctst_help"], capture_output=True, text=True, timeout=30
         )
-        combined = result.stdout + result.stderr
-        assert len(combined) > 0, "rdctst --gtest_list_tests produced no output"
+        combined = (result.stdout + result.stderr).lower()
+        assert "batch_mode" in combined or "rdctst_help" in combined

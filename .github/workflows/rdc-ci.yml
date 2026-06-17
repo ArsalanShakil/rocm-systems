@@ -173,7 +173,7 @@ jobs:
       run: |
         apt update -y
         apt install -y python3 python3-pip
-        pip3 install pytest
+        pip3 install pytest prometheus_client
 
     - name: Download RDC packages
       uses: actions/download-artifact@v4
@@ -191,6 +191,12 @@ jobs:
         test "${#RDC_DEBS[@]}" -eq '2'
         dpkg --force-all -i "${AMD_SMI_DEBS[@]}"
         dpkg --force-all -i "${RDC_DEBS[@]}"
+
+    - name: Configure RDC runtime library path
+      shell: bash
+      working-directory: .
+      run: |
+        echo "LD_LIBRARY_PATH=${ROCM_DIR}/lib:${ROCM_DIR}/lib/rdc:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
     - name: Verify RDC installation
       shell: bash
@@ -277,13 +283,13 @@ jobs:
       env:
         RDC_SRC_DIR: ${{ github.workspace }}/projects/rdc/python_binding
 
-    - name: "Test GTest: rdctst --gtest_list_tests"
+    - name: "Test GTest: rdctst help"
       shell: bash
       run: |
         python3 -m pytest tests/ci/test_gtest_runner.py \
-          -k "test_rdctst_list_tests" \
+          -k "test_rdctst_help" \
           -v --tb=short \
-          --junitxml=build/test-results-gtest-list.xml
+          --junitxml=build/test-results-gtest-help.xml
 
     - name: Upload test results
       if: always()
@@ -315,7 +321,7 @@ jobs:
       run: |
         apt update -y
         apt install -y python3 python3-pip
-        pip3 install pytest
+        pip3 install pytest prometheus_client
 
     - name: Download RDC packages
       uses: actions/download-artifact@v4
@@ -333,6 +339,12 @@ jobs:
         test "${#RDC_DEBS[@]}" -eq '2'
         dpkg --force-all -i "${AMD_SMI_DEBS[@]}"
         dpkg --force-all -i "${RDC_DEBS[@]}"
+
+    - name: Configure RDC runtime library path
+      shell: bash
+      working-directory: .
+      run: |
+        echo "LD_LIBRARY_PATH=${ROCM_DIR}/lib:${ROCM_DIR}/lib/rdc:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
     - name: "Test 4.1: RDC Core / CLI (with GPU + daemon)"
       shell: bash

@@ -44,8 +44,8 @@ class TestUnitConversion:
         try:
             from rdc_bootstrap import rdc_field_t
 
-            assert isinstance(rdc_field_t.RDC_FI_GPU_TEMP.value, int)
-            assert isinstance(rdc_field_t.RDC_FI_POWER_USAGE.value, int)
+            for field_id in (rdc_field_t.RDC_FI_GPU_TEMP, rdc_field_t.RDC_FI_POWER_USAGE):
+                assert isinstance(getattr(field_id, "value", field_id), int)
         finally:
             sys.path.pop(0)
 

@@ -22,14 +22,17 @@ class TestAuthErrors:
 
     def test_missing_certs_connection_fails(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "discovery", "localhost"], capture_output=True, text=True, timeout=15
+            [rdci_path, "discovery", "-l", "--host", "localhost:59999"],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         assert r.returncode != -11, "rdci segfaulted (SIGSEGV)"
         assert r.returncode != 0, "Should fail without valid certs/daemon"
 
     def test_wrong_port_connection_refused(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "discovery", "localhost:59999"],
+            [rdci_path, "discovery", "-u", "-l", "--host", "localhost:59999"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -46,7 +49,7 @@ class TestClientBeforeDaemon:
 
     def test_rdci_dmon_no_daemon(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "dmon", "-f", "100", "-c", "1", "--host", "localhost:59998"],
+            [rdci_path, "dmon", "-u", "-f", "100", "-c", "1", "--host", "localhost:59998"],
             capture_output=True,
             text=True,
             timeout=15,
@@ -56,21 +59,23 @@ class TestClientBeforeDaemon:
 
     def test_rdci_stats_no_daemon(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "stats", "-s", "no_daemon_job", "--host", "localhost:59998"],
+            [rdci_path, "stats", "-u", "-s", "no_daemon_job", "--host", "localhost:59998"],
             capture_output=True,
             text=True,
             timeout=15,
         )
         assert r.returncode != -11, "rdci segfaulted"
+        assert r.returncode != 0, "Should fail without daemon"
 
     def test_rdci_group_create_no_daemon(self, rdci_path):
         r = subprocess.run(
-            [rdci_path, "-u", "group", "-c", "no_daemon_group", "--host", "localhost:59998"],
+            [rdci_path, "group", "-u", "-c", "no_daemon_group", "--host", "localhost:59998"],
             capture_output=True,
             text=True,
             timeout=15,
         )
         assert r.returncode != -11, "rdci segfaulted"
+        assert r.returncode != 0, "Should fail without daemon"
 
 
 # ---------------------------------------------------------------------------
