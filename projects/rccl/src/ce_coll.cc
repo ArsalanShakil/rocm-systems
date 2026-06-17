@@ -565,8 +565,14 @@ ncclResult_t ncclCeAllGather(struct ncclComm* comm, struct ncclCeCollArgs* args,
   // Copy data to other ranks
   for (int r = 1; r < comm->nRanks; r++) {
     int targetRank = (comm->rank + r) % comm->nRanks;
-    offset = myRecvBuff - (uint8_t*)args->recvWin->userPtr;
-    NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, offset, targetRank, &peerRecvBuff), ret, fail);
+    offset = myRecvBuff - (uint8_t*)args->recvBuff;
+    if (args->useDda) {
+      peerRecvBuff = (uint8_t*)args->ddaPeerBases[targetRank] + offset;
+    } else {
+      size_t winOff = offset
+                    + ((uint8_t*)args->recvBuff - (uint8_t*)args->recvWin->userPtr);
+      NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, winOff, targetRank, &peerRecvBuff), ret, fail);
+    }
     batchOpsParams.srcs[batchOpsParams.numOps] = (void*)mySendBuff;
     batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
     batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -619,8 +625,14 @@ ncclResult_t ncclCeAlltoAll(struct ncclComm* comm, struct ncclCeCollArgs* args, 
       batchOpsParams.numOps++;
     } else {
       // Remote copy to other ranks: send to rank dstRank's receive buffer at position comm->rank
-      offset = dstPtr - (uint8_t*)args->recvWin->userPtr;
-      NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, offset, dstRank, &peerRecvBuff), ret, fail);
+      offset = dstPtr - (uint8_t*)args->recvBuff;
+      if (args->useDda) {
+        peerRecvBuff = (uint8_t*)args->ddaPeerBases[dstRank] + offset;
+      } else {
+        size_t winOff = offset
+                      + ((uint8_t*)args->recvBuff - (uint8_t*)args->recvWin->userPtr);
+        NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, winOff, dstRank, &peerRecvBuff), ret, fail);
+      }
       batchOpsParams.srcs[batchOpsParams.numOps] = (void*)srcPtr;
       batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
       batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -680,8 +692,14 @@ ncclResult_t ncclCeScatter(struct ncclComm* comm, struct ncclCeCollArgs* args, c
       uint8_t* srcPtr = mySendBuff + dstRank * chunkBytes;
       uint8_t* dstPtr = isInPlace ? myRecvBuff + dstRank * chunkBytes : myRecvBuff;
 
-      offset = dstPtr - (uint8_t*)args->recvWin->userPtr;
-      NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, offset, dstRank, &peerDstPtr), ret, fail);
+      offset = dstPtr - (uint8_t*)args->recvBuff;
+      if (args->useDda) {
+        peerDstPtr = (uint8_t*)args->ddaPeerBases[dstRank] + offset;
+      } else {
+        size_t winOff = offset
+                      + ((uint8_t*)args->recvBuff - (uint8_t*)args->recvWin->userPtr);
+        NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, winOff, dstRank, &peerDstPtr), ret, fail);
+      }
       batchOpsParams.srcs[batchOpsParams.numOps] = (void*)srcPtr;
       batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerDstPtr;
       batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -731,8 +749,14 @@ ncclResult_t ncclCeGather(struct ncclComm* comm, struct ncclCeCollArgs* args, cu
   } else {
     // Non-root ranks send their data to root's receive buffer
     uint8_t* rootRecvPtr = (uint8_t*)args->recvBuff + comm->rank * chunkBytes;
-    offset = rootRecvPtr - (uint8_t*)args->recvWin->userPtr;
-    NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, offset, rootRank, &peerRecvBuff), ret, fail);
+    offset = rootRecvPtr - (uint8_t*)args->recvBuff;
+    if (args->useDda) {
+      peerRecvBuff = (uint8_t*)args->ddaPeerBases[rootRank] + offset;
+    } else {
+      size_t winOff = offset
+                    + ((uint8_t*)args->recvBuff - (uint8_t*)args->recvWin->userPtr);
+      NCCLCHECKGOTO(ncclDevrGetLsaRankPtr(comm, args->recvWin, winOff, rootRank, &peerRecvBuff), ret, fail);
+    }
     batchOpsParams.srcs[batchOpsParams.numOps] = (void*)mySendBuff;
     batchOpsParams.dsts[batchOpsParams.numOps] = (void*)peerRecvBuff;
     batchOpsParams.sizes[batchOpsParams.numOps] = chunkBytes;
@@ -780,6 +804,10 @@ ncclResult_t ncclLaunchCeColl(struct ncclComm* comm, struct ncclKernelPlan* plan
       break;
     default:
       ret = ncclInvalidUsage;
+  }
+  if (args->useDda && args->ddaUserRecvBuff != NULL) {
+    CUDACHECKGOTO(cudaMemcpyAsync(args->ddaUserRecvBuff, args->recvBuff /*scratch*/,
+                  args->ddaCopyBackBytes, cudaMemcpyDeviceToDevice, stream), ret, fail);
   }
 
 exit:
