@@ -55,8 +55,6 @@ ais_gtest_discover_tests(
     TEST_LIST hipfile_unit_tests
 )
 
-find_package(ZLIB REQUIRED)
-
 ais_add_test_executable(
     NAME hipfile_system_tests
     DEPS hipfile
@@ -64,7 +62,11 @@ ais_add_test_executable(
     SYSINCLS ${TEST_SYSINCLS}
 )
 target_link_libraries(hipfile_system_tests PRIVATE GTest::gtest)
-target_link_libraries(hipfile_system_tests PRIVATE ZLIB::ZLIB)
+
+if(NOT AIS_BUILD_NVIDIA_DETAIL)
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(hipfile_system_tests PRIVATE ZLIB::ZLIB)
+endif()
 
 ais_gtest_discover_tests(
     hipfile_system_tests
