@@ -134,9 +134,6 @@ struct HipFileIoHipInit : public testing::Test {
 
     void SetUp() override
     {
-        if (!hipFile::test::fastpathAvailable())
-            GTEST_SKIP() << "SKIP: fastpath not available in this environment";
-
         Context<Configuration>::get()->fastpath(true);
         Context<Configuration>::get()->fallback(false);
 
@@ -150,6 +147,9 @@ struct HipFileIoHipInit : public testing::Test {
         ASSERT_EQ(hipSuccess, hipMalloc(&registered_device_buffer, registered_device_buffer_size));
         ASSERT_EQ(HIPFILE_SUCCESS,
                   hipFileBufRegister(registered_device_buffer, registered_device_buffer_size, 0));
+
+        if (!hipFile::test::fastpathAvailable())
+            GTEST_SKIP() << "SKIP: fastpath not available in this environment";
     }
 
     void TearDown() override
