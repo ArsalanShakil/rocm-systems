@@ -39,10 +39,17 @@ try:
     from amdsmi import amdsmi_interface, amdsmi_exception
     import amdsmi_cli_exceptions
 except ImportError as e:
-    print("Failed to import the amdsmi Python library. Ensure it is installed in Python.")
-    print(f"Alternatively, verify that the library is in the path:\n{python_lib_path}")
-    msg = f"Unhandled import error: {e}"
-    raise amdsmi_cli_exceptions.AmdSmiImportException(msg)
+    error_code = 192
+    print(
+        "Failed to import the amdsmi Python library. Ensure it is installed in Python.",
+        file=sys.stderr,
+    )
+    print(
+        f"Alternatively, verify that the library is in the path:\n{python_lib_path}",
+        file=sys.stderr,
+    )
+    print(f"Unhandled import error: {e}. Error code: {error_code}", file=sys.stderr)
+    sys.exit(1)
 
 # Using basic python logging for user errors and development
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.ERROR)  # User level logging
@@ -156,7 +163,7 @@ def amdsmi_cli_init():
     init_thread.join(timeout=_INIT_TIMEOUT_SEC)
 
     if init_thread.is_alive():
-        error_code = amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_TIMEOUT
+        error_code = amdsmi_interface.AmdSmiStatus.TIMEOUT
         msg = f"amdsmi_init() timed out after {_INIT_TIMEOUT_SEC}s. The GPU driver may be unresponsive."
         logging.error(msg)
         print(f"{msg} Error code: {error_code}", file=sys.stderr)
@@ -171,14 +178,14 @@ def amdsmi_cli_init():
         if (
             e.err_code
             in (
-                amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_NOT_INIT,
-                amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_DRIVER_NOT_LOADED,
+                amdsmi_interface.AmdSmiStatus.NOT_INIT,
+                amdsmi_interface.AmdSmiStatus.DRIVER_NOT_LOADED,
             )
             or init_flag == 0
         ):
             msg = "Drivers not loaded (amdgpu, amd_hsmp, ionic, rdma drivers not found in modules)"
             logging.error(msg)
-            error_code = amdsmi_interface.amdsmi_wrapper.AMDSMI_STATUS_DRIVER_NOT_LOADED
+            error_code = amdsmi_interface.AmdSmiStatus.DRIVER_NOT_LOADED
             print(f"{msg}. Error code: {error_code}", file=sys.stderr)
             sys.exit(error_code)
         else:

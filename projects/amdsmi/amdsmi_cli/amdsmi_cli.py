@@ -69,18 +69,20 @@ except ImportError:
         from amdsmi_logger import AMDSMILogger
         import amdsmi_cli_exceptions
     except ImportError as e:
-        print(
-            f"Unable to import amdsmi_cli files. Check {cli_files_path} if they are present",
-            file=sys.stderr,
-        )
-        msg = f"Unhandled import error: {e}"
-        raise amdsmi_cli_exceptions.AmdSmiImportException(msg)
+        error_code = 192
+        print(f"Unable to import amdsmi_cli files. Check {cli_files_path} if they are present")
+        print(f"Unhandled import error: {e}. Error code: {error_code}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _print_error(e, destination):
-    if destination not in ["stdout", "json", "csv"]:
+    if destination in ["stdout", "json", "csv"]:
+        print(e, file=sys.stderr)
+    else:
+        f = open(destination, "w", encoding="utf-8")
+        f.write(e)
+        f.close()
         print("Error occurred. Result written to " + str(destination) + " file", file=sys.stderr)
-    print(e, file=sys.stderr)
 
 
 def configure_logging_and_execute(args, amd_smi_commands):

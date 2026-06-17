@@ -118,7 +118,6 @@ class AmdSmiImportException(AmdSmiException):
 
         self.stdout_message = f"{common_message} Error code: {self.value}"
         print(self.stdout_message, file=sys.stderr)
-        sys.exit(self.value)
 
 
 class AmdSmiInvalidCommandException(AmdSmiException):
