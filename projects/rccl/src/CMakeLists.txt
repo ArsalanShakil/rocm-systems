@@ -518,7 +518,7 @@ foreach(SRC_FILE ${SRC_FILES})
   endif()
 endforeach()
 
-set(NCCL_DEVICE_HEADER "${PROJECT_BINARY_DIR}/include/rccl/nccl_device.h")
+set(NCCL_DEVICE_HEADER "${PROJECT_BINARY_DIR}/include/nccl_device.h")
 set(NCCL_DEVICE_HEADER_STAMP "${PROJECT_BINARY_DIR}/include/.nccl_device_headers.stamp")
 # Copy hip_compat.h as-is (no hipification — contains both CUDA and HIP paths)
 set(HIP_COMPAT_SRC "${RCCL_SOURCE_DIR}/src/include/nccl_device/hip_compat.h")
@@ -551,7 +551,7 @@ else()
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/include"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "${HIPIFY_DIR}/src/include/nccl_device.h" "${PROJECT_BINARY_DIR}/include/"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${HIPIFY_DIR}/src/include/nccl_device" "${PROJECT_BINARY_DIR}/include/nccl_device"
-    COMMAND ${CMAKE_COMMAND} -E touch ${NCCL_DEVICE_HEADER_STAMP}
+    COMMAND ${CMAKE_COMMAND} -E touch "${NCCL_DEVICE_HEADER_STAMP}"
     DEPENDS ${NCCL_DEVICE_HIP_FILES}
     COMMENT "Staging nccl_device headers into include/"
     VERBATIM
