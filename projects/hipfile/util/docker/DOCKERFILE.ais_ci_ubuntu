@@ -85,7 +85,8 @@ RUN apt update && \
         libmount-dev \
         llvm-dev \
         python3.12-dev \
-        python3.12-venv
+        python3.12-venv \
+        zlib1g-dev
 
 # ROCm dev packages
 RUN . /etc/rocm-build.env && \
