@@ -51,10 +51,14 @@ static void TrapErrorCallback(hsa_status_t status, hsa_queue_t* source, void* da
   // Verify queue pointer if available
   if (test_data->queue_pointer != nullptr) {
     hsa_queue_t* expected_queue = *(test_data->queue_pointer);
-    if (expected_queue != nullptr && source != nullptr) {
-      if (source->id != expected_queue->id) {
-        std::cerr << "WARNING: Queue ID mismatch in callback. "
+    if (expected_queue != nullptr) {
+      if (source == nullptr) {
+        std::cerr << "ERROR: Queue source is NULL in callback" << std::endl;
+        test_data->queue_mismatch.store(true, std::memory_order_release);
+      } else if (source->id != expected_queue->id) {
+        std::cerr << "ERROR: Queue ID mismatch in callback. "
                   << "Expected: " << expected_queue->id << " Got: " << source->id << std::endl;
+        test_data->queue_mismatch.store(true, std::memory_order_release);
       }
     }
   }
@@ -189,18 +193,19 @@ bool TrapHandlerTest::RunTrapTest(hsa_agent_t cpuAgent, hsa_agent_t gpuAgent,
     }
   }
 
-  // Kernel arguments structure
-  // Layout depends on which kernel we're calling
-  struct __attribute__((aligned(16))) TrapKernelArgs {
-    void* ptr;    // First pointer (ptr or out depending on kernel)
-    void* out;    // Second pointer (out)
-    int divisor;  // Divisor for math exception test
-    int pad;      // Padding
-  };
+  // Kernel arguments - allocate max needed size and zero-initialize
+  // Different kernels have different argument layouts:
+  //   - Single pointer kernels: trap_abort, trap_debugger, trap_generic,
+  //                             trap_illegal_instruction, trap_aperture_violation, trap_none
+  //     ABI: [ptr (8 bytes)]
+  //   - Memory violation kernel: trap_memory_violation(__global int *ptr, __global int *out)
+  //     ABI: [ptr (8 bytes), out (8 bytes)]
+  //   - Math exception kernel: trap_math_exception(__global int *out, int divisor)
+  //     ABI: [out (8 bytes), divisor (4 bytes), pad (4 bytes)]
+  const size_t max_kernarg_size = 32;  // Enough for any kernel layout
 
-  TrapKernelArgs* kern_args = nullptr;
-  err = hsa_amd_memory_pool_allocate(kernarg_pool, sizeof(TrapKernelArgs), 0,
-                                     reinterpret_cast<void**>(&kern_args));
+  void* kern_args = nullptr;
+  err = hsa_amd_memory_pool_allocate(kernarg_pool, max_kernarg_size, 0, &kern_args);
   if (err != HSA_STATUS_SUCCESS) {
     if (ptr_buffer) hsa_memory_free(ptr_buffer);
     hsa_memory_free(out_buffer);
@@ -219,24 +224,34 @@ bool TrapHandlerTest::RunTrapTest(hsa_agent_t cpuAgent, hsa_agent_t gpuAgent,
     return false;
   }
 
+  // Zero-initialize kernarg buffer
+  memset(kern_args, 0, max_kernarg_size);
+
   // Set kernel arguments based on kernel type
-  // Kernels with single output: trap_abort, trap_debugger, trap_generic,
-  //                             trap_illegal_instruction, trap_aperture_violation, trap_none
-  // Kernels with ptr + output: trap_memory_violation
-  // Kernels with output + divisor: trap_math_exception
   bool is_memory_violation = (strstr(kernel_name, "memory_violation") != nullptr);
   bool is_math_exception = (strstr(kernel_name, "math_exception") != nullptr);
 
   if (is_memory_violation) {
-    kern_args->ptr = pass_null_ptr ? nullptr : ptr_buffer;
-    kern_args->out = out_buffer;
+    // trap_memory_violation(__global int *ptr, __global int *out)
+    // ABI layout: [ptr at offset 0, out at offset 8]
+    void** args = reinterpret_cast<void**>(kern_args);
+    args[0] = pass_null_ptr ? nullptr : ptr_buffer;  // ptr
+    args[1] = out_buffer;                            // out
   } else if (is_math_exception) {
-    kern_args->ptr = out_buffer;
-    kern_args->out = nullptr;
-    kern_args->divisor = divisor_value;
+    // trap_math_exception(__global int *out, int divisor)
+    // ABI layout: [out at offset 0, divisor at offset 8]
+    struct __attribute__((packed)) MathExceptionArgs {
+      void* out;
+      int divisor;
+    };
+    MathExceptionArgs* math_args = reinterpret_cast<MathExceptionArgs*>(kern_args);
+    math_args->out = out_buffer;
+    math_args->divisor = divisor_value;
   } else {
-    kern_args->ptr = out_buffer;
-    kern_args->out = nullptr;
+    // Single pointer kernels: trap_abort, trap_debugger, trap_generic, etc.
+    // ABI layout: [out at offset 0]
+    void** args = reinterpret_cast<void**>(kern_args);
+    args[0] = out_buffer;
   }
 
   // Load kernel
@@ -247,8 +262,8 @@ bool TrapHandlerTest::RunTrapTest(hsa_agent_t cpuAgent, hsa_agent_t gpuAgent,
     if (ptr_buffer) hsa_memory_free(ptr_buffer);
     hsa_memory_free(out_buffer);
     hsa_queue_destroy(queue);
-    std::cout << "SKIPPED (kernel not found: " << kernel_name << ")" << std::endl;
-    return true;  // Not a failure, just skip
+    std::cout << "FAILED (kernel not found: " << kernel_name << ")" << std::endl;
+    return false;  // Kernel loading failure is a test failure
   }
 
   // Create completion signal
@@ -324,8 +339,14 @@ bool TrapHandlerTest::RunTrapTest(hsa_agent_t cpuAgent, hsa_agent_t gpuAgent,
                                            kTrapTimeoutMs * 1000000ULL, HSA_WAIT_STATE_BLOCKED);
   }
 
+  // Check for queue ID mismatch (applies to all test types)
+  if (test_data.queue_mismatch.load(std::memory_order_acquire)) {
+    std::cout << "FAILED (queue ID mismatch in callback)" << std::endl;
+    test_passed = false;
+  }
+
   // Verify results
-  if (expected_status != HSA_STATUS_SUCCESS) {
+  if (test_passed && expected_status != HSA_STATUS_SUCCESS) {
     // We expected a trap
     if (!test_data.trap_triggered.load(std::memory_order_acquire)) {
       std::cout << "FAILED (trap not triggered)" << std::endl;
@@ -354,7 +375,7 @@ bool TrapHandlerTest::RunTrapTest(hsa_agent_t cpuAgent, hsa_agent_t gpuAgent,
         std::cout << "PASSED" << std::endl;
       }
     }
-  } else {
+  } else if (test_passed) {
     // We expected normal completion
     if (test_data.trap_triggered.load(std::memory_order_acquire)) {
       std::cout << "FAILED (unexpected trap)" << std::endl;
