@@ -439,7 +439,7 @@ hipError_t FatBinaryInfo::ExtractFatBinaryUsingCOMGR(const std::vector<hip::Devi
       // If we got 0, validation has failed.
       if (elf_size == 0) {
         LogPrintfError(
-            "Invalid ELF code object: failed size/bounds validation, image_size is : %llu",
+            "Invalid ELF code object: failed size/bounds validation, image_size is: %zu",
             image_size_);
         return hipErrorInvalidImage;
       }
