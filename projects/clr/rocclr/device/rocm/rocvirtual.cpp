@@ -1567,15 +1567,14 @@ bool VirtualGPU::dispatchAqlPacketBatchFlat(const std::vector<uint8_t>& flatPack
             slot->reserved2 = timestamp_->command().profilingInfo().correlation_id_;
           }
         }
-        const bool isExtKernelDispatch = dev().settings().ext_dispatch_packet_;
         if ((IsLogEnabled(amd::LOG_DETAIL_DEBUG, amd::LOG_KERN2) ||
              IsLogEnabled(amd::LOG_DETAIL_DEBUG, amd::LOG_AQL)) &&
             kernelNames != nullptr && i < kernelNames->size() &&
-            (pktType == HSA_PACKET_TYPE_KERNEL_DISPATCH || isExtKernelDispatch)) {
+            (pktType == HSA_PACKET_TYPE_KERNEL_DISPATCH || pktType == HSA_PACKET_TYPE_VENDOR_SPECIFIC)) {
           ClPrint(amd::LOG_DETAIL_DEBUG, amd::LOG_KERN2, "Graph ShaderName : %s, device id : %u",
                   (*kernelNames)[i] != nullptr ? (*kernelNames)[i]->c_str() : "<null>",
                   dev().index());
-          if (isExtKernelDispatch) {
+          if (pktType == HSA_PACKET_TYPE_VENDOR_SPECIFIC) {
             logAqlDispatchPacketExtended(gpu_queue_, hdr,
                 reinterpret_cast<hsa_amd_ext_kernel_dispatch_packet_t*>(slot),
                 Hsa::queue_load_read_index_scacquire(gpu_queue_), slotIdx, " Graph");
