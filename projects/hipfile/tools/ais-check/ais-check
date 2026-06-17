@@ -131,7 +131,7 @@ def amdgpu_supports_ais():
     return False
 
 
-// Reimplemented in hipfile/test/common/ais-capability.h.
+# Reimplemented in hipfile/test/common/ais-capability.h.
 def main():
     """
     Parse command-line arguments, check AIS support in kernel/libraries,
