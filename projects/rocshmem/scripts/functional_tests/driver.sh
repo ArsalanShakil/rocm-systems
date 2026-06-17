@@ -146,6 +146,14 @@ declare -A TEST_NUMBERS=(
   ["host_amo_all_pes"]="129"
   ["host_amo_self"]="130"
   ["host_amo_add"]="131"
+  ["host_wait_until"]="132"
+  ["host_test"]="133"
+  ["host_wait_until_all"]="134"
+  ["host_wait_until_any"]="135"
+  ["host_wait_until_some"]="136"
+  ["host_wait_until_all_vector"]="137"
+  ["host_wait_until_any_vector"]="138"
+  ["host_wait_until_some_vector"]="139"
 )
 
 # Detect which runtime to use
@@ -759,6 +767,14 @@ TestHostRma() { #AIROCSHMEM-419
   ExecTest  "host_int_amo_fadd"   2        1      1
   ExecTest  "host_int_amo_fcswap" 2        1      1
   ROCSHMEM_MAX_NUM_HOST_CONTEXTS=2 ExecTest "host_amo_add" 2 1 1
+  ExecTest  "host_wait_until"            2        1      1
+  ExecTest  "host_test"                  2        1      1
+  ExecTest  "host_wait_until_all"        2        1      1
+  ExecTest  "host_wait_until_any"        2        1      1
+  ExecTest  "host_wait_until_some"       2        1      1
+  ExecTest  "host_wait_until_all_vector" 2        1      1
+  ExecTest  "host_wait_until_any_vector" 2        1      1
+  ExecTest  "host_wait_until_some_vector" 2       1      1
   # Concurrency tests — configurable PE count (IPC_HOST_NPES, default 4)
   ExecTest  "host_amo_all_pes"    $npes    1      1
   ExecTest  "host_amo_self"       $npes    1      1
