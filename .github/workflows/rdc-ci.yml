@@ -185,12 +185,12 @@ jobs:
       shell: bash
       working-directory: .
       run: |
-        AMD_SMI_COUNT=$(find /opt/ -maxdepth 1 -iname 'amd-smi-lib*.deb' | wc -l)
-        RDC_COUNT=$(find /opt/ -maxdepth 1 -iname 'rdc*.deb' | wc -l)
-        test "$AMD_SMI_COUNT" -ge '1'
-        test "$RDC_COUNT" -eq '2'
-        dpkg --force-all -i /opt/amd-smi-lib*.deb
-        dpkg --force-all -i /opt/rdc*.deb
+        mapfile -t AMD_SMI_DEBS < <(find /opt/ -iname 'amd-smi-lib*.deb' ! -iname '*tests*' | sort)
+        mapfile -t RDC_DEBS < <(find /opt/ -iname 'rdc*.deb' | sort)
+        test "${#AMD_SMI_DEBS[@]}" -eq '1'
+        test "${#RDC_DEBS[@]}" -eq '2'
+        dpkg --force-all -i "${AMD_SMI_DEBS[@]}"
+        dpkg --force-all -i "${RDC_DEBS[@]}"
 
     - name: Verify RDC installation
       shell: bash
@@ -327,8 +327,12 @@ jobs:
       shell: bash
       working-directory: .
       run: |
-        dpkg --force-all -i /opt/amd-smi-lib*.deb
-        dpkg --force-all -i /opt/rdc*.deb
+        mapfile -t AMD_SMI_DEBS < <(find /opt/ -iname 'amd-smi-lib*.deb' ! -iname '*tests*' | sort)
+        mapfile -t RDC_DEBS < <(find /opt/ -iname 'rdc*.deb' | sort)
+        test "${#AMD_SMI_DEBS[@]}" -eq '1'
+        test "${#RDC_DEBS[@]}" -eq '2'
+        dpkg --force-all -i "${AMD_SMI_DEBS[@]}"
+        dpkg --force-all -i "${RDC_DEBS[@]}"
 
     - name: "Test 4.1: RDC Core / CLI (with GPU + daemon)"
       shell: bash
