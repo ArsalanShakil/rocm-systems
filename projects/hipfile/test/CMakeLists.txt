@@ -36,7 +36,7 @@ if(AIS_BUILD_NVIDIA_DETAIL)
     list(APPEND UNIT_TEST_SOURCE_FILES nvidia_detail/cufile-api-compat.cpp)
     list(APPEND TEST_SYSINCLS ${HIPFILE_NVIDIA_SOURCE_PATH})
 else()
-    list(APPEND SYSTEM_TEST_SOURCE_FILES system/amd/io.cpp)
+    list(APPEND SYSTEM_TEST_SOURCE_FILES system/amd/io.cpp common/ais-capability.cpp)
     list(APPEND TEST_SYSINCLS ${HIPFILE_AMD_SOURCE_PATH})
 endif()
 
@@ -55,6 +55,8 @@ ais_gtest_discover_tests(
     TEST_LIST hipfile_unit_tests
 )
 
+find_package(ZLIB REQUIRED)
+
 ais_add_test_executable(
     NAME hipfile_system_tests
     DEPS hipfile
@@ -62,11 +64,12 @@ ais_add_test_executable(
     SYSINCLS ${TEST_SYSINCLS}
 )
 target_link_libraries(hipfile_system_tests PRIVATE GTest::gtest)
+target_link_libraries(hipfile_system_tests PRIVATE ZLIB::ZLIB)
 
 ais_gtest_discover_tests(
     hipfile_system_tests
     EXTRA_ARGS --ais-capable-dir ${AIS_CAPABLE_DIR}
-    PROPERTIES "LABELS;system;LABELS;hipfile"
+    PROPERTIES "LABELS;system;LABELS;hipfile;SKIP_REGULAR_EXPRESSION;fastpath not available"
     TEST_LIST hipfile_system_tests
 )
 
