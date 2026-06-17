@@ -306,6 +306,27 @@ static hsa_status_t build_lightweight_coredump_ranges(MemoryRegionFilter& filter
                   reinterpret_cast<uint64_t>(scratch_base) + scratch_size,
                   scratch_size);
     }
+
+    for (core::Queue* q : gpu_agent->GetAqlQueues ()) {
+      AMD::AqlQueue* aql_queue = static_cast<AMD::AqlQueue *> (q);
+
+      // We need to capture the queue amd_queue_t for the debugger.
+      filter.add_range(reinterpret_cast<uint64_t>(&aql_queue->amd_queue_),
+                       sizeof(aql_queue->amd_queue_));
+
+      // Same goes for the ring buffer.
+      filter.add_range(reinterpret_cast<uint64_t>(aql_queue->amd_queue_.hsa_queue.base_address),
+                       aql_queue->amd_queue_.hsa_queue.size);
+
+      HsaQueueInfo queue_info;
+      HSAKMT_STATUS status = HSAKMT_CALL(hsaKmtGetQueueInfo(aql_queue->aql_queue_id(), &queue_info));
+      if (status != HSAKMT_STATUS_SUCCESS) {
+        return HSA_STATUS_ERROR;
+      }
+
+      filter.add_range(reinterpret_cast<uint64_t>(queue_info.SaveAreaHeader),
+                       queue_info.SaveAreaSizeInBytes);
+    }
   }
 
   // Add code object allocations from allocation_map_
