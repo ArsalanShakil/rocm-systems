@@ -322,6 +322,13 @@ pub enum AmdsmiComputePartitionTypeT {
 }
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum AmdsmiComputePartitionMemAllocModeT {
+    AmdsmiComputePartitionMemAllocInvalid = 0,
+    AmdsmiComputePartitionMemAllocCapping = 1,
+    AmdsmiComputePartitionMemAllocAll = 2,
+}
+#[repr(u32)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub enum AmdsmiMemoryPartitionTypeT {
     AmdsmiMemoryPartitionUnknown = 0,
     AmdsmiMemoryPartitionNps1 = 1,
@@ -1556,6 +1563,8 @@ pub enum AmdsmiLinkTypeT {
     AmdsmiLinkTypeXgmi = 2,
     AmdsmiLinkTypeNotApplicable = 3,
     AmdsmiLinkTypeUnknown = 4,
+    AmdsmiLinkTypeNuma = 5,
+    AmdsmiLinkTypeXnuma = 6,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -3419,14 +3428,6 @@ const _: () = {
     ["Offset of field: AmdsmiSockInfoT::cores_per_socket"]
         [::std::mem::offset_of!(AmdsmiSockInfoT, cores_per_socket) - 4usize];
 };
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum AmdsmiNicLinkTypeT {
-    AmdsmiNicLinkTypeUnknown = 0,
-    AmdsmiNicLinkTypePcie = 1,
-    AmdsmiNicLinkTypeNuma = 2,
-    AmdsmiNicLinkTypeXNuma = 3,
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct AmdsmiNicStatT {
@@ -4382,7 +4383,10 @@ extern "C" {
     ) -> AmdsmiStatusT;
 }
 extern "C" {
-    pub fn amdsmi_fabric_telem_id_to_string(telem_id: u64) -> *const ::std::os::raw::c_char;
+    pub fn amdsmi_fabric_telem_id_to_string(
+        telem_id: u64,
+        name: *mut *const ::std::os::raw::c_char,
+    ) -> AmdsmiStatusT;
 }
 extern "C" {
     pub fn amdsmi_free_fabric_telemetry(
@@ -4923,6 +4927,18 @@ extern "C" {
     pub fn amdsmi_set_gpu_compute_partition(
         processor_handle: AmdsmiProcessorHandle,
         compute_partition: AmdsmiComputePartitionTypeT,
+    ) -> AmdsmiStatusT;
+}
+extern "C" {
+    pub fn amdsmi_get_gpu_compute_partition_mem_alloc_mode(
+        processor_handle: AmdsmiProcessorHandle,
+        mode: *mut AmdsmiComputePartitionMemAllocModeT,
+    ) -> AmdsmiStatusT;
+}
+extern "C" {
+    pub fn amdsmi_set_gpu_compute_partition_mem_alloc_mode(
+        processor_handle: AmdsmiProcessorHandle,
+        mode: AmdsmiComputePartitionMemAllocModeT,
     ) -> AmdsmiStatusT;
 }
 extern "C" {
