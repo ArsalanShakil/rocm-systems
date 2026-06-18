@@ -40,6 +40,7 @@ import ctypes
 import os
 import sys
 import unittest
+from unittest import mock
 
 import common
 
@@ -594,6 +595,63 @@ class TestAmdSmiPython(unittest.TestCase):
     def test_get_fw_info(self):
         self.common.print_func_name("")
         self.common.Test_API_Per_GPU(amdsmi_get_fw_info=amdsmi.amdsmi_get_fw_info)
+        return
+
+    def test_get_fabric_telemetry(self):
+        self.common.print_func_name("")
+        all_categories = 0x7F  # union of all fabric telemetry category masks
+        self.common.Test_API_Per_GPU(
+            amdsmi_get_fabric_telemetry=amdsmi.amdsmi_get_fabric_telemetry,
+            category_mask=all_categories,
+        )
+        return
+
+    def test_fabric_telemetry_unknown_name_fallback(self):
+        """An unrecognized telemetry id resolves to a name of "UNKNOWN"."""
+        self.common.print_func_name("")
+        wrapper = amdsmi.amdsmi_wrapper
+
+        item = wrapper.amdsmi_fabric_telemetry_item_t(id=0xDEADBEEF, value=7)
+        instance = wrapper.amdsmi_fabric_telemetry_instance_t()
+        instance.item_count = 1
+        instance.items = ctypes.pointer(item)
+        dataset = wrapper.amdsmi_fabric_telemetry_dataset_t()
+        dataset.instance_count = 1
+        dataset.instances = ctypes.pointer(instance)
+        telemetry = wrapper.amdsmi_fabric_telemetry_t()
+        telemetry.datasets[0] = ctypes.pointer(dataset)
+        # Keep the ctypes object graph alive for the duration of the call.
+        keepalive = (item, instance, dataset, telemetry)  # noqa: F841
+
+        def fake_alloc(handle, mask, tel_ref):
+            tel_ref._obj.contents = telemetry
+            return wrapper.AMDSMI_STATUS_SUCCESS
+
+        with (
+            mock.patch.object(wrapper, "amdsmi_alloc_fabric_telemetry", side_effect=fake_alloc),
+            mock.patch.object(
+                wrapper,
+                "amdsmi_get_fabric_telemetry_data",
+                return_value=wrapper.AMDSMI_STATUS_SUCCESS,
+            ),
+            mock.patch.object(
+                wrapper,
+                "amdsmi_fabric_telem_id_to_string",
+                return_value=wrapper.AMDSMI_STATUS_NOT_FOUND,
+            ),
+            mock.patch.object(
+                wrapper, "amdsmi_free_fabric_telemetry", return_value=wrapper.AMDSMI_STATUS_SUCCESS
+            ),
+        ):
+            handle = wrapper.amdsmi_processor_handle()
+            result = amdsmi.amdsmi_get_fabric_telemetry(handle, 0x7F)
+
+        self.assertEqual(result[0]["instances"][0]["items"][0]["name"], "UNKNOWN")
+        return
+
+    def test_get_gpu_fabric_info(self):
+        self.common.print_func_name("")
+        self.common.Test_API_Per_GPU(amdsmi_get_gpu_fabric_info=amdsmi.amdsmi_get_gpu_fabric_info)
         return
 
     def test_get_gpu_accelerator_partition_profile(self):
