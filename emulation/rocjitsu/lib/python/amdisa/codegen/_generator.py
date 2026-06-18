@@ -3506,6 +3506,10 @@ class CodeGenerator:
         self._append_wait_counter_type(L, 'global_load_async_to_lds')
         L.append('  d->lds_dst = true;')
         L.append('  d->lds_per_lane_addr = true;')
+        L.append('  d->lds_base = wf.lds_base();')
+        if sem.name.startswith('CLUSTER_LOAD_ASYNC_TO_LDS_'):
+            L.append('  d->cluster_multicast = true;')
+            L.append('  d->cluster_mcast_mask = wf.m0();')
         L.append(f'  d->mtype = {self._mtype_expr()};')
         L.append(f'  d->non_temporal = {nt};')
         L.append('  flat_calculate_addresses(inst_, wf, *d);')

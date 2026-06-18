@@ -2893,6 +2893,7 @@ void GlobalLoadAsyncToLdsB8Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -2933,6 +2934,7 @@ void GlobalLoadAsyncToLdsB32Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -2973,6 +2975,7 @@ void GlobalLoadAsyncToLdsB64Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -3013,6 +3016,7 @@ void GlobalLoadAsyncToLdsB128Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -3310,6 +3314,9 @@ void ClusterLoadAsyncToLdsB8Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
+  d->cluster_multicast = true;
+  d->cluster_mcast_mask = wf.m0();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -3350,6 +3357,9 @@ void ClusterLoadAsyncToLdsB32Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
+  d->cluster_multicast = true;
+  d->cluster_mcast_mask = wf.m0();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -3390,6 +3400,9 @@ void ClusterLoadAsyncToLdsB64Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
+  d->cluster_multicast = true;
+  d->cluster_mcast_mask = wf.m0();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
@@ -3430,6 +3443,9 @@ void ClusterLoadAsyncToLdsB128Vglobal::execute_impl(amdgpu::Wavefront &wf) {
   d->wait_counter_type = amdgpu::WaitCounterType::ASYNCCNT;
   d->lds_dst = true;
   d->lds_per_lane_addr = true;
+  d->lds_base = wf.lds_base();
+  d->cluster_multicast = true;
+  d->cluster_mcast_mask = wf.m0();
   d->mtype = amdgpu::mtype_from_flags_gfx12(inst_.scope, inst_.th);
   d->non_temporal = 0;
   flat_calculate_addresses(inst_, wf, *d);
