@@ -69,7 +69,7 @@ protected:
     {
         metrics met = CreateValidMetrics();
 
-        EXPECT_CALL(*mock_backend, get_gpu_metrics())
+        EXPECT_CALL(*mock_backend, get_metrics())
             .Times(AtLeast(1))
             .WillRepeatedly(Return(met));
 
@@ -87,7 +87,7 @@ protected:
     {
         metrics met = CreateSentinelMetrics();
 
-        EXPECT_CALL(*mock_backend, get_gpu_metrics())
+        EXPECT_CALL(*mock_backend, get_metrics())
             .Times(AtLeast(1))
             .WillRepeatedly(Return(met));
 
@@ -122,7 +122,7 @@ protected:
         met.hotspot_temperature  = 75;
         met.gfx_activity         = 85;
 
-        EXPECT_CALL(*mock_backend, get_gpu_metrics())
+        EXPECT_CALL(*mock_backend, get_metrics())
             .Times(AtLeast(1))
             .WillRepeatedly(Return(met));
 
@@ -275,7 +275,7 @@ TEST_F(DeviceTest, device_construction_no_support)
     auto supported = dev.get_supported_metrics();
     EXPECT_EQ(supported.value, 0U);
 
-    auto met = dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    auto met = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(met.current_socket_power, 0U);
     EXPECT_EQ(met.average_socket_power, 0U);
     EXPECT_EQ(met.memory_usage, 0ULL);
@@ -352,7 +352,7 @@ TEST_F(DeviceTest, current_socket_power_collection)
     metrics met              = CreateSentinelMetrics();
     met.current_socket_power = 150;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -367,7 +367,7 @@ TEST_F(DeviceTest, current_socket_power_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.current_socket_power);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.current_socket_power, 150U);
 }
@@ -382,7 +382,7 @@ TEST_F(DeviceTest, average_socket_power_collection)
     metrics met              = CreateSentinelMetrics();
     met.average_socket_power = 140;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -397,7 +397,7 @@ TEST_F(DeviceTest, average_socket_power_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.average_socket_power);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.average_socket_power, 140U);
 }
@@ -418,7 +418,7 @@ TEST_F(DeviceTest, power_metrics_not_collected_when_unsupported)
     EXPECT_FALSE(supported.bits.average_socket_power);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.current_socket_power, 0U);
     EXPECT_EQ(collected.average_socket_power, 0U);
@@ -438,7 +438,7 @@ TEST_F(DeviceTest, hotspot_temperature_collection)
     metrics met             = CreateSentinelMetrics();
     met.hotspot_temperature = 75;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -453,7 +453,7 @@ TEST_F(DeviceTest, hotspot_temperature_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.hotspot_temperature);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.hotspot_temperature, 75);
 }
@@ -468,7 +468,7 @@ TEST_F(DeviceTest, edge_temperature_collection)
     metrics met          = CreateSentinelMetrics();
     met.edge_temperature = 70;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -483,7 +483,7 @@ TEST_F(DeviceTest, edge_temperature_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.edge_temperature);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.edge_temperature, 70);
 }
@@ -504,7 +504,7 @@ TEST_F(DeviceTest, temperature_metrics_not_collected_when_unsupported)
     EXPECT_FALSE(supported.bits.edge_temperature);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.hotspot_temperature, 0);
     EXPECT_EQ(collected.edge_temperature, 0);
@@ -519,7 +519,7 @@ TEST_F(DeviceTest, gfx_activity_collection)
     metrics met      = CreateSentinelMetrics();
     met.gfx_activity = 85;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -534,7 +534,7 @@ TEST_F(DeviceTest, gfx_activity_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.gfx_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.gfx_activity, 85U);
 }
@@ -544,7 +544,7 @@ TEST_F(DeviceTest, umc_activity_collection)
     metrics met      = CreateSentinelMetrics();
     met.umc_activity = 60;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -559,7 +559,7 @@ TEST_F(DeviceTest, umc_activity_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.umc_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.umc_activity, 60U);
 }
@@ -569,7 +569,7 @@ TEST_F(DeviceTest, mm_activity_collection)
     metrics met     = CreateSentinelMetrics();
     met.mm_activity = 40;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -584,7 +584,7 @@ TEST_F(DeviceTest, mm_activity_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.mm_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.mm_activity, 40U);
 }
@@ -596,7 +596,7 @@ TEST_F(DeviceTest, all_activity_metrics_collection)
     met.umc_activity = 60;
     met.mm_activity  = 40;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -614,7 +614,7 @@ TEST_F(DeviceTest, all_activity_metrics_collection)
     EXPECT_TRUE(supported.bits.mm_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.gfx_activity, 85U);
     EXPECT_EQ(collected.umc_activity, 60U);
@@ -629,7 +629,7 @@ TEST_F(DeviceTest, vram_memory_usage_collection_success)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -644,7 +644,7 @@ TEST_F(DeviceTest, vram_memory_usage_collection_success)
     EXPECT_TRUE(dev.get_supported_metrics().bits.memory_usage);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.memory_usage, 8589934592ULL);
 }
@@ -653,7 +653,7 @@ TEST_F(DeviceTest, memory_usage_collection_failure)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -668,7 +668,7 @@ TEST_F(DeviceTest, memory_usage_collection_failure)
     EXPECT_FALSE(dev.get_supported_metrics().bits.memory_usage);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.memory_usage, 0ULL);
 }
@@ -682,7 +682,7 @@ TEST_F(DeviceTest, memory_usage_not_collected_when_unsupported)
     EXPECT_FALSE(dev.get_supported_metrics().bits.memory_usage);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.memory_usage, 0ULL);
 }
@@ -703,7 +703,7 @@ TEST_F(DeviceTest, vcn_busy_collection_all_xcps)
         }
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -719,7 +719,7 @@ TEST_F(DeviceTest, vcn_busy_collection_all_xcps)
     EXPECT_FALSE(dev.get_supported_metrics().bits.vcn_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -744,7 +744,7 @@ TEST_F(DeviceTest, jpeg_activity_collection_all_xcps)
         }
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -760,7 +760,7 @@ TEST_F(DeviceTest, jpeg_activity_collection_all_xcps)
     EXPECT_FALSE(dev.get_supported_metrics().bits.jpeg_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -785,7 +785,7 @@ TEST_F(DeviceTest, xcp_metrics_not_collected_when_unsupported)
     EXPECT_FALSE(supported.bits.jpeg_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -812,7 +812,7 @@ TEST_F(DeviceTest, mixed_vcn_jpeg_support)
         }
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -831,7 +831,7 @@ TEST_F(DeviceTest, mixed_vcn_jpeg_support)
     EXPECT_FALSE(supported.bits.jpeg_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -860,7 +860,7 @@ TEST_F(DeviceTest, xgmi_link_width_collection)
     metrics met         = CreateSentinelMetrics();
     met.xgmi.link.width = 16;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -875,7 +875,7 @@ TEST_F(DeviceTest, xgmi_link_width_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.xgmi);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xgmi.link.width, 16U);
 }
@@ -885,7 +885,7 @@ TEST_F(DeviceTest, xgmi_link_speed_collection)
     metrics met         = CreateSentinelMetrics();
     met.xgmi.link.speed = 25;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -900,7 +900,7 @@ TEST_F(DeviceTest, xgmi_link_speed_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.xgmi);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xgmi.link.speed, 25U);
 }
@@ -915,7 +915,7 @@ TEST_F(DeviceTest, xgmi_read_write_data_collection_all_links)
         met.xgmi.data_acc.write[i] = 2000000 + i * 1000;
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -930,7 +930,7 @@ TEST_F(DeviceTest, xgmi_read_write_data_collection_all_links)
     EXPECT_TRUE(dev.get_supported_metrics().bits.xgmi);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t i = 0; i < MAX_NUM_XGMI_LINKS; ++i)
     {
@@ -947,7 +947,7 @@ TEST_F(DeviceTest, xgmi_sentinel_value_handling)
     met.xgmi.data_acc.read[0]  = 1000000;
     met.xgmi.data_acc.write[0] = 2000000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -962,7 +962,7 @@ TEST_F(DeviceTest, xgmi_sentinel_value_handling)
     EXPECT_TRUE(dev.get_supported_metrics().bits.xgmi);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xgmi.link.width, 16U);
     EXPECT_EQ(collected.xgmi.link.speed, 0U);
@@ -981,7 +981,7 @@ TEST_F(DeviceTest, xgmi_not_collected_when_unsupported)
     EXPECT_FALSE(dev.get_supported_metrics().bits.xgmi);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xgmi.link.width, 0U);
     EXPECT_EQ(collected.xgmi.link.speed, 0U);
@@ -1002,7 +1002,7 @@ TEST_F(DeviceTest, pcie_link_width_collection)
     metrics met         = CreateSentinelMetrics();
     met.pcie.link.width = 16;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1017,7 +1017,7 @@ TEST_F(DeviceTest, pcie_link_width_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.link.width, 16U);
 }
@@ -1027,7 +1027,7 @@ TEST_F(DeviceTest, pcie_link_speed_collection)
     metrics met         = CreateSentinelMetrics();
     met.pcie.link.speed = 16000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1042,7 +1042,7 @@ TEST_F(DeviceTest, pcie_link_speed_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.link.speed, 16000U);
 }
@@ -1052,7 +1052,7 @@ TEST_F(DeviceTest, pcie_bandwidth_accumulator_collection)
     metrics met            = CreateSentinelMetrics();
     met.pcie.bandwidth.acc = 500000000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1067,7 +1067,7 @@ TEST_F(DeviceTest, pcie_bandwidth_accumulator_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.bandwidth.acc, 500000000U);
 }
@@ -1077,7 +1077,7 @@ TEST_F(DeviceTest, pcie_bandwidth_instantaneous_collection)
     metrics met             = CreateSentinelMetrics();
     met.pcie.bandwidth.inst = 10000000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1092,7 +1092,7 @@ TEST_F(DeviceTest, pcie_bandwidth_instantaneous_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.bandwidth.inst, 10000000U);
 }
@@ -1103,7 +1103,7 @@ TEST_F(DeviceTest, pcie_sentinel_value_handling)
     met.pcie.link.width    = 16;
     met.pcie.bandwidth.acc = 500000000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1118,7 +1118,7 @@ TEST_F(DeviceTest, pcie_sentinel_value_handling)
     EXPECT_TRUE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.link.width, 16U);
     EXPECT_EQ(collected.pcie.link.speed, 0U);
@@ -1135,7 +1135,7 @@ TEST_F(DeviceTest, pcie_not_collected_when_unsupported)
     EXPECT_FALSE(dev.get_supported_metrics().bits.pcie);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.pcie.link.width, 0U);
     EXPECT_EQ(collected.pcie.link.speed, 0U);
@@ -1179,7 +1179,7 @@ TEST_F(DeviceTest, vcn_activity_support_detection_any_xcp)
 
     met.xcp_stats[7].vcn_busy[0] = 50;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1210,7 +1210,7 @@ TEST_F(DeviceTest, jpeg_activity_support_detection_any_xcp)
 
     met.xcp_stats[5].jpeg_busy[0] = 75;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1231,7 +1231,7 @@ TEST_F(DeviceTest, xgmi_support_detection_link_width_only)
     metrics met         = CreateSentinelMetrics();
     met.xgmi.link.width = 16;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1251,7 +1251,7 @@ TEST_F(DeviceTest, xgmi_support_detection_any_read_data_valid)
     metrics met               = CreateSentinelMetrics();
     met.xgmi.data_acc.read[2] = 1000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1271,7 +1271,7 @@ TEST_F(DeviceTest, pcie_support_detection_bandwidth_only)
     metrics met            = CreateSentinelMetrics();
     met.pcie.bandwidth.acc = 1000000;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1290,7 +1290,7 @@ TEST_F(DeviceTest, memory_usage_support_detection)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1309,7 +1309,7 @@ TEST_F(DeviceTest, memory_usage_unsupported_api_failure)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1332,7 +1332,7 @@ TEST_F(DeviceTest, vcn_activity_top_level_field_only)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1354,7 +1354,7 @@ TEST_F(DeviceTest, vcn_activity_in_both_fields)
 
     met.xcp_stats[0].vcn_busy[0] = 80;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1370,7 +1370,7 @@ TEST_F(DeviceTest, vcn_activity_in_both_fields)
     EXPECT_FALSE(dev.get_supported_metrics().bits.vcn_activity);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xcp_stats[0].vcn_busy[0], 80U);
 }
@@ -1379,7 +1379,7 @@ TEST_F(DeviceTest, vcn_activity_detection_should_check_both_sources)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1403,7 +1403,7 @@ TEST_F(DeviceTest, vcn_activity_collection_priority)
     met.xcp_stats[0].vcn_busy[0] = 80;
     met.xcp_stats[0].vcn_busy[1] = 70;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1416,7 +1416,7 @@ TEST_F(DeviceTest, vcn_activity_collection_priority)
     device<MockBackend> dev(mock_backend, test_index);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xcp_stats[0].vcn_busy[0], 80U);
     EXPECT_EQ(collected.xcp_stats[0].vcn_busy[1], 70U);
@@ -1426,7 +1426,7 @@ TEST_F(DeviceTest, vcn_activity_xcp_disabled_top_level_valid)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1447,7 +1447,7 @@ TEST_F(DeviceTest, vcn_activity_xcp_disabled_top_level_valid)
 
 TEST_F(DeviceTest, get_metrics_info_failure)
 {
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Throw(std::runtime_error("not supported")));
 
@@ -1464,7 +1464,7 @@ TEST_F(DeviceTest, get_metrics_info_failure)
 
     device<MockBackend> dev(mock_backend, test_index);
 
-    auto met = dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    auto met = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(met.current_socket_power, 0U);
     EXPECT_EQ(met.average_socket_power, 0U);
@@ -1475,7 +1475,7 @@ TEST_F(DeviceTest, get_metrics_info_failure)
 
 TEST_F(DeviceTest, get_metrics_info_failure_during_init)
 {
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Throw(std::runtime_error("not supported")));
 
@@ -1507,8 +1507,7 @@ TEST_F(DeviceTest, multiple_metric_collections)
 
     for(int i = 0; i < 10; ++i)
     {
-        auto met =
-            dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        auto met = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
         EXPECT_GT(met.current_socket_power, 0U);
     }
 }
@@ -1523,7 +1522,7 @@ TEST_F(DeviceTest, large_array_indices_xgmi)
         met.xgmi.data_acc.write[i] = 2000 + i;
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1536,7 +1535,7 @@ TEST_F(DeviceTest, large_array_indices_xgmi)
     device<MockBackend> dev(mock_backend, test_index);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t i = 0; i < MAX_NUM_XGMI_LINKS; ++i)
     {
@@ -1557,7 +1556,7 @@ TEST_F(DeviceTest, large_array_indices_xcp)
         }
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1570,7 +1569,7 @@ TEST_F(DeviceTest, large_array_indices_xcp)
     device<MockBackend> dev(mock_backend, test_index);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -1595,7 +1594,7 @@ TEST_F(DeviceTest, large_array_indices_jpeg)
         }
     }
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1608,7 +1607,7 @@ TEST_F(DeviceTest, large_array_indices_jpeg)
     device<MockBackend> dev(mock_backend, test_index);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     for(size_t xcp = 0; xcp < MAX_NUM_XCP; ++xcp)
     {
@@ -1628,7 +1627,7 @@ TEST_F(DeviceTest, concurrent_device_objects)
     metrics met1              = CreateSentinelMetrics();
     met1.current_socket_power = 100;
 
-    EXPECT_CALL(*mock_backend1, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend1, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met1));
 
@@ -1645,7 +1644,7 @@ TEST_F(DeviceTest, concurrent_device_objects)
     metrics met2              = CreateSentinelMetrics();
     met2.current_socket_power = 200;
 
-    EXPECT_CALL(*mock_backend2, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend2, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met2));
 
@@ -1663,14 +1662,14 @@ TEST_F(DeviceTest, concurrent_device_objects)
     device<MockBackend> dev2(mock_backend2, 1);
 
     auto result1 =
-        dev1.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev1.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result1.current_socket_power, 100U);
 
     auto result2 =
-        dev2.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev2.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result2.current_socket_power, 200U);
 
-    result1 = dev1.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    result1 = dev1.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result1.current_socket_power, 100U);
 
     EXPECT_NE(dev1.get_index(), dev2.get_index());
@@ -1722,7 +1721,7 @@ TEST_F(DeviceTest, full_lifecycle_with_realistic_data)
     met3.hotspot_temperature  = 73;
     met3.gfx_activity         = 60;
 
-    EXPECT_CALL(*mock, get_gpu_metrics())
+    EXPECT_CALL(*mock, get_metrics())
         .WillOnce(Return(init_met))
         .WillOnce(Return(met1))
         .WillOnce(Return(met2))
@@ -1740,20 +1739,17 @@ TEST_F(DeviceTest, full_lifecycle_with_realistic_data)
 
     device<MockBackend> dev(mock, test_index);
 
-    auto result1 =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    auto result1 = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result1.current_socket_power, 150U);
     EXPECT_EQ(result1.hotspot_temperature, 70);
     EXPECT_EQ(result1.gfx_activity, 50U);
 
-    auto result2 =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    auto result2 = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result2.current_socket_power, 180U);
     EXPECT_EQ(result2.hotspot_temperature, 75);
     EXPECT_EQ(result2.gfx_activity, 90U);
 
-    auto result3 =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+    auto result3 = dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
     EXPECT_EQ(result3.current_socket_power, 160U);
     EXPECT_EQ(result3.hotspot_temperature, 73);
     EXPECT_EQ(result3.gfx_activity, 60U);
@@ -1783,10 +1779,10 @@ TEST_F(DeviceTest, sdma_delta_computation)
     enabled_metrics enabled;
     enabled.bits.sdma_usage = 1;
 
-    auto metrics1 = dev.get_gpu_metrics(enabled, 1000000000ULL);
+    auto metrics1 = dev.get_metrics(enabled, 1000000000ULL);
     EXPECT_EQ(metrics1.sdma_usage, 0U);
 
-    auto metrics2 = dev.get_gpu_metrics(enabled, 2000000000ULL);
+    auto metrics2 = dev.get_metrics(enabled, 2000000000ULL);
     EXPECT_GE(metrics2.sdma_usage, 0U);
     EXPECT_LE(metrics2.sdma_usage, 100U);
 }
@@ -1800,7 +1796,7 @@ TEST_F(DeviceTest, gfx_clock_collection)
     metrics met       = CreateSentinelMetrics();
     met.gfx_clock_mhz = 1500;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1815,7 +1811,7 @@ TEST_F(DeviceTest, gfx_clock_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.gfx_clock);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.gfx_clock_mhz, 1500U);
 }
@@ -1825,7 +1821,7 @@ TEST_F(DeviceTest, mem_clock_collection)
     metrics met       = CreateSentinelMetrics();
     met.mem_clock_mhz = 1200;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
@@ -1840,7 +1836,7 @@ TEST_F(DeviceTest, mem_clock_collection)
     EXPECT_TRUE(dev.get_supported_metrics().bits.mem_clock);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.mem_clock_mhz, 1200U);
 }
@@ -1856,7 +1852,7 @@ TEST_F(DeviceTest, clock_metrics_not_collected_when_unsupported)
     EXPECT_FALSE(supported.bits.mem_clock);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.gfx_clock_mhz, 0U);
     EXPECT_EQ(collected.mem_clock_mhz, 0U);
@@ -1873,7 +1869,7 @@ TEST_F(DeviceTest, vcn_busy_collection_preserves_sentinels)
 
     met.xcp_stats[0].vcn_busy[0] = 80;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
     EXPECT_CALL(*mock_backend, get_memory_usage())
@@ -1886,7 +1882,7 @@ TEST_F(DeviceTest, vcn_busy_collection_preserves_sentinels)
     EXPECT_TRUE(dev.get_supported_metrics().bits.vcn_busy);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xcp_stats[0].vcn_busy[0], 80U);
     for(size_t vcn = 1; vcn < MAX_NUM_VCN; ++vcn)
@@ -1904,7 +1900,7 @@ TEST_F(DeviceTest, jpeg_busy_collection_preserves_sentinels)
 
     met.xcp_stats[0].jpeg_busy[0] = 60;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
     EXPECT_CALL(*mock_backend, get_memory_usage())
@@ -1917,7 +1913,7 @@ TEST_F(DeviceTest, jpeg_busy_collection_preserves_sentinels)
     EXPECT_TRUE(dev.get_supported_metrics().bits.jpeg_busy);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.xcp_stats[0].jpeg_busy[0], 60U);
     for(size_t jpeg = 1; jpeg < MAX_NUM_JPEG_V1; ++jpeg)
@@ -1935,7 +1931,7 @@ TEST_F(DeviceTest, vcn_activity_device_level_preserves_sentinels)
 
     met.vcn_activity[0] = 42;
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
     EXPECT_CALL(*mock_backend, get_memory_usage())
@@ -1949,7 +1945,7 @@ TEST_F(DeviceTest, vcn_activity_device_level_preserves_sentinels)
     EXPECT_FALSE(dev.get_supported_metrics().bits.vcn_busy);
 
     auto collected =
-        dev.get_gpu_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
+        dev.get_metrics(enabled_metrics{ .value = 0xFFFFFFFF }, 1000000000ULL);
 
     EXPECT_EQ(collected.vcn_activity[0], 42U);
     for(size_t i = 1; i < MAX_NUM_VCN; ++i)
@@ -1964,7 +1960,7 @@ TEST_F(DeviceTest, memory_usage_unsupported_sentinel_value)
 {
     metrics met = CreateSentinelMetrics();
 
-    EXPECT_CALL(*mock_backend, get_gpu_metrics())
+    EXPECT_CALL(*mock_backend, get_metrics())
         .Times(AtLeast(1))
         .WillRepeatedly(Return(met));
 
