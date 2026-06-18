@@ -89,17 +89,19 @@ auto&
 get_category_stack();
 
 template <typename T>
+    requires std::is_const_v<T>
 auto
 get_perfetto_string(T& name)
 {
-    if constexpr(std::is_const_v<T>)
-    {
-        return ::perfetto::StaticString{ name };
-    }
-    else
-    {
-        return ::perfetto::DynamicString{ name };
-    }
+    return ::perfetto::StaticString{ name };
+}
+
+template <typename T>
+    requires(!std::is_const_v<T>)
+auto
+get_perfetto_string(T& name)
+{
+    return ::perfetto::DynamicString{ name };
 }
 
 template <typename CategoryT, typename... Args>
@@ -181,7 +183,7 @@ get_perfetto_track(CategoryT, FuncT&& _desc_generator, Args&&... _args)
     // overhead of generating string during releases
 #if defined(ROCPROFSYS_CI) && ROCPROFSYS_CI > 0
     auto _name = std::forward<FuncT>(_desc_generator)(std::forward<Args>(_args)...);
-    if(get_is_continuous_integration() && _track_uuids.at(_uuid) != _name)
+    if(_track_uuids.at(_uuid) != _name)
     {
         throw std::runtime_error(
             fmt::format("Error! Multiple invocations of UUID {} produced different "

@@ -3,6 +3,7 @@
 
 #include "library/coverage.hpp"
 #include "api.hpp"
+#include "common/env_vars.hpp"
 #include "core/config.hpp"
 #include "library/coverage/impl.hpp"
 #include "library/thread_data.hpp"
@@ -196,7 +197,7 @@ post_process()
 
     auto _get_setting = [](const std::string& _v) {
         auto&& _b = config::get_setting_value<bool>(_v);
-        if(!_b && get_is_continuous_integration())
+        if(!_b)
         {
             throw std::runtime_error(
                 fmt::format("Error! No configuration setting named '{}'", _v));
@@ -204,8 +205,8 @@ post_process()
         return _b.value_or(true);
     };
 
-    auto _text_output = _get_setting("ROCPROFSYS_TEXT_OUTPUT");
-    auto _json_output = _get_setting("ROCPROFSYS_JSON_OUTPUT");
+    auto _text_output = _get_setting(std::string{ env_vars::TEXT_OUTPUT });
+    auto _json_output = _get_setting(std::string{ env_vars::JSON_OUTPUT });
 
     if(_text_output)
     {

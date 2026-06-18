@@ -191,6 +191,7 @@ hipProfilerStop
 hipProfilerEnableExt
 hipProfilerDisableExt
 hipProfilerGetRecordsExt
+hipProfilerRegisterChunkCallbackExt
 hipRuntimeGetVersion
 hipGetDeviceFlags
 hipSetDevice
@@ -511,6 +512,10 @@ hipGetDriverEntryPoint
 hipGetDriverEntryPoint_spt
 hipMemPrefetchAsync_v2
 hipMemPrefetchBatchAsync
+hipMemDiscardBatchAsync
+hipDrvMemDiscardBatchAsync
+hipMemDiscardAndPrefetchBatchAsync
+hipDrvMemDiscardAndPrefetchBatchAsync
 hipMemAdvise_v2
 hipStreamGetId
 hipLibraryLoadData
@@ -518,6 +523,8 @@ hipLibraryLoadFromFile
 hipLibraryUnload
 hipLibraryGetKernel
 hipLibraryGetKernelCount
+hipLibraryGetGlobal
+hipLibraryGetManaged
 hipStreamCopyAttributes
 hipLibraryEnumerateKernels
 hipKernelGetLibrary
@@ -536,4 +543,19 @@ hipKernelSetAttribute
 hipKernelGetFunction
 hipOccupancyMaxPotentialClusterSize
 hipOccupancyMaxActiveClusters
+hipGreenCtxCreate
+hipExecutionCtxDestroy
+hipExecutionCtxStreamCreate
+hipDeviceGetDevResource
+hipDevSmResourceSplitByCount
+hipDevSmResourceSplit
+hipDevResourceGenerateDesc
+hipDeviceGetExecutionCtx
+hipExecutionCtxGetDevResource
+hipExecutionCtxGetDevice
+hipExecutionCtxGetId
+hipStreamGetDevResource
+hipExecutionCtxRecordEvent
+hipExecutionCtxSynchronize
+hipExecutionCtxWaitEvent
 @HSA_EXPORTS@
