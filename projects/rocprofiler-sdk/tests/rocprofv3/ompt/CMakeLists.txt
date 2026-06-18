@@ -75,8 +75,7 @@ rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-tracing
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace --hip-trace --kernel-trace
-        --stats -d ${ompt-tracing-output-dir} -o out --output-format json csv pftrace otf2
-        rocpd --log-level env --
+        -d ${ompt-tracing-output-dir} -o out --output-format rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 240
@@ -91,23 +90,8 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS}
-         -k
-         "not test_granular and not test_ompt_all_form_is_complete"
-         --json-input
-         ${ompt-tracing-output-dir}/out_results.json
-         --otf2-input
-         ${ompt-tracing-output-dir}/out_results.otf2
-         --pftrace-input
-         ${ompt-tracing-output-dir}/out_results.pftrace
-         --csv-input
-         ${ompt-tracing-output-dir}/out_ompt_trace.csv
-         --rocpd-input
-         ${ompt-tracing-output-dir}/out_results.db
-         --stats-input
-         ${ompt-tracing-output-dir}/out_ompt_stats.csv
-         --agent-input
-         ${ompt-tracing-output-dir}/out_agent_info.csv
+    ARGS ${PYTEST_ARGS} -k "not test_granular and not test_ompt_all_form_is_complete"
+         --rocpd-input ${ompt-tracing-output-dir}/out_results.db
     DISCOVERY_ARGS ${PYTEST_ARGS} -k
                    "not test_granular and not test_ompt_all_form_is_complete"
     TIMEOUT 45
@@ -124,8 +108,8 @@ rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-granular-target
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=target -d
-        ${ompt-granular-target-output-dir} -o out --output-format json csv --log-level env
-        -- $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
+        ${ompt-granular-target-output-dir} -o out --output-format rocpd --log-level env --
+        $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 100
     LABELS "integration-tests;openmp-target"
@@ -139,9 +123,8 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS} -k test_granular_target_filter_only_target_ops --json-input
-         ${ompt-granular-target-output-dir}/out_results.json --csv-input
-         ${ompt-granular-target-output-dir}/out_ompt_trace.csv
+    ARGS ${PYTEST_ARGS} -k test_granular_target_filter_only_target_ops --rocpd-input
+         ${ompt-granular-target-output-dir}/out_results.db
     DISCOVERY_ARGS ${PYTEST_ARGS} -k test_granular_target_filter_only_target_ops
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"
@@ -152,13 +135,13 @@ rocprofiler_add_integration_validate_test(
 # implicit-task / work events a user expects to see are recorded.
 set(ompt-host-output-dir ${CMAKE_CURRENT_BINARY_DIR}/openmp-host-trace)
 set(ompt-host-validate-k
-    "test_ompt_host_side_events_present or test_json_structure or test_ompt_records_present or test_csv_data or test_csv_matches_json_count"
+    "test_ompt_host_side_events_present or test_rocpd_contains_ompt_records or test_agent_info"
     )
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-host
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace -d ${ompt-host-output-dir}
-        -o out --output-format json csv --log-level env --
+        -o out --output-format rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
     DEPENDS openmp-host
     TIMEOUT 100
@@ -173,9 +156,8 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS} -k "${ompt-host-validate-k}" --json-input
-         ${ompt-host-output-dir}/out_results.json --csv-input
-         ${ompt-host-output-dir}/out_ompt_trace.csv
+    ARGS ${PYTEST_ARGS} -k "${ompt-host-validate-k}" --rocpd-input
+         ${ompt-host-output-dir}/out_results.db
     DISCOVERY_ARGS ${PYTEST_ARGS} -k "${ompt-host-validate-k}"
     TIMEOUT 45
     LABELS "integration-tests;openmp-host"
@@ -189,8 +171,8 @@ rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-host-parallel
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=parallel -d
-        ${ompt-host-parallel-output-dir} -o out --output-format json csv --log-level env
-        -- $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
+        ${ompt-host-parallel-output-dir} -o out --output-format rocpd --log-level env --
+        $<IF:$<TARGET_EXISTS:openmp-host>,$<TARGET_FILE:openmp-host>,openmp-host>
     DEPENDS openmp-host
     TIMEOUT 100
     LABELS "integration-tests;openmp-host"
@@ -204,9 +186,8 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS} -k test_granular_host_filter_only_parallel_ops --json-input
-         ${ompt-host-parallel-output-dir}/out_results.json --csv-input
-         ${ompt-host-parallel-output-dir}/out_ompt_trace.csv
+    ARGS ${PYTEST_ARGS} -k test_granular_host_filter_only_parallel_ops --rocpd-input
+         ${ompt-host-parallel-output-dir}/out_results.db
     DISCOVERY_ARGS ${PYTEST_ARGS} -k test_granular_host_filter_only_parallel_ops
     TIMEOUT 45
     LABELS "integration-tests;openmp-host"
@@ -219,7 +200,7 @@ rocprofiler_add_integration_execute_test(
     rocprofv3-test-ompt-all
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --ompt-trace=all -d
-        ${ompt-all-output-dir} -o out --output-format json csv --log-level env --
+        ${ompt-all-output-dir} -o out --output-format rocpd --log-level env --
         $<IF:$<TARGET_EXISTS:openmp-target>,$<TARGET_FILE:openmp-target>,openmp-target>
     DEPENDS openmp-target
     TIMEOUT 100
@@ -234,8 +215,8 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS ${PYTEST_ARGS} -k test_ompt_all_form_is_complete --json-input
-         ${ompt-all-output-dir}/out_results.json
+    ARGS ${PYTEST_ARGS} -k test_ompt_all_form_is_complete --rocpd-input
+         ${ompt-all-output-dir}/out_results.db
     DISCOVERY_ARGS ${PYTEST_ARGS} -k test_ompt_all_form_is_complete
     TIMEOUT 45
     LABELS "integration-tests;openmp-target"

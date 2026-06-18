@@ -76,10 +76,8 @@ generate_stats(const output_config&                                           cf
                const metadata&                                                tool_metadata,
                const generator<rocprofiler_buffer_tracing_rccl_api_record_t>& data);
 
-stats_entry_t
-generate_stats(const output_config&                                       cfg,
-               const metadata&                                            tool_metadata,
-               const generator<rocprofiler_buffer_tracing_ompt_record_t>& data);
+// NOTE: OMPT is rocpd-only; it is exported via `rocpd convert`, so there is
+// intentionally no generate_stats() overload for OMPT.
 
 stats_entry_t
 generate_stats(const output_config&                                                 cfg,

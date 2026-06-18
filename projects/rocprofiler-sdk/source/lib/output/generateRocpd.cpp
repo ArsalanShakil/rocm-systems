@@ -1782,129 +1782,126 @@ write_rocpd(
     };
 
     // new string entries argument types and names can be added to _metadata
-    auto insert_api_data = [&db,
-                            &tool_metadata,
-                            &string_entries,
-                            node_id,
-                            this_pid,
-                            &get_thread_id](const auto& _gen) {
-        auto _deferred = sql::deferred_transaction{db.conn};
+    auto insert_api_data =
+        [&db, &tool_metadata, &string_entries, node_id, this_pid, &get_thread_id](
+            const auto& _gen) {
+            auto _deferred = sql::deferred_transaction{db.conn};
 
-        for(auto pitr : _gen)
-        {
-            for(auto itr : _gen.get(pitr))
+            for(auto pitr : _gen)
             {
-                auto category = tool_metadata.buffer_names.at(itr.kind);
-                auto name     = tool_metadata.buffer_names.at(itr.kind, itr.operation);
-
-                auto msg = std::string{"{}"};
-                if(itr.kind == ROCPROFILER_BUFFER_TRACING_MARKER_CORE_RANGE_API)
+                for(auto itr : _gen.get(pitr))
                 {
-                    if(static_cast<rocprofiler_tracing_operation_t>(itr.operation) !=
-                       ROCPROFILER_MARKER_CORE_RANGE_API_ID_roctxGetThreadId)
+                    auto category = tool_metadata.buffer_names.at(itr.kind);
+                    auto name     = tool_metadata.buffer_names.at(itr.kind, itr.operation);
+
+                    auto msg = std::string{"{}"};
+                    if(itr.kind == ROCPROFILER_BUFFER_TRACING_MARKER_CORE_RANGE_API)
                     {
-                        // check generatePerfetto.cpp and generateOTF2.cpp, and the marker name
-                        // in the view
-                        auto message =
-                            tool_metadata.get_marker_message(itr.correlation_id.internal);
-                        if(!message.empty())
+                        if(static_cast<rocprofiler_tracing_operation_t>(itr.operation) !=
+                           ROCPROFILER_MARKER_CORE_RANGE_API_ID_roctxGetThreadId)
+                        {
+                            // check generatePerfetto.cpp and generateOTF2.cpp, and the marker name
+                            // in the view
+                            auto message =
+                                tool_metadata.get_marker_message(itr.correlation_id.internal);
+                            if(!message.empty())
+                            {
+                                msg = get_json_string(
+                                    [](auto& ar, std::string_view _msg) {
+                                        ar(cereal::make_nvp("message", std::string{_msg}));
+                                    },
+                                    message);
+                            }
+                        }
+                        else
                         {
                             msg = get_json_string(
                                 [](auto& ar, std::string_view _msg) {
                                     ar(cereal::make_nvp("message", std::string{_msg}));
                                 },
-                                message);
+                                name);
                         }
+                    }
+
+                    auto args = function_args_t{};
+                    {
+                        auto _record = rocprofiler_record_header_t{
+                            .hash = rocprofiler_record_header_compute_hash(
+                                ROCPROFILER_BUFFER_CATEGORY_TRACING, itr.kind),
+                            .payload = &itr};
+
+                        rocprofiler_iterate_buffer_tracing_record_args(
+                            _record, iterate_args_callback, &args);
+                    }
+
+                    // insert thread info if it doesn't already exist
+                    get_thread_id(itr.thread_id);
+
+                    auto evt_id = create_event(
+                        db,
+                        {
+                            insert_value("category_id", string_entries.at(category)),
+                            insert_value("stack_id", itr.correlation_id.internal),
+                            insert_value("parent_stack_id", itr.correlation_id.ancestor),
+                            insert_value("correlation_id", itr.correlation_id.external.value),
+                            insert_value("extdata", msg),
+                        });
+
+                    // insert arguments into rocpd_arg table
+                    for(const auto& arg_info : args)
+                    {
+                        auto demangled_type = common::cxx_demangle(arg_info.arg_type);
+
+                        get_insert_statement(
+                            db,
+                            "rocpd_arg{{uuid}}",
+                            {
+                                insert_value("event_id", evt_id),
+                                insert_value("position", arg_info.arg_number),
+                                insert_value("type", demangled_type),
+                                insert_value("name", arg_info.arg_name),
+                                insert_value("value", arg_info.arg_value, allow_empty_string{}),
+                            });
+                    }
+
+                    if(itr.start_timestamp != itr.end_timestamp)
+                    {
+                        get_insert_statement(db,
+                                             "rocpd_region{{uuid}}",
+                                             {
+                                                 insert_value("id", itr.correlation_id.internal),
+                                                 insert_value("nid", node_id),
+                                                 insert_value("pid", this_pid),
+                                                 insert_value("tid", itr.thread_id),
+                                                 insert_value("start", itr.start_timestamp),
+                                                 insert_value("end", itr.end_timestamp),
+                                                 insert_value("name_id", string_entries.at(name)),
+                                                 insert_value("event_id", evt_id),
+                                             });
                     }
                     else
                     {
-                        msg = get_json_string(
-                            [](auto& ar, std::string_view _msg) {
-                                ar(cereal::make_nvp("message", std::string{_msg}));
-                            },
-                            name);
+                        // Samples are named via their track. A category-named track would
+                        // collapse every instant OMPT event to "OMPT", so name OMPT sample
+                        // tracks by operation to preserve identity (matching OMPT regions).
+                        auto track_name_id = (itr.kind == ROCPROFILER_BUFFER_TRACING_OMPT)
+                                                 ? string_entries.at(name)
+                                                 : string_entries.at(category);
+                        auto track_id =
+                            get_track_id(db, node_id, this_pid, itr.thread_id, track_name_id, "{}");
+
+                        get_insert_statement(db,
+                                             "rocpd_sample{{uuid}}",
+                                             {
+                                                 insert_value("id", itr.correlation_id.internal),
+                                                 insert_value("track_id", track_id),
+                                                 insert_value("timestamp", itr.start_timestamp),
+                                                 insert_value("event_id", evt_id),
+                                             });
                     }
                 }
-
-                auto args = function_args_t{};
-                {
-                    auto _record = rocprofiler_record_header_t{
-                        .hash = rocprofiler_record_header_compute_hash(
-                            ROCPROFILER_BUFFER_CATEGORY_TRACING, itr.kind),
-                        .payload = &itr};
-
-                    rocprofiler_iterate_buffer_tracing_record_args(
-                        _record, iterate_args_callback, &args);
-                }
-
-                // insert thread info if it doesn't already exist
-                get_thread_id(itr.thread_id);
-
-                auto evt_id = create_event(
-                    db,
-                    {
-                        insert_value("category_id", string_entries.at(category)),
-                        insert_value("stack_id", itr.correlation_id.internal),
-                        insert_value("parent_stack_id", itr.correlation_id.ancestor),
-                        insert_value("correlation_id", itr.correlation_id.external.value),
-                        insert_value("extdata", msg),
-                    });
-
-                // insert arguments into rocpd_arg table
-                for(const auto& arg_info : args)
-                {
-                    auto demangled_type = common::cxx_demangle(arg_info.arg_type);
-
-                    get_insert_statement(
-                        db,
-                        "rocpd_arg{{uuid}}",
-                        {
-                            insert_value("event_id", evt_id),
-                            insert_value("position", arg_info.arg_number),
-                            insert_value("type", demangled_type),
-                            insert_value("name", arg_info.arg_name),
-                            insert_value("value", arg_info.arg_value, allow_empty_string{}),
-                        });
-                }
-
-                if(itr.start_timestamp != itr.end_timestamp)
-                {
-                    get_insert_statement(db,
-                                         "rocpd_region{{uuid}}",
-                                         {
-                                             insert_value("id", itr.correlation_id.internal),
-                                             insert_value("nid", node_id),
-                                             insert_value("pid", this_pid),
-                                             insert_value("tid", itr.thread_id),
-                                             insert_value("start", itr.start_timestamp),
-                                             insert_value("end", itr.end_timestamp),
-                                             insert_value("name_id", string_entries.at(name)),
-                                             insert_value("event_id", evt_id),
-                                         });
-                }
-                else
-                {
-                    // Samples are named via their track. A category-named track would
-                    // collapse every instant OMPT event to "OMPT", so name OMPT sample
-                    // tracks by operation to preserve identity (matching OMPT regions).
-                    auto track_name_id = (itr.kind == ROCPROFILER_BUFFER_TRACING_OMPT)
-                                             ? string_entries.at(name)
-                                             : string_entries.at(category);
-                    auto track_id =
-                        get_track_id(db, node_id, this_pid, itr.thread_id, track_name_id, "{}");
-
-                    get_insert_statement(db,
-                                         "rocpd_sample{{uuid}}",
-                                         {
-                                             insert_value("id", itr.correlation_id.internal),
-                                             insert_value("track_id", track_id),
-                                             insert_value("timestamp", itr.start_timestamp),
-                                             insert_value("event_id", evt_id),
-                                         });
-                }
             }
-        }
-    };
+        };
 
     auto insert_kfd_data = [&db, &tool_metadata, node_id, this_pid](auto& pmc_ids) {
         auto _sqlgenperf_rocpd = get_simple_timer("rocpd_info_pmc: kfd");

@@ -88,11 +88,8 @@ generate_csv(const output_config&                                           cfg,
              const generator<rocprofiler_buffer_tracing_rccl_api_record_t>& data,
              const stats_entry_t&                                           stats);
 
-void
-generate_csv(const output_config&                                       cfg,
-             const metadata&                                            tool_metadata,
-             const generator<rocprofiler_buffer_tracing_ompt_record_t>& data,
-             const stats_entry_t&                                       stats);
+// NOTE: OMPT is rocpd-only; it is exported to CSV via `rocpd convert`, so there is
+// intentionally no generate_csv() overload for OMPT.
 
 void
 generate_csv(const output_config&                                                    cfg,

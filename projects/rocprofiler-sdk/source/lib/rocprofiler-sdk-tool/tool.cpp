@@ -3190,21 +3190,28 @@ generate_output(tool::buffered_output<Tp, DomainT>& output_v,
     output_data_v.num_output += 1;
     output_data_v.num_bytes += _num_bytes;
 
-    if(tool::get_config().stats || tool::get_config().summary_output)
+    // OMPT is rocpd-only: direct CSV/stats (and JSON/Perfetto/OTF2) emission is not
+    // produced for OMPT. OMPT records are written to rocpd and exported to other
+    // formats via `rocpd convert`. The record count above is still tallied so that
+    // rocpd output is produced even when OMPT is the only active trace domain.
+    if constexpr(DomainT != domain_type::OMPT)
     {
-        output_v.stats =
-            tool::generate_stats(tool::get_config(), *tool_metadata, output_v.get_generator());
-    }
+        if(tool::get_config().stats || tool::get_config().summary_output)
+        {
+            output_v.stats =
+                tool::generate_stats(tool::get_config(), *tool_metadata, output_v.get_generator());
+        }
 
-    if(output_v.stats)
-    {
-        contributions_v.emplace_back(output_v.buffer_type_v, output_v.stats);
-    }
+        if(output_v.stats)
+        {
+            contributions_v.emplace_back(output_v.buffer_type_v, output_v.stats);
+        }
 
-    if(tool::get_config().csv_output && _num_bytes >= tool::get_config().minimum_output_bytes)
-    {
-        tool::generate_csv(
-            tool::get_config(), *tool_metadata, output_v.get_generator(), output_v.stats);
+        if(tool::get_config().csv_output && _num_bytes >= tool::get_config().minimum_output_bytes)
+        {
+            tool::generate_csv(
+                tool::get_config(), *tool_metadata, output_v.get_generator(), output_v.stats);
+        }
     }
 }
 
@@ -3335,8 +3342,7 @@ generate_output(cleanup_mode _cleanup_mode)
                          rocjpeg_output.get_generator(),
                          pc_sampling_host_trap_output.get_generator(),
                          pc_sampling_stochastic_output.get_generator(),
-                         spm_counters_output.get_generator(),
-                         ompt_output.get_generator());
+                         spm_counters_output.get_generator());
         json_ar.finish_process();
 
         tool::close_json(json_ar);
@@ -3358,8 +3364,7 @@ generate_output(cleanup_mode _cleanup_mode)
                              rccl_output.get_generator(),
                              memory_allocation_output.get_generator(),
                              rocdecode_output.get_generator(),
-                             rocjpeg_output.get_generator(),
-                             ompt_output.get_generator());
+                             rocjpeg_output.get_generator());
     }
 
     if(tool::get_config().rocpd_output && outdata.num_output > 0 &&
@@ -3393,7 +3398,6 @@ generate_output(cleanup_mode _cleanup_mode)
         auto marker_elem_data            = marker_output.load_all();
         auto scratch_memory_elem_data    = scratch_memory_output.load_all();
         auto rccl_elem_data              = rccl_output.load_all();
-        auto ompt_elem_data              = ompt_output.load_all();
         auto memory_allocation_elem_data = memory_allocation_output.load_all();
         auto rocdecode_elem_data         = rocdecode_output.load_all();
         auto rocjpeg_elem_data           = rocjpeg_output.load_all();
@@ -3411,8 +3415,7 @@ generate_output(cleanup_mode _cleanup_mode)
                          &rccl_elem_data,
                          &memory_allocation_elem_data,
                          &rocdecode_elem_data,
-                         &rocjpeg_elem_data,
-                         &ompt_elem_data);
+                         &rocjpeg_elem_data);
     }
 
     if(tool::get_config().summary_output && outdata.num_output > 0 &&

@@ -369,8 +369,7 @@ write_otf2(const output_config&                                          cfg,
            std::deque<rocprofiler_buffer_tracing_rccl_api_record_t>*       rccl_api_data,
            std::deque<tool_buffer_tracing_memory_allocation_ext_record_t>* memory_allocation_data,
            std::deque<rocprofiler_buffer_tracing_rocdecode_api_ext_record_t>* rocdecode_api_data,
-           std::deque<rocprofiler_buffer_tracing_rocjpeg_api_record_t>*       rocjpeg_api_data,
-           std::deque<rocprofiler_buffer_tracing_ompt_record_t>*              ompt_data)
+           std::deque<rocprofiler_buffer_tracing_rocjpeg_api_record_t>*       rocjpeg_api_data)
 {
     namespace sdk = ::rocprofiler::sdk;
 
@@ -420,8 +419,6 @@ write_otf2(const output_config&                                          cfg,
         for(auto itr : *marker_api_data)
             tids.emplace(itr.thread_id);
         for(auto itr : *rccl_api_data)
-            tids.emplace(itr.thread_id);
-        for(auto itr : *ompt_data)
             tids.emplace(itr.thread_id);
         for(auto itr : *rocdecode_api_data)
             tids.emplace(itr.thread_id);
@@ -586,18 +583,6 @@ write_otf2(const output_config&                                          cfg,
 
                 using value_type = common::mpl::unqualified_type_t<decltype(itr)>;
 
-                // OTF2 is region-based (Enter/Leave); OMPT emits instantaneous
-                // notifications (e.g. thread_begin, device_initialize, dispatch)
-                // where start == end. Elide them here rather than emit a
-                // degenerate zero-width region. Other tracing domains
-                // (HIP/HSA/marker/RCCL/rocJPEG) do not legitimately produce
-                // start == end records, so we restrict this skip to OMPT.
-                if constexpr(std::is_same<value_type,
-                                          rocprofiler_buffer_tracing_ompt_record_t>::value)
-                {
-                    if(itr.start_timestamp == itr.end_timestamp) continue;
-                }
-
                 auto name     = buffer_names.at(itr.kind, itr.operation);
                 auto paradigm = OTF2_PARADIGM_HIP;
                 if constexpr(std::is_same<value_type,
@@ -632,7 +617,6 @@ write_otf2(const output_config&                                          cfg,
         add_event_data(hip_api_data, sdk::category::hip_api{});
         add_event_data(marker_api_data, sdk::category::marker_api{});
         add_event_data(rccl_api_data, sdk::category::rccl_api{});
-        add_event_data(ompt_data, sdk::category::openmp{});
         add_event_data(rocjpeg_api_data, sdk::category::rocjpeg_api{});
     }
 
