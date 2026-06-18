@@ -181,7 +181,10 @@
   X(HostWaitUntilSome,         136)  \
   X(HostWaitUntilAllVector,    137)  \
   X(HostWaitUntilAnyVector,    138)  \
-  X(HostWaitUntilSomeVector,   139)
+  X(HostWaitUntilSomeVector,   139)  \
+  X(HostWaitUntilAllStatus,    140)  \
+  X(HostWaitUntilAnyStatus,    141)  \
+  X(HostWaitUntilSomeStatus,   142)
 #define _ROCSHMEM_ENUM_ENTRY(name, val) name##TestType = val,
 enum TestType {
   ROCSHMEM_FOREACH_TEST_TYPE(_ROCSHMEM_ENUM_ENTRY)
