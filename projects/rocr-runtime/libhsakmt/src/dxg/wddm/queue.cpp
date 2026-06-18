@@ -886,10 +886,18 @@ hsa_status_t ComputeQueue::VendorSpecificAqlToPm4(char* cpu, amd_aql_pm4_ib* pac
 
   int i = ib_size;
 
+  // Bounds check before copy to prevent heap buffer overflow
+  uint32_t pm4_bytes = pm4_size * sizeof(uint32_t);
+  if (pm4_bytes > cmdbuf_aql_frame_size) {
+    pr_err("PM4 command buffer overflow in VendorSpecific: pm4_size %u bytes exceeds frame limit %u bytes\n",
+           pm4_bytes, cmdbuf_aql_frame_size);
+    return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+  }
+
   if (dxg_runtime->vendor_packet_process) {
     int major = device->Major();
-    memcpy(cpu + i, pm4_addr, pm4_size * sizeof(uint32_t));
-    i += pm4_size * sizeof(uint32_t);
+    memcpy(cpu + i, pm4_addr, pm4_bytes);
+    i += pm4_bytes;
 
     if (packet->completion_signal.handle != 0) {
       amd_signal_t* signal = (amd_signal_t*)packet->completion_signal.handle;
