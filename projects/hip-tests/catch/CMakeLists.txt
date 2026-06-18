@@ -32,6 +32,7 @@ option(RTC_TESTING "Run tests using HIP RTC to compile the kernels" OFF)
 option(ENABLE_SPIRV "Build hip-tests for SPIRV" OFF)
 option(ENABLE_YAML_TAGS "Enable YAML tags for test cases" ON)
 option(STANDALONE_TESTS "Generate standalone executable per source file" OFF)
+option(ENABLE_OOB_TESTS "Build OOB tests, deliberately wrong inputs" ON)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
