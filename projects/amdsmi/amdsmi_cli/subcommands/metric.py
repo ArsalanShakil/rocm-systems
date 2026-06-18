@@ -334,7 +334,7 @@ class MetricCommands:
             values_dict["gpu"] = int(gpu_id)
         # Populate the pcie_dict first due to multiple gpu metrics calls incorrectly increasing bandwidth
         if "pcie" in current_platform_args:
-            if args.pcie:
+            if args.pcie and not show_apu:
                 pcie_dict = {
                     "width": "N/A",
                     "speed": "N/A",
@@ -1297,7 +1297,7 @@ class MetricCommands:
 
         # Since pcie bw may increase based on frequent metrics calls, we add it to the output here, but the populate the values first
         if "pcie" in current_platform_args:
-            if args.pcie:
+            if args.pcie and not show_apu:
                 values_dict["pcie"] = pcie_dict
 
         if "gpu_board" in current_platform_args:
@@ -1369,7 +1369,7 @@ class MetricCommands:
 
                 values_dict["ecc"] = ecc_count
         if "ecc_blocks" in current_platform_args:
-            if args.ecc_blocks:
+            if args.ecc_blocks and not show_apu:
                 ecc_dict = {}
                 sysfs_blocks = ["UMC", "SDMA", "GFX", "MMHUB", "PCIE_BIF", "HDP", "XGMI_WAFL"]
                 try:
@@ -1413,7 +1413,7 @@ class MetricCommands:
                         e.get_error_info(),
                     )
         if "fan" in current_platform_args:
-            if args.fan:
+            if args.fan and not show_apu:
                 fan_dict = {"speed": "N/A", "max": "N/A", "rpm": "N/A", "usage": "N/A"}
 
                 try:
@@ -1451,7 +1451,7 @@ class MetricCommands:
 
                 values_dict["fan"] = fan_dict
         if "voltage_curve" in current_platform_args:
-            if args.voltage_curve:
+            if args.voltage_curve and not show_apu:
                 # Populate N/A values per voltage point
                 voltage_point_dict = {}
                 for point in range(amdsmi_interface.AMDSMI_NUM_VOLTAGE_CURVE_POINTS):
@@ -1499,7 +1499,7 @@ class MetricCommands:
 
                 values_dict["voltage_curve"] = voltage_point_dict
         if "overdrive" in current_platform_args:
-            if args.overdrive:
+            if args.overdrive and not show_apu:
                 try:
                     overdrive_level = amdsmi_interface.amdsmi_get_gpu_overdrive_level(args.gpu)
                     od_unit = "%"
@@ -1540,7 +1540,7 @@ class MetricCommands:
                         "Failed to get perf level for gpu %s | %s", gpu_id, e.get_error_info()
                     )
         if "xgmi_err" in current_platform_args:
-            if args.xgmi_err:
+            if args.xgmi_err and not show_apu:
                 try:
                     xgmi_err_status = amdsmi_interface.amdsmi_gpu_xgmi_error_status(args.gpu)
                     values_dict["xgmi_err"] = (
@@ -1617,7 +1617,7 @@ class MetricCommands:
 
                 values_dict["voltage"] = voltage_dict
         if "energy" in current_platform_args:
-            if args.energy:
+            if args.energy and not show_apu:
                 try:
                     energy_dict = amdsmi_interface.amdsmi_get_energy_count(args.gpu)
 
