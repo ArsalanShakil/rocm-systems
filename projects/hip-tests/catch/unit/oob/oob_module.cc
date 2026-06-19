@@ -4,7 +4,7 @@
 #define DECL_MODULE_PATH(input_name)                                                               \
   constexpr std::string_view input_name = OOB_FIXTURES_DIR "/" #input_name ".co"
 
-TEST_CASE("OOB_hip_module_load_over") {
+HIP_TEST_CASE(OOB_hip_module_load_over) {
   DECL_MODULE_PATH(oob_kernel);
   DECL_MODULE_PATH(elf_huge_shnum);
   DECL_MODULE_PATH(elf_bad_shoff);
