@@ -124,9 +124,9 @@ if(NOT DEFINED THEROCK_SANITIZER)
 endif()
 
 set(ASAN_CONFIG_DEF)
-set(HIP_ASAN_ENABLED OFF)
+set(HIP_TESTS_ASAN_ENABLED OFF)
 if(ENABLE_ADDRESS_SANITIZER OR THEROCK_SANITIZER STREQUAL "ASAN" OR THEROCK_SANITIZER STREQUAL "HOST_ASAN")
-  set(HIP_ASAN_ENABLED ON)
+  set(HIP_TESTS_ASAN_ENABLED ON)
   message(STATUS "Building catch tests with Address Sanitizer options")
   # If user is building hip-tests standalone (without TheRock) and wants to turn on sanitizer
   # We append the flags manually, otherwise we use TheRock's CXX flags which already should have
