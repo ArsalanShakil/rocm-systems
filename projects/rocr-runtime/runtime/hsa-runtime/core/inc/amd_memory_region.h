@@ -201,6 +201,24 @@ private:
   // Operational body for Free.  Recursive.
   hsa_status_t FreeImpl(void* address, size_t size) const;
 
+  // ASAN re-entrancy guard: avoid deadlock when ASAN quarantine evicts a GPU
+  // block while this thread holds agent_memory_lock_.  Defer re-entrant frees.
+  class ScopedAgentMemoryLock {
+    public:
+      explicit ScopedAgentMemoryLock(std::mutex& mutex);
+      ~ScopedAgentMemoryLock();
+
+    private:
+      std::mutex& mutex_;
+      DISALLOW_COPY_AND_ASSIGN(ScopedAgentMemoryLock);
+  };
+
+  // Queue free if lock held; return true if deferred, else false.
+  bool DeferFreeIfLockHeld(void* address, size_t size) const;
+
+  // Drain queued frees after outermost lock release.
+  static void DrainDeferredFrees();
+
   class BlockAllocator {
    private:
     MemoryRegion& region_;
