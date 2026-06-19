@@ -1,18 +1,19 @@
 #include <hip_test_common.hh>
 #include <string_view>
 
-#define DECL_ELF_FOR_TEST(input_name) constexpr std::string_view input_name = #input_name ".co"
+#define DECL_MODULE_PATH(input_name)                                                               \
+  constexpr std::string_view input_name = OOB_FIXTURES_DIR "/" #input_name ".co"
 
 TEST_CASE("OOB_hip_module_load_over") {
-  DECL_ELF_FOR_TEST(elf_valid);
-  DECL_ELF_FOR_TEST(elf_huge_shnum);
-  DECL_ELF_FOR_TEST(elf_bad_shoff);
-  DECL_ELF_FOR_TEST(elf_table_spill);
-  DECL_ELF_FOR_TEST(elf_sh_overflow);
+  DECL_MODULE_PATH(oob_kernel);
+  DECL_MODULE_PATH(elf_huge_shnum);
+  DECL_MODULE_PATH(elf_bad_shoff);
+  DECL_MODULE_PATH(elf_table_spill);
+  DECL_MODULE_PATH(elf_sh_overflow);
 
   SECTION("valid - sanity") {
     hipModule_t module{};
-    HIP_CHECK(hipModuleLoad(&module, elf_valid.data()));
+    HIP_CHECK(hipModuleLoad(&module, oob_kernel.data()));
     HIP_CHECK(hipModuleUnload(module));
   }
 
