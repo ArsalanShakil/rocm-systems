@@ -145,6 +145,27 @@ inline bool isQuickLevel() {
 #define HIP_CHECK_THREAD_FINALIZE()                                                                \
   { TestContext::get().finalizeResults(); }
 
+// Optionally thread-safe HIP_CHECK/REQUIRE for shared utility functions that are
+// called from both single-threaded and multi-threaded contexts. Pass threadSafe
+// as true when invoked from a worker thread, false otherwise.
+#define HIP_CHECK_OPT_THREAD(threadSafe, error)                                                    \
+  {                                                                                                \
+    if (threadSafe) {                                                                              \
+      HIP_CHECK_THREAD(error);                                                                     \
+    } else {                                                                                       \
+      HIP_CHECK(error);                                                                            \
+    }                                                                                              \
+  }
+
+#define REQUIRE_OPT_THREAD(threadSafe, condition)                                                  \
+  {                                                                                                \
+    if (threadSafe) {                                                                              \
+      REQUIRE_THREAD(condition);                                                                   \
+    } else {                                                                                       \
+      REQUIRE(condition);                                                                          \
+    }                                                                                              \
+  }
+
 
 // Check that an expression, errorExpr, evaluates to the expected error_t, expectedError.
 #define HIP_CHECK_ERROR(errorExpr, expectedError)                                                  \
